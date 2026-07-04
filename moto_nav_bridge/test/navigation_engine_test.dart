@@ -1,0 +1,81 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:moto_nav_bridge/models/device_direction.dart';
+import 'package:moto_nav_bridge/models/lat_lng.dart';
+import 'package:moto_nav_bridge/models/route_step.dart';
+import 'package:moto_nav_bridge/services/navigation_engine.dart';
+
+// A short synthetic route along a line of latitude near the equator so that
+// 1 degree of longitude is a large, easy-to-reason-about distance. We keep the
+// points close together and check relative behavior rather than exact meters.
+void main() {
+  // Three maneuver points roughly in a line, ~111 m apart (0.001 deg lat).
+  const p0 = LatLng(0.000, 0.0); // origin / start of step 0
+  const p1 = LatLng(0.001, 0.0); // end of step 0 == turn point (LEFT)
+  const p2 = LatLng(0.002, 0.0); // end of step 1 == destination (ARRIVED)
+
+  List<RouteStep> route() => const [
+        RouteStep(
+          direction: DeviceDirection.up, // heading out, no prior maneuver
+          start: p0,
+          end: p1,
+          distanceMeters: 111,
+          rawManeuver: null,
+        ),
+        RouteStep(
+          direction: DeviceDirection.left, // the turn performed at p1
+          start: p1,
+          end: p2,
+          distanceMeters: 111,
+          rawManeuver: 'turn-left',
+        ),
+      ];
+
+  test('early in step 0, announces the upcoming LEFT turn at p1', () {
+    final engine = NavigationEngine(route());
+    final state = engine.update(p0);
+    expect(state.direction, DeviceDirection.left);
+    expect(engine.currentStepIndex, 0);
+    // ~111 m to the turn point.
+    expect(state.distanceMeters, greaterThan(100));
+    expect(state.distanceMeters, lessThan(130));
+  });
+
+  test('distance to the turn shrinks as the rider approaches p1', () {
+    final engine = NavigationEngine(route());
+    final far = engine.update(p0).distanceMeters;
+    final near = engine.update(const LatLng(0.0009, 0.0)).distanceMeters;
+    expect(near, lessThan(far));
+  });
+
+  test('advances to final step after passing the turn point', () {
+    final engine = NavigationEngine(route());
+    engine.update(p0);
+    // Rider is now near/at p1 -> should advance to step 1 (heading to dest).
+    final state = engine.update(p1);
+    expect(engine.currentStepIndex, 1);
+    expect(state.direction, DeviceDirection.arrived);
+  });
+
+  test('overshooting the turn point still advances the step', () {
+    final engine = NavigationEngine(route());
+    engine.update(p0);
+    // Jump past p1 toward p2 without landing inside the arrival threshold.
+    final state = engine.update(const LatLng(0.0015, 0.0));
+    expect(engine.currentStepIndex, 1);
+    expect(state.direction, DeviceDirection.arrived);
+  });
+
+  test('isFinished becomes true at the destination', () {
+    final engine = NavigationEngine(route());
+    engine.update(p0);
+    engine.update(p1);
+    engine.update(p2); // arrive at destination
+    expect(engine.isFinished, isTrue);
+  });
+
+  test('distance is never negative', () {
+    final engine = NavigationEngine(route());
+    final state = engine.update(p2);
+    expect(state.distanceMeters, greaterThanOrEqualTo(0));
+  });
+}

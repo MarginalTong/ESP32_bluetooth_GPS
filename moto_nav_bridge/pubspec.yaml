@@ -1,0 +1,28 @@
+name: moto_nav_bridge
+description: Navigation middleware bridging Google Directions API to an ESP32 BLE navigation display.
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # BLE — communicates with the ESP32_NAV peripheral (write-with-response).
+  flutter_blue_plus: ^1.32.12
+  # Continuous location tracking for the navigation engine.
+  geolocator: ^12.0.0
+  # Google Directions API calls.
+  http: ^1.2.2
+  # Simple state management for the UI layer.
+  provider: ^6.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
