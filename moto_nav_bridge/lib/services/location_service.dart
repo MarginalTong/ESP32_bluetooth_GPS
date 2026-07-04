@@ -22,7 +22,7 @@ class LocationService {
   /// One-shot current position (used to seed the route origin).
   Future<LatLng> currentPosition() async {
     final p = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      desiredAccuracy: LocationAccuracy.high,
     );
     return LatLng(p.latitude, p.longitude);
   }

@@ -74,5 +74,5 @@ class NavigationEngine {
   }
 
   double? _distanceToStepEnd(RouteStep step, LatLng? from) =>
-      from == null ? null : from.distanceTo(step.end);
+      from?.distanceTo(step.end);
 }

@@ -43,7 +43,9 @@ void main() {
   test('distance to the turn shrinks as the rider approaches p1', () {
     final engine = NavigationEngine(route());
     final far = engine.update(p0).distanceMeters;
-    final near = engine.update(const LatLng(0.0009, 0.0)).distanceMeters;
+    // Still ~55 m from the turn point p1, i.e. outside the 15 m arrival
+    // threshold, so the engine keeps measuring toward p1 (no step advance).
+    final near = engine.update(const LatLng(0.0005, 0.0)).distanceMeters;
     expect(near, lessThan(far));
   });
 
@@ -59,8 +61,9 @@ void main() {
   test('overshooting the turn point still advances the step', () {
     final engine = NavigationEngine(route());
     engine.update(p0);
-    // Jump past p1 toward p2 without landing inside the arrival threshold.
-    final state = engine.update(const LatLng(0.0015, 0.0));
+    // Jump clearly past the midpoint of p1..p2 (0.0015) toward p2, so the
+    // rider is closer to the next maneuver point than the current one.
+    final state = engine.update(const LatLng(0.0016, 0.0));
     expect(engine.currentStepIndex, 1);
     expect(state.direction, DeviceDirection.arrived);
   });

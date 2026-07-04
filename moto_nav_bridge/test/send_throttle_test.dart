@@ -47,7 +47,7 @@ void main() {
   });
 
   test('heartbeat: sends after the min interval even with no change', () {
-    final th = SendThrottle(minInterval: Duration(seconds: 1));
+    final th = SendThrottle(minInterval: const Duration(seconds: 1));
     final state = s(DeviceDirection.up, 500);
     th.markSent(state, t0);
     expect(

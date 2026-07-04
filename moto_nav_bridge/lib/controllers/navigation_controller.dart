@@ -71,7 +71,7 @@ class NavigationController extends ChangeNotifier {
     _set(NavPhase.navigating);
     _posSub = _location.positionStream().listen(
       _onPosition,
-      onError: (e) => _onPositionError(e),
+      onError: (Object e) => _onPositionError(e),
     );
   }
 
