@@ -1,10 +1,12 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../models/lat_lng.dart';
 import '../models/route_step.dart';
+import 'apple_maps_service.dart';
 import 'maneuver_mapper.dart';
 
 /// Thrown when a Directions request fails or returns no usable route.
@@ -24,6 +26,7 @@ class DirectionsService {
 
   final http.Client _client;
   final String _apiKey;
+  final AppleMapsService _appleMaps = AppleMapsService();
 
   static const _host = 'maps.googleapis.com';
   static const _path = '/maps/api/directions/json';
@@ -36,6 +39,10 @@ class DirectionsService {
     required LatLng origin,
     required LatLng destination,
   }) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      return _appleMaps.fetchRoute(origin: origin, destination: destination);
+    }
+
     if (_apiKey.isEmpty) {
       throw DirectionsException(
         'Missing Google Directions API key. Pass '
@@ -79,7 +86,8 @@ class DirectionsService {
     final status = json['status'] as String? ?? 'UNKNOWN';
     if (status != 'OK') {
       final msg = json['error_message'] as String?;
-      throw DirectionsException('API status $status${msg == null ? '' : ': $msg'}');
+      throw DirectionsException(
+          'API status $status${msg == null ? '' : ': $msg'}');
     }
 
     final routes = json['routes'] as List<dynamic>?;
@@ -87,12 +95,14 @@ class DirectionsService {
       throw DirectionsException('No routes returned');
     }
 
-    final legs = (routes.first as Map<String, dynamic>)['legs'] as List<dynamic>?;
+    final legs =
+        (routes.first as Map<String, dynamic>)['legs'] as List<dynamic>?;
     if (legs == null || legs.isEmpty) {
       throw DirectionsException('Route has no legs');
     }
 
-    final steps = (legs.first as Map<String, dynamic>)['steps'] as List<dynamic>?;
+    final steps =
+        (legs.first as Map<String, dynamic>)['steps'] as List<dynamic>?;
     if (steps == null || steps.isEmpty) {
       throw DirectionsException('Leg has no steps');
     }

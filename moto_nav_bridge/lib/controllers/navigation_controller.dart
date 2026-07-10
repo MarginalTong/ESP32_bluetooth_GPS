@@ -36,6 +36,12 @@ class NavigationController extends ChangeNotifier {
   NavState? _current;
   NavState? get current => _current;
 
+  LatLng? _origin;
+  LatLng? get origin => _origin;
+
+  LatLng? _destination;
+  LatLng? get destination => _destination;
+
   NavigationEngine? _engine;
   StreamSubscription<LatLng>? _posSub;
 
@@ -58,6 +64,9 @@ class NavigationController extends ChangeNotifier {
     _set(NavPhase.routing);
     try {
       final origin = await _location.currentPosition();
+      _origin = origin;
+      _destination = destination;
+      notifyListeners();
       final steps = await _directions.fetchRoute(
         origin: origin,
         destination: destination,
@@ -70,9 +79,9 @@ class NavigationController extends ChangeNotifier {
 
     _set(NavPhase.navigating);
     _posSub = _location.positionStream().listen(
-      _onPosition,
-      onError: (Object e) => _onPositionError(e),
-    );
+          _onPosition,
+          onError: (Object e) => _onPositionError(e),
+        );
   }
 
   Future<void> _onPosition(LatLng pos) async {
@@ -113,6 +122,8 @@ class NavigationController extends ChangeNotifier {
     _posSub = null;
     _engine = null;
     _current = null;
+    _origin = null;
+    _destination = null;
     _set(NavPhase.idle);
   }
 

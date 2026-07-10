@@ -18,8 +18,7 @@ class MotoNavBridgeApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => BleService()),
         ChangeNotifierProxyProvider<BleService, NavigationController>(
-          create: (ctx) =>
-              NavigationController(ble: ctx.read<BleService>()),
+          create: (ctx) => NavigationController(ble: ctx.read<BleService>()),
           update: (ctx, ble, previous) =>
               previous ?? NavigationController(ble: ble),
         ),
@@ -28,11 +27,29 @@ class MotoNavBridgeApp extends StatelessWidget {
         title: 'Moto Nav Bridge',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.orange,
+            seedColor: const Color(0xffff8a3d),
             brightness: Brightness.dark,
+          ),
+          scaffoldBackgroundColor: const Color(0xff0d0f12),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: const Color(0xff171a1f),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          filledButtonTheme: FilledButtonThemeData(
+            style: FilledButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
           useMaterial3: true,
         ),
+        debugShowCheckedModeBanner: false,
         home: const HomePage(),
       ),
     );

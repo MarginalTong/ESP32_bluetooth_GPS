@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../config/ble_constants.dart';
 import '../../services/ble_service.dart';
 
-/// Shows BLE connection status and a connect/disconnect button.
 class ConnectionCard extends StatelessWidget {
   const ConnectionCard({super.key});
 
@@ -14,63 +13,82 @@ class ConnectionCard extends StatelessWidget {
     final connected = ble.state == BleConnectionState.connected;
     final busy = ble.state == BleConnectionState.scanning ||
         ble.state == BleConnectionState.connecting;
+    final colors = Theme.of(context).colorScheme;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
+    return Material(
+      color: colors.surfaceContainerHigh.withValues(alpha: 0.78),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: busy ? null : () => connected ? ble.disconnect() : ble.connect(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          child: Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: connected
+                      ? const Color(0xff5ee6a8)
+                      : busy
+                          ? colors.primary
+                          : colors.outline,
+                  boxShadow: connected
+                      ? const [
+                          BoxShadow(
+                            color: Color(0x665ee6a8),
+                            blurRadius: 10,
+                          ),
+                        ]
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      BleConstants.deviceName,
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                    Text(
+                      ble.lastError ?? _label(ble.state),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: ble.lastError == null
+                                ? colors.onSurfaceVariant
+                                : colors.error,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              if (busy)
+                const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
                 Icon(
                   connected ? Icons.bluetooth_connected : Icons.bluetooth,
-                  color: connected ? Colors.greenAccent : Colors.grey,
+                  color: connected ? const Color(0xff5ee6a8) : colors.outline,
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  BleConstants.deviceName,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const Spacer(),
-                Text(_label(ble.state)),
-              ],
-            ),
-            if (ble.lastError != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                ble.lastError!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
             ],
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: busy
-                    ? null
-                    : () => connected ? ble.disconnect() : ble.connect(),
-                icon: busy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(connected ? Icons.link_off : Icons.link),
-                label: Text(connected ? 'Disconnect' : 'Connect'),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  String _label(BleConnectionState s) => switch (s) {
-        BleConnectionState.idle => 'Idle',
-        BleConnectionState.scanning => 'Scanning…',
-        BleConnectionState.connecting => 'Connecting…',
-        BleConnectionState.connected => 'Connected',
-        BleConnectionState.disconnected => 'Disconnected',
+  String _label(BleConnectionState state) => switch (state) {
+        BleConnectionState.idle => '点按连接导航屏',
+        BleConnectionState.scanning => '正在搜索设备…',
+        BleConnectionState.connecting => '正在连接…',
+        BleConnectionState.connected => '导航屏已连接',
+        BleConnectionState.disconnected => '连接已断开 · 点按重连',
       };
 }

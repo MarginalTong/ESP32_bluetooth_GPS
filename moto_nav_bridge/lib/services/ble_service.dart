@@ -18,7 +18,23 @@ enum BleConnectionState { idle, scanning, connecting, connected, disconnected }
 /// strongest delivery signal we have.
 class BleService extends ChangeNotifier {
   BleService({SendThrottle? throttle})
-      : _throttle = throttle ?? SendThrottle();
+      : _throttle = throttle ?? SendThrottle() {
+    _adapterSub = FlutterBluePlus.adapterState.listen((s) {
+      // CoreBluetooth reports `unknown` briefly while iOS is restoring its
+      // state. Treating that transitional value as Bluetooth-off tears down a
+      // valid connection during app launch/resume.
+      if (s != BluetoothAdapterState.on && s != BluetoothAdapterState.unknown) {
+        _characteristic = null;
+        _throttle.reset();
+        if (_state == BleConnectionState.scanning ||
+            _state == BleConnectionState.connecting ||
+            _state == BleConnectionState.connected) {
+          _setState(BleConnectionState.disconnected,
+              error: 'Bluetooth is ${s.name}. Turn it on and reconnect.');
+        }
+      }
+    });
+  }
 
   final SendThrottle _throttle;
 
@@ -35,6 +51,9 @@ class BleService extends ChangeNotifier {
   BluetoothCharacteristic? _characteristic;
   StreamSubscription<List<ScanResult>>? _scanSub;
   StreamSubscription<BluetoothConnectionState>? _connSub;
+  StreamSubscription<BluetoothAdapterState>? _adapterSub;
+  Future<void>? _connectOp;
+  bool _disposed = false;
 
   void _setState(BleConnectionState s, {String? error}) {
     _state = s;
@@ -44,13 +63,34 @@ class BleService extends ChangeNotifier {
 
   /// Scans for the ESP32_NAV device by name and connects to the first match.
   Future<void> connect({Duration timeout = const Duration(seconds: 15)}) async {
-    if (_state == BleConnectionState.scanning ||
-        _state == BleConnectionState.connecting) {
+    _connectOp ??= _connectInternal(timeout).whenComplete(() {
+      _connectOp = null;
+    });
+    return _connectOp;
+  }
+
+  Future<void> _connectInternal(Duration timeout) async {
+    if (!(await FlutterBluePlus.isSupported)) {
+      _setState(BleConnectionState.idle, error: 'BLE not supported on device');
       return;
     }
 
-    if (!(await FlutterBluePlus.isSupported)) {
-      _setState(BleConnectionState.idle, error: 'BLE not supported on device');
+    final adapterState = await FlutterBluePlus.adapterState.first;
+    if (adapterState != BluetoothAdapterState.on) {
+      _setState(BleConnectionState.idle,
+          error:
+              'Bluetooth is ${adapterState.name}. Turn it on and reconnect.');
+      return;
+    }
+
+    await _stopActiveScan();
+    await _connSub?.cancel();
+    _connSub = null;
+    _characteristic = null;
+
+    final cached = await _findSystemDevice();
+    if (cached != null) {
+      await _connectTo(cached);
       return;
     }
 
@@ -58,38 +98,39 @@ class BleService extends ChangeNotifier {
     final completer = Completer<BluetoothDevice?>();
 
     await _scanSub?.cancel();
-    _scanSub = FlutterBluePlus.scanResults.listen((results) {
+    _scanSub = FlutterBluePlus.onScanResults.listen((results) {
       for (final r in results) {
-        final name = r.device.platformName;
-        if (name == BleConstants.deviceName) {
+        if (_matchesDevice(r)) {
           if (!completer.isCompleted) completer.complete(r.device);
           return;
         }
       }
+    }, onError: (Object e) {
+      if (!completer.isCompleted) completer.completeError(e);
     });
 
     try {
-      await FlutterBluePlus.startScan(
-        withServices: [Guid(BleConstants.serviceUuid)],
-        timeout: timeout,
-      );
+      // Match in `_matchesDevice` instead of filtering here. On iOS a service
+      // filter only sees peripherals that include the UUID in their advertising
+      // packet; many ESP32 sketches expose the service after connection but do
+      // not advertise its UUID.
+      await FlutterBluePlus.startScan(timeout: timeout);
     } catch (e) {
-      // Fall back to name-only scan if service filtering is unsupported.
-      try {
-        await FlutterBluePlus.startScan(timeout: timeout);
-      } catch (e2) {
-        await _scanSub?.cancel();
-        _setState(BleConnectionState.idle, error: 'Scan failed: $e2');
-        return;
-      }
+      await _scanSub?.cancel();
+      _scanSub = null;
+      _setState(BleConnectionState.idle, error: 'Scan failed: $e');
+      return;
     }
 
-    final found = await completer.future
-        .timeout(timeout, onTimeout: () => null)
-        .whenComplete(() async {
-      await FlutterBluePlus.stopScan();
-      await _scanSub?.cancel();
-    });
+    BluetoothDevice? found;
+    try {
+      found = await completer.future.timeout(timeout, onTimeout: () => null);
+    } catch (e) {
+      _setState(BleConnectionState.idle, error: 'Scan failed: $e');
+      return;
+    } finally {
+      await _stopActiveScan();
+    }
 
     if (found == null) {
       _setState(BleConnectionState.idle,
@@ -98,6 +139,38 @@ class BleService extends ChangeNotifier {
     }
 
     await _connectTo(found);
+  }
+
+  Future<BluetoothDevice?> _findSystemDevice() async {
+    try {
+      final devices =
+          await FlutterBluePlus.systemDevices([Guid(BleConstants.serviceUuid)]);
+      for (final device in devices) {
+        if (device.platformName == BleConstants.deviceName) return device;
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('System BLE lookup failed: $e');
+    }
+    return null;
+  }
+
+  bool _matchesDevice(ScanResult result) {
+    final serviceUuid = Guid(BleConstants.serviceUuid);
+    return result.device.platformName == BleConstants.deviceName ||
+        result.advertisementData.advName == BleConstants.deviceName ||
+        result.advertisementData.serviceUuids.contains(serviceUuid);
+  }
+
+  Future<void> _stopActiveScan() async {
+    try {
+      if (FlutterBluePlus.isScanningNow) {
+        await FlutterBluePlus.stopScan();
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('Stop scan failed: $e');
+    }
+    await _scanSub?.cancel();
+    _scanSub = null;
   }
 
   Future<void> _connectTo(BluetoothDevice device) async {
@@ -114,7 +187,9 @@ class BleService extends ChangeNotifier {
     });
 
     try {
-      await device.connect(timeout: const Duration(seconds: 10));
+      if (!device.isConnected) {
+        await device.connect(timeout: const Duration(seconds: 10), mtu: null);
+      }
       final services = await device.discoverServices();
       final service = services.firstWhere(
         (s) => s.uuid == Guid(BleConstants.serviceUuid),
@@ -126,13 +201,26 @@ class BleService extends ChangeNotifier {
       );
       _setState(BleConnectionState.connected);
     } catch (e) {
+      try {
+        await device.disconnect(queue: false);
+      } catch (_) {
+        // Best effort cleanup after a failed iOS CoreBluetooth connect.
+      }
+      _characteristic = null;
+      _throttle.reset();
       _setState(BleConnectionState.disconnected, error: 'Connect failed: $e');
     }
   }
 
   Future<void> disconnect() async {
+    await _stopActiveScan();
     await _connSub?.cancel();
-    await _device?.disconnect();
+    _connSub = null;
+    try {
+      await _device?.disconnect(queue: false);
+    } catch (e) {
+      if (kDebugMode) debugPrint('Disconnect failed: $e');
+    }
     _characteristic = null;
     _throttle.reset();
     _setState(BleConnectionState.disconnected);
@@ -169,9 +257,16 @@ class BleService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _scanSub?.cancel();
     _connSub?.cancel();
-    _device?.disconnect();
+    _adapterSub?.cancel();
+    _device?.disconnect(queue: false);
     super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
   }
 }
