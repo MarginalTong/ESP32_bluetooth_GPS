@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -32,6 +33,11 @@ class NavigationMap extends StatelessWidget {
               viewType: _viewType,
               creationParams: _creationParams,
               creationParamsCodec: const StandardMessageCodec(),
+              gestureRecognizers: {
+                Factory<OneSequenceGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                ),
+              },
             ),
           _ => Container(
               color: colorScheme.surfaceContainer,

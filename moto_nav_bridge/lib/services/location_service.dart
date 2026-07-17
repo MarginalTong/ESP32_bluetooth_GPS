@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:geolocator/geolocator.dart';
 
 import '../models/lat_lng.dart';
@@ -30,10 +32,25 @@ class LocationService {
   /// Continuous position stream while riding. Emits on ~5 m of movement.
   Stream<LatLng> positionStream() {
     return Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
+      locationSettings: _locationSettings,
+    ).map((p) => LatLng(p.latitude, p.longitude));
+  }
+
+  LocationSettings get _locationSettings {
+    if (Platform.isIOS) {
+      return AppleSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 5,
-      ),
-    ).map((p) => LatLng(p.latitude, p.longitude));
+        activityType: ActivityType.automotiveNavigation,
+        pauseLocationUpdatesAutomatically: false,
+        allowBackgroundLocationUpdates: true,
+        showBackgroundLocationIndicator: true,
+      );
+    }
+
+    return const LocationSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 5,
+    );
   }
 }

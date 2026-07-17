@@ -32,6 +32,8 @@
 	<string>Connect to the ESP32_NAV motorcycle navigation display.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Track your position while navigating in the background.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Track your position while navigating in the background.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Track your position to compute turn-by-turn directions.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

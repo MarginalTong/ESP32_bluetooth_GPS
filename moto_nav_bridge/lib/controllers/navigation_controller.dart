@@ -44,6 +44,12 @@ class NavigationController extends ChangeNotifier {
 
   NavigationEngine? _engine;
   StreamSubscription<LatLng>? _posSub;
+  bool _rerouting = false;
+  int _offRouteSamples = 0;
+  DateTime? _lastRerouteAt;
+
+  static const int _offRouteSamplesBeforeReroute = 3;
+  static const Duration _minRerouteInterval = Duration(seconds: 15);
 
   void _set(NavPhase p, {String? error}) {
     _phase = p;
@@ -88,6 +94,8 @@ class NavigationController extends ChangeNotifier {
     final engine = _engine;
     if (engine == null) return;
 
+    if (await _maybeReroute(pos)) return;
+
     final navState = engine.update(pos);
     _current = navState;
 
@@ -98,6 +106,52 @@ class NavigationController extends ChangeNotifier {
     }
 
     await ble.send(navState);
+  }
+
+  Future<bool> _maybeReroute(LatLng pos) async {
+    final engine = _engine;
+    final destination = _destination;
+    if (engine == null || destination == null || _rerouting) return false;
+
+    if (!engine.isOffRoute(pos)) {
+      _offRouteSamples = 0;
+      return false;
+    }
+
+    _offRouteSamples++;
+    if (_offRouteSamples < _offRouteSamplesBeforeReroute) return false;
+
+    final now = DateTime.now();
+    final last = _lastRerouteAt;
+    if (last != null && now.difference(last) < _minRerouteInterval) {
+      return false;
+    }
+
+    _rerouting = true;
+    _lastRerouteAt = now;
+    _offRouteSamples = 0;
+    _set(NavPhase.routing);
+
+    try {
+      final steps = await _directions.fetchRoute(
+        origin: pos,
+        destination: destination,
+      );
+      _origin = pos;
+      _engine = NavigationEngine(steps);
+      _set(NavPhase.navigating);
+
+      final navState = _engine!.update(pos);
+      _current = navState;
+      notifyListeners();
+      await ble.send(navState);
+      return true;
+    } catch (e) {
+      _set(NavPhase.navigating, error: '重新规划失败: $e');
+      return false;
+    } finally {
+      _rerouting = false;
+    }
   }
 
   void _onPositionError(Object e) {
@@ -124,6 +178,9 @@ class NavigationController extends ChangeNotifier {
     _current = null;
     _origin = null;
     _destination = null;
+    _rerouting = false;
+    _offRouteSamples = 0;
+    _lastRerouteAt = null;
     _set(NavPhase.idle);
   }
 

@@ -81,4 +81,22 @@ void main() {
     final state = engine.update(p2);
     expect(state.distanceMeters, greaterThanOrEqualTo(0));
   });
+
+  test('near the route is not off-route', () {
+    final engine = NavigationEngine(route());
+    expect(engine.isOffRoute(const LatLng(0.0004, 0.0001)), isFalse);
+  });
+
+  test('far from the route is off-route', () {
+    final engine = NavigationEngine(route());
+    expect(engine.isOffRoute(const LatLng(0.0004, 0.0020)), isTrue);
+  });
+
+  test('off-route check follows the remaining route after advancing', () {
+    final engine = NavigationEngine(route());
+    engine.update(p1);
+    expect(engine.currentStepIndex, 1);
+    expect(engine.isOffRoute(p0), isTrue);
+    expect(engine.isOffRoute(const LatLng(0.0015, 0.0)), isFalse);
+  });
 }

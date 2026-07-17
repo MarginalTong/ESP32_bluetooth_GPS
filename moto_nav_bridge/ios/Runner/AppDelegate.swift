@@ -195,6 +195,8 @@ private final class NavigationMapViewFactory: NSObject, FlutterPlatformViewFacto
 private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MKMapViewDelegate {
   private let mapView: MKMapView
   private var routeLine: MKPolyline?
+  private var destinationCoordinate: CLLocationCoordinate2D?
+  private var didRequestRoute = false
 
   init(frame: CGRect, args: [String: Any]?) {
     mapView = MKMapView(frame: frame)
@@ -225,6 +227,7 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       latitude: destinationLat,
       longitude: destinationLng
     )
+    destinationCoordinate = destination
     let annotation = MKPointAnnotation()
     annotation.coordinate = destination
     annotation.title = args["destinationName"] as? String ?? "目的地"
@@ -266,6 +269,9 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     from origin: CLLocationCoordinate2D,
     to destination: CLLocationCoordinate2D
   ) {
+    guard !didRequestRoute else { return }
+    didRequestRoute = true
+
     let request = MKDirections.Request()
     request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
     request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
@@ -280,6 +286,17 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       self.mapView.addOverlay(route.polyline)
       self.fitMap(to: [origin, destination], overlay: route.polyline)
     }
+  }
+
+  func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+    guard
+      let destination = destinationCoordinate,
+      !didRequestRoute,
+      let location = userLocation.location
+    else {
+      return
+    }
+    calculateRoute(from: location.coordinate, to: destination)
   }
 
   private func fitMap(to coordinates: [CLLocationCoordinate2D], overlay: MKOverlay? = nil) {
