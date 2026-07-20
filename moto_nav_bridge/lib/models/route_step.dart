@@ -10,8 +10,9 @@ class RouteStep {
     required this.start,
     required this.end,
     required this.distanceMeters,
+    List<LatLng>? geometry,
     this.rawManeuver,
-  });
+  }) : geometry = geometry ?? const [];
 
   final DeviceDirection direction;
 
@@ -23,6 +24,10 @@ class RouteStep {
 
   /// Google's reported length of this step in meters.
   final int distanceMeters;
+
+  /// Full route shape for this step. When unavailable, callers should fall back
+  /// to [start] -> [end].
+  final List<LatLng> geometry;
 
   /// The original Google `maneuver` string, kept for debugging/telemetry.
   final String? rawManeuver;

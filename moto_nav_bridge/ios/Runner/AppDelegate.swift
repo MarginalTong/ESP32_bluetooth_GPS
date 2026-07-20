@@ -4,6 +4,8 @@ import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  private var activeSearchCompleters: [SearchCompleter] = []
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -36,6 +38,8 @@ import UIKit
       return
     }
     switch call.method {
+    case "completePlaces":
+      completePlaces(args, result: result)
     case "searchPlaces":
       searchPlaces(args, result: result)
     case "drivingRoute":
@@ -43,6 +47,19 @@ import UIKit
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  private func completePlaces(_ args: [String: Any], result: @escaping FlutterResult) {
+    guard let query = args["query"] as? String, !query.isEmpty else {
+      result([])
+      return
+    }
+
+    let completer = SearchCompleter(result: result) { [weak self] completer in
+      self?.activeSearchCompleters.removeAll { $0 === completer }
+    }
+    activeSearchCompleters.append(completer)
+    completer.search(query)
   }
 
   private func searchPlaces(_ args: [String: Any], result: @escaping FlutterResult) {
@@ -55,11 +72,16 @@ import UIKit
     request.resultTypes = [.address, .pointOfInterest]
     MKLocalSearch(request: request).start { response, error in
       if let error {
-        result(FlutterError(
-          code: "SEARCH_FAILED",
-          message: error.localizedDescription,
-          details: nil
-        ))
+        let nsError = error as NSError
+        if nsError.domain == MKError.errorDomain && nsError.code == MKError.Code.placemarkNotFound.rawValue {
+          result([])
+        } else {
+          result(FlutterError(
+            code: "SEARCH_FAILED",
+            message: error.localizedDescription,
+            details: nil
+          ))
+        }
         return
       }
       let items = response?.mapItems.prefix(20).map { item -> [String: Any] in
@@ -145,6 +167,12 @@ import UIKit
           "endLongitude": end.longitude,
           "distance": Int(step.distance.rounded()),
           "instruction": step.instructions,
+          "coordinates": coordinates.map { coordinate in
+            [
+              "latitude": coordinate.latitude,
+              "longitude": coordinate.longitude,
+            ]
+          },
         ])
       }
       result(output)
@@ -175,6 +203,62 @@ import UIKit
     if amount >= 150 { return "UTURN" }
     if delta < 0 { return amount < 55 ? "BEAR_LEFT" : "LEFT" }
     return amount < 55 ? "BEAR_RIGHT" : "RIGHT"
+  }
+}
+
+private final class SearchCompleter: NSObject, MKLocalSearchCompleterDelegate {
+  private let flutterResult: FlutterResult
+  private let onFinish: (SearchCompleter) -> Void
+  private let completer = MKLocalSearchCompleter()
+  private var didFinish = false
+
+  init(
+    result: @escaping FlutterResult,
+    onFinish: @escaping (SearchCompleter) -> Void
+  ) {
+    flutterResult = result
+    self.onFinish = onFinish
+    super.init()
+    completer.delegate = self
+    completer.resultTypes = [.address, .pointOfInterest]
+  }
+
+  func search(_ query: String) {
+    completer.queryFragment = query
+  }
+
+  func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+    guard !didFinish else { return }
+    didFinish = true
+
+    let items = completer.results.prefix(12).map { item -> [String: Any] in
+      [
+        "title": item.title,
+        "subtitle": item.subtitle,
+      ]
+    }
+    flutterResult(items)
+    onFinish(self)
+  }
+
+  func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+    guard !didFinish else { return }
+    didFinish = true
+
+    let nsError = error as NSError
+    if nsError.domain == MKError.errorDomain &&
+      nsError.code == MKError.Code.placemarkNotFound.rawValue {
+      flutterResult([])
+      onFinish(self)
+      return
+    }
+
+    flutterResult(FlutterError(
+      code: "COMPLETE_FAILED",
+      message: error.localizedDescription,
+      details: nil
+    ))
+    onFinish(self)
   }
 }
 

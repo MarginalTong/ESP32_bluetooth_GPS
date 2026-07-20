@@ -31,6 +31,8 @@ class NavigationEngine {
   /// be off-route. This is intentionally conservative to tolerate GPS drift,
   /// multi-lane roads, and simplified route geometry.
   static const double offRouteThresholdMeters = 60.0;
+  static const double routePreviewDistanceMeters = 100.0;
+  static const int routePreviewMaxPoints = 6;
 
   int get currentStepIndex => _index;
   int get stepCount => _steps.length;
@@ -76,6 +78,7 @@ class NavigationEngine {
     return NavState(
       direction: dir,
       distanceMeters: dist < 0 ? 0 : dist,
+      routePreviewPoints: _routePreviewPoints(position),
     );
   }
 
@@ -90,11 +93,13 @@ class NavigationEngine {
   double distanceFromRouteMeters(LatLng position) {
     var best = double.infinity;
     for (var i = _index; i < _steps.length; i++) {
-      final step = _steps[i];
-      best = math.min(
-        best,
-        _distanceToSegmentMeters(position, step.start, step.end),
-      );
+      final points = _geometryForStep(_steps[i]);
+      for (var j = 0; j < points.length - 1; j++) {
+        best = math.min(
+          best,
+          _distanceToSegmentMeters(position, points[j], points[j + 1]),
+        );
+      }
     }
     return best;
   }
@@ -122,5 +127,170 @@ class NavigationEngine {
     return math.sqrt(dx * dx + dy * dy);
   }
 
+  List<int> _routePreviewPoints(LatLng position) {
+    const left = 82;
+    const top = 10;
+    const right = 124;
+    const bottom = 52;
+    const centerX = 103;
+
+    final remaining = _remainingRoutePoints();
+    if (remaining.length < 2) return const [];
+
+    final closest = _closestSegment(position, remaining);
+    if (closest == null) return const [];
+
+    final route = <LatLng>[closest.projected];
+    var travelled = 0.0;
+    var cursor = closest.projected;
+
+    for (var i = closest.segmentIndex; i < remaining.length - 1; i++) {
+      final target = remaining[i + 1];
+      final segmentLength = cursor.distanceTo(target);
+      if (segmentLength <= 0) continue;
+
+      if (travelled + segmentLength >= routePreviewDistanceMeters) {
+        final t = (routePreviewDistanceMeters - travelled) / segmentLength;
+        route.add(_interpolate(cursor, target, t));
+        break;
+      }
+
+      route.add(target);
+      travelled += segmentLength;
+      cursor = target;
+    }
+
+    if (route.length < 2) return const [];
+
+    final heading = _bearingRadians(route[0], route[1]);
+    const latScale = 111320.0;
+    final lngScale =
+        latScale * math.cos(_toRad(route[0].latitude).clamp(-1.4, 1.4));
+    const scale = (bottom - top) / routePreviewDistanceMeters;
+
+    final screen = <({int x, int y})>[];
+    for (final point in route) {
+      final east = (point.longitude - route[0].longitude) * lngScale;
+      final north = (point.latitude - route[0].latitude) * latScale;
+
+      final forward = east * math.sin(heading) + north * math.cos(heading);
+      final lateral = east * math.cos(heading) - north * math.sin(heading);
+
+      final x = (centerX + lateral * scale).round().clamp(left, right);
+      final y = (bottom - forward * scale).round().clamp(top, bottom);
+
+      if (screen.isEmpty || screen.last.x != x || screen.last.y != y) {
+        screen.add((x: x, y: y));
+      }
+    }
+
+    final sampled = _sampleScreenPoints(screen, routePreviewMaxPoints);
+    if (sampled.length < 2) return const [];
+
+    return [
+      for (final point in sampled) ...[point.x, point.y],
+    ];
+  }
+
+  List<LatLng> _remainingRoutePoints() {
+    final output = <LatLng>[];
+    for (var i = _index; i < _steps.length; i++) {
+      for (final point in _geometryForStep(_steps[i])) {
+        if (output.isEmpty || output.last.distanceTo(point) > 0.5) {
+          output.add(point);
+        }
+      }
+    }
+    return output;
+  }
+
+  List<LatLng> _geometryForStep(RouteStep step) =>
+      step.geometry.length >= 2 ? step.geometry : [step.start, step.end];
+
+  _ClosestSegment? _closestSegment(LatLng position, List<LatLng> points) {
+    _ClosestSegment? best;
+    for (var i = 0; i < points.length - 1; i++) {
+      final projection = _projectToSegment(position, points[i], points[i + 1]);
+      if (best == null || projection.distanceMeters < best.distanceMeters) {
+        best = _ClosestSegment(
+          segmentIndex: i,
+          projected: projection.projected,
+          distanceMeters: projection.distanceMeters,
+        );
+      }
+    }
+    return best;
+  }
+
+  static _SegmentProjection _projectToSegment(LatLng p, LatLng a, LatLng b) {
+    const latScale = 111320.0;
+    final lngScale = latScale * math.cos(_toRad((a.latitude + b.latitude) / 2));
+
+    final px = (p.longitude - a.longitude) * lngScale;
+    final py = (p.latitude - a.latitude) * latScale;
+    final bx = (b.longitude - a.longitude) * lngScale;
+    final by = (b.latitude - a.latitude) * latScale;
+
+    final lengthSquared = bx * bx + by * by;
+    if (lengthSquared == 0) {
+      return _SegmentProjection(projected: a, distanceMeters: p.distanceTo(a));
+    }
+
+    final t = ((px * bx + py * by) / lengthSquared).clamp(0.0, 1.0);
+    final projected = _interpolate(a, b, t);
+    return _SegmentProjection(
+      projected: projected,
+      distanceMeters: p.distanceTo(projected),
+    );
+  }
+
+  static LatLng _interpolate(LatLng a, LatLng b, double t) => LatLng(
+        a.latitude + (b.latitude - a.latitude) * t,
+        a.longitude + (b.longitude - a.longitude) * t,
+      );
+
+  static double _bearingRadians(LatLng a, LatLng b) {
+    final lat1 = _toRad(a.latitude);
+    final lat2 = _toRad(b.latitude);
+    final deltaLongitude = _toRad(b.longitude - a.longitude);
+    final y = math.sin(deltaLongitude) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(deltaLongitude);
+    return math.atan2(y, x);
+  }
+
+  static List<({int x, int y})> _sampleScreenPoints(
+    List<({int x, int y})> points,
+    int maxPoints,
+  ) {
+    if (points.length <= maxPoints) return points;
+    return [
+      for (var i = 0; i < maxPoints; i++)
+        points[((points.length - 1) * i / (maxPoints - 1)).round()],
+    ];
+  }
+
   static double _toRad(double deg) => deg * math.pi / 180.0;
+}
+
+class _ClosestSegment {
+  const _ClosestSegment({
+    required this.segmentIndex,
+    required this.projected,
+    required this.distanceMeters,
+  });
+
+  final int segmentIndex;
+  final LatLng projected;
+  final double distanceMeters;
+}
+
+class _SegmentProjection {
+  const _SegmentProjection({
+    required this.projected,
+    required this.distanceMeters,
+  });
+
+  final LatLng projected;
+  final double distanceMeters;
 }

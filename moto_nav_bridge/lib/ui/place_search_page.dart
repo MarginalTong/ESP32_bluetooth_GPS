@@ -17,7 +17,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   final _service = AppleMapsService();
   Timer? _debounce;
   List<PlaceResult> _results = const [];
+  List<PlaceSuggestion> _suggestions = const [];
   bool _loading = false;
+  bool _resolving = false;
   String? _error;
   int _requestId = 0;
 
@@ -33,29 +35,97 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
     if (value.trim().isEmpty) {
       setState(() {
         _results = const [];
+        _suggestions = const [];
         _error = null;
         _loading = false;
       });
       return;
     }
-    _debounce = Timer(const Duration(milliseconds: 350), () => _search(value));
+    _debounce =
+        Timer(const Duration(milliseconds: 250), () => _complete(value));
   }
 
-  Future<void> _search(String value) async {
+  Future<void> _complete(String value) async {
     final id = ++_requestId;
+    final query = value.trim();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final results = await _service.search(value);
+      final suggestions = await _service.complete(query);
       if (!mounted || id != _requestId) return;
-      setState(() => _results = results);
-    } catch (e) {
+      if (suggestions.isEmpty) {
+        await _searchExact(query, id, showErrorWhenEmpty: false);
+        return;
+      }
+      setState(() {
+        _suggestions = suggestions;
+        _results = const [];
+      });
+    } catch (_) {
       if (!mounted || id != _requestId) return;
-      setState(() => _error = e.toString());
+      await _searchExact(query, id, showErrorWhenEmpty: false);
     } finally {
       if (mounted && id == _requestId) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _search(String value) async {
+    final id = ++_requestId;
+    final query = value.trim();
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    await _searchExact(query, id, showErrorWhenEmpty: true);
+    if (mounted && id == _requestId) setState(() => _loading = false);
+  }
+
+  Future<void> _searchExact(
+    String query,
+    int id, {
+    required bool showErrorWhenEmpty,
+  }) async {
+    if (query.isEmpty) return;
+    try {
+      final results = await _service.search(query);
+      if (!mounted || id != _requestId) return;
+      setState(() {
+        _results = results;
+        _suggestions = const [];
+        if (results.isEmpty) {
+          _error = showErrorWhenEmpty ? '没找到匹配地点，换个关键词试试' : null;
+        }
+      });
+    } catch (e) {
+      if (!mounted || id != _requestId) return;
+      setState(() {
+        _results = const [];
+        _suggestions = const [];
+        _error = showErrorWhenEmpty ? '没找到匹配地点，换个关键词试试' : null;
+      });
+    }
+  }
+
+  Future<void> _selectSuggestion(PlaceSuggestion suggestion) async {
+    setState(() {
+      _resolving = true;
+      _error = null;
+    });
+    try {
+      final place = await _service.resolveSuggestion(suggestion);
+      if (!mounted) return;
+      if (place == null) {
+        setState(() => _error = '这个候选没有可导航坐标，换一个试试');
+        return;
+      }
+      Navigator.pop(context, place);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = '这个候选没有可导航坐标，换一个试试');
+    } finally {
+      if (mounted) setState(() => _resolving = false);
     }
   }
 
@@ -71,6 +141,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               controller: _controller,
               autofocus: true,
               onChanged: _changed,
+              onSubmitted: _search,
               textInputAction: TextInputAction.search,
               decoration: const InputDecoration(
                 hintText: '输入地点、地址或商家名称',
@@ -78,7 +149,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               ),
             ),
           ),
-          if (_loading) const LinearProgressIndicator(minHeight: 2),
+          if (_loading || _resolving)
+            const LinearProgressIndicator(minHeight: 2),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(20),
@@ -88,27 +160,54 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               ),
             ),
           Expanded(
-            child: _results.isEmpty && !_loading && _error == null
+            child: _results.isEmpty &&
+                    _suggestions.isEmpty &&
+                    !_loading &&
+                    _error == null
                 ? const _SearchHint()
-                : ListView.separated(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: _results.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final place = _results[index];
-                      return ListTile(
-                        leading: const Icon(Icons.location_on_outlined),
-                        title: Text(place.name),
-                        subtitle: Text(
-                          place.address,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: () => Navigator.pop(context, place),
-                      );
-                    },
-                  ),
+                : _suggestions.isNotEmpty
+                    ? ListView.separated(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemCount: _suggestions.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final suggestion = _suggestions[index];
+                          return ListTile(
+                            leading: const Icon(Icons.search_rounded),
+                            title: Text(suggestion.title),
+                            subtitle: suggestion.subtitle.isEmpty
+                                ? null
+                                : Text(
+                                    suggestion.subtitle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: _resolving
+                                ? null
+                                : () => _selectSuggestion(suggestion),
+                          );
+                        },
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemCount: _results.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final place = _results[index];
+                          return ListTile(
+                            leading: const Icon(Icons.location_on_outlined),
+                            title: Text(place.name),
+                            subtitle: Text(
+                              place.address,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: () => Navigator.pop(context, place),
+                          );
+                        },
+                      ),
           ),
         ],
       ),

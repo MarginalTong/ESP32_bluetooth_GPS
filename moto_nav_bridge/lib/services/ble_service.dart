@@ -90,8 +90,13 @@ class BleService extends ChangeNotifier {
 
     final cached = await _findSystemDevice();
     if (cached != null) {
-      await _connectTo(cached);
-      return;
+      final connected = await _connectTo(cached);
+      if (connected) return;
+      // iOS can hand us a stale CoreBluetooth device after the app was killed
+      // or the ESP32 restarted. If that direct reconnect fails, fall through
+      // to a fresh scan instead of leaving the app stuck until the cable/power
+      // is cycled.
+      await Future<void>.delayed(const Duration(milliseconds: 300));
     }
 
     _setState(BleConnectionState.scanning);
@@ -173,7 +178,7 @@ class BleService extends ChangeNotifier {
     _scanSub = null;
   }
 
-  Future<void> _connectTo(BluetoothDevice device) async {
+  Future<bool> _connectTo(BluetoothDevice device) async {
     _device = device;
     _setState(BleConnectionState.connecting);
 
@@ -200,15 +205,18 @@ class BleService extends ChangeNotifier {
         orElse: () => throw Exception('Characteristic not found on device'),
       );
       _setState(BleConnectionState.connected);
+      return true;
     } catch (e) {
       try {
         await device.disconnect(queue: false);
       } catch (_) {
         // Best effort cleanup after a failed iOS CoreBluetooth connect.
       }
+      _device = null;
       _characteristic = null;
       _throttle.reset();
       _setState(BleConnectionState.disconnected, error: 'Connect failed: $e');
+      return false;
     }
   }
 
@@ -221,6 +229,7 @@ class BleService extends ChangeNotifier {
     } catch (e) {
       if (kDebugMode) debugPrint('Disconnect failed: $e');
     }
+    _device = null;
     _characteristic = null;
     _throttle.reset();
     _setState(BleConnectionState.disconnected);
@@ -238,8 +247,17 @@ class BleService extends ChangeNotifier {
     if (!_throttle.shouldSend(state, now)) return false;
 
     try {
+      var wire = state.toWire();
+      // Keep BLE robust: if the optional route preview makes a packet too long
+      // for a specific phone/ESP32 connection, fall back to the original
+      // direction+distance contract instead of failing the whole update.
+      if (utf8.encode(wire).length > 180 &&
+          state.routePreviewPoints.isNotEmpty) {
+        wire = state.copyWith(routePreviewPoints: const []).toWire();
+      }
+
       await ch.write(
-        utf8.encode(state.toWire()),
+        utf8.encode(wire),
         withoutResponse: BleConstants.writeWithoutResponse,
       );
       _throttle.markSent(state, now);
@@ -248,6 +266,22 @@ class BleService extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
+      if (state.routePreviewPoints.isNotEmpty) {
+        try {
+          await ch.write(
+            utf8.encode(state.copyWith(routePreviewPoints: const []).toWire()),
+            withoutResponse: BleConstants.writeWithoutResponse,
+          );
+          _throttle.markSent(state, now);
+          _lastSent = state.copyWith(routePreviewPoints: const []);
+          _lastError = null;
+          notifyListeners();
+          return true;
+        } catch (_) {
+          // Report the original write error below; it is usually more useful.
+        }
+      }
+
       _lastError = 'Write failed: $e';
       if (kDebugMode) debugPrint(_lastError);
       notifyListeners();

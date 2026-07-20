@@ -13,8 +13,45 @@ class AppleMapsException implements Exception {
   String toString() => message;
 }
 
+class PlaceSuggestion {
+  const PlaceSuggestion({
+    required this.title,
+    required this.subtitle,
+  });
+
+  final String title;
+  final String subtitle;
+
+  String get query => [title, subtitle]
+      .where((part) => part.trim().isNotEmpty)
+      .join(' ')
+      .trim();
+
+  factory PlaceSuggestion.fromMap(Map<Object?, Object?> map) => PlaceSuggestion(
+        title: map['title'] as String? ?? '',
+        subtitle: map['subtitle'] as String? ?? '',
+      );
+}
+
 class AppleMapsService {
   static const _channel = MethodChannel('moto_nav_bridge/apple_maps');
+
+  Future<List<PlaceSuggestion>> complete(String query) async {
+    final text = query.trim();
+    if (text.length < 2) return const [];
+    try {
+      final raw = await _channel
+          .invokeListMethod<Object?>('completePlaces', {'query': text});
+      return (raw ?? const [])
+          .map((item) => PlaceSuggestion.fromMap(
+                Map<Object?, Object?>.from(item! as Map),
+              ))
+          .where((item) => item.title.trim().isNotEmpty)
+          .toList(growable: false);
+    } on PlatformException catch (e) {
+      throw AppleMapsException(e.message ?? '地点联想失败');
+    }
+  }
 
   Future<List<PlaceResult>> search(String query) async {
     final text = query.trim();
@@ -32,6 +69,13 @@ class AppleMapsService {
     }
   }
 
+  Future<PlaceResult?> resolveSuggestion(PlaceSuggestion suggestion) async {
+    final query = suggestion.query;
+    if (query.isEmpty) return null;
+    final results = await search(query);
+    return results.isEmpty ? null : results.first;
+  }
+
   Future<List<RouteStep>> fetchRoute({
     required LatLng origin,
     required LatLng destination,
@@ -46,6 +90,14 @@ class AppleMapsService {
       final result = <RouteStep>[];
       for (final item in raw ?? const []) {
         final map = Map<Object?, Object?>.from(item! as Map);
+        final coordinates =
+            (map['coordinates'] as List<Object?>? ?? const []).map((item) {
+          final point = Map<Object?, Object?>.from(item! as Map);
+          return LatLng(
+            (point['latitude'] as num).toDouble(),
+            (point['longitude'] as num).toDouble(),
+          );
+        }).toList(growable: false);
         result.add(RouteStep(
           direction: _direction(map['direction'] as String?),
           start: LatLng(
@@ -57,6 +109,7 @@ class AppleMapsService {
             (map['endLongitude'] as num).toDouble(),
           ),
           distanceMeters: (map['distance'] as num).round(),
+          geometry: coordinates,
           rawManeuver: map['instruction'] as String?,
         ));
       }

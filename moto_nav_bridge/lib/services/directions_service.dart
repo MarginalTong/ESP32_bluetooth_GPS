@@ -114,6 +114,8 @@ class DirectionsService {
       final endLoc = step['end_location'] as Map<String, dynamic>;
       final distance = step['distance'] as Map<String, dynamic>?;
       final maneuver = step['maneuver'] as String?;
+      final polyline = step['polyline'] as Map<String, dynamic>?;
+      final encodedPolyline = polyline?['points'] as String?;
 
       result.add(RouteStep(
         direction: ManeuverMapper.fromGoogle(maneuver),
@@ -126,11 +128,57 @@ class DirectionsService {
           (endLoc['lng'] as num).toDouble(),
         ),
         distanceMeters: (distance?['value'] as num?)?.round() ?? 0,
+        geometry:
+            encodedPolyline == null ? null : _decodePolyline(encodedPolyline),
         rawManeuver: maneuver,
       ));
     }
     return result;
   }
 
+  static List<LatLng> _decodePolyline(String encoded) {
+    final points = <LatLng>[];
+    var index = 0;
+    var latitude = 0;
+    var longitude = 0;
+
+    while (index < encoded.length) {
+      final latResult = _decodePolylineValue(encoded, index);
+      index = latResult.nextIndex;
+      latitude += latResult.delta;
+
+      final lngResult = _decodePolylineValue(encoded, index);
+      index = lngResult.nextIndex;
+      longitude += lngResult.delta;
+
+      points.add(LatLng(latitude / 1E5, longitude / 1E5));
+    }
+
+    return points;
+  }
+
+  static _PolylineValue _decodePolylineValue(String encoded, int startIndex) {
+    var index = startIndex;
+    var shift = 0;
+    var result = 0;
+    int byte;
+
+    do {
+      byte = encoded.codeUnitAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+
+    final delta = (result & 1) != 0 ? ~(result >> 1) : result >> 1;
+    return _PolylineValue(delta, index);
+  }
+
   void dispose() => _client.close();
+}
+
+class _PolylineValue {
+  const _PolylineValue(this.delta, this.nextIndex);
+
+  final int delta;
+  final int nextIndex;
 }
