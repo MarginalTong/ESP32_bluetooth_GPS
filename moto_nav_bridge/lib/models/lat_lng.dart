@@ -18,7 +18,10 @@ class LatLng {
     final lat2 = _toRad(other.latitude);
 
     final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.sin(dLng / 2) * math.sin(dLng / 2) * math.cos(lat1) * math.cos(lat2);
+        math.sin(dLng / 2) *
+            math.sin(dLng / 2) *
+            math.cos(lat1) *
+            math.cos(lat2);
     final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
     return earthRadiusMeters * c;
   }

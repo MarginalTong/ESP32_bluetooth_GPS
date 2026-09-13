@@ -9,8 +9,9 @@ import 'dart:math' as math;
 /// Turn-by-turn model: while traversing step `i` toward its `end`, the rider is
 /// told what they will do *at* that end — i.e. the next step's maneuver — with
 /// the distance remaining to that point ("in 200 m, turn left"). On the final
-/// step the direction is [DeviceDirection.arrived] and the distance counts down
-/// to the destination.
+/// step the rider is told to keep going until they are actually within the
+/// arrival threshold. [DeviceDirection.arrived] is emitted only at the
+/// destination, not merely because the route has reached its final leg.
 ///
 /// This class is pure Dart (takes plain [LatLng]s), so it is fully unit-testable
 /// without the geolocator plugin.
@@ -36,6 +37,7 @@ class NavigationEngine {
 
   int get currentStepIndex => _index;
   int get stepCount => _steps.length;
+  LatLng get currentTarget => _steps[_index].end;
   bool get isFinished =>
       _index >= _steps.length - 1 &&
       _distanceToStepEnd(_steps.last, _lastKnown) != null &&
@@ -68,12 +70,14 @@ class NavigationEngine {
     final target = _steps[_index].end;
     final dist = position.distanceTo(target).round();
 
-    // On the last step we are heading to the destination -> ARRIVED.
     // Otherwise show the maneuver performed at the current step's end, which is
-    // the next step's mapped direction.
-    final DeviceDirection dir = (_index + 1 < n)
-        ? _steps[_index + 1].direction
-        : DeviceDirection.arrived;
+    // the next step's mapped direction. On the final leg, keep showing a
+    // forward instruction until the rider is actually at the destination.
+    final DeviceDirection dir = (_index >= n - 1)
+        ? (dist <= arrivalThresholdMeters
+            ? DeviceDirection.arrived
+            : DeviceDirection.up)
+        : _steps[_index + 1].direction;
 
     return NavState(
       direction: dir,
@@ -127,12 +131,15 @@ class NavigationEngine {
     return math.sqrt(dx * dx + dy * dy);
   }
 
+  List<LatLng> _geometryForStep(RouteStep step) =>
+      step.geometry.length >= 2 ? step.geometry : [step.start, step.end];
+
   List<int> _routePreviewPoints(LatLng position) {
-    const left = 82;
-    const top = 10;
-    const right = 124;
-    const bottom = 52;
-    const centerX = 103;
+    const left = 18;
+    const top = 2;
+    const right = 110;
+    const bottom = 34;
+    const centerX = 64;
 
     final remaining = _remainingRoutePoints();
     if (remaining.length < 2) return const [];
@@ -203,9 +210,6 @@ class NavigationEngine {
     }
     return output;
   }
-
-  List<LatLng> _geometryForStep(RouteStep step) =>
-      step.geometry.length >= 2 ? step.geometry : [step.start, step.end];
 
   _ClosestSegment? _closestSegment(LatLng position, List<LatLng> points) {
     _ClosestSegment? best;

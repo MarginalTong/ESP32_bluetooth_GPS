@@ -15,8 +15,10 @@
 constexpr uint8_t SCREEN_WIDTH = 128;
 constexpr uint8_t SCREEN_HEIGHT = 64;
 constexpr int8_t OLED_RESET_PIN = -1;
-constexpr uint8_t I2C_SDA_PIN = 21;
-constexpr uint8_t I2C_SCL_PIN = 22;
+// ESP32-C3 wiring currently used:
+// OLED SDA -> GPIO4, OLED SCL -> GPIO5.
+constexpr uint8_t I2C_SDA_PIN = 4;
+constexpr uint8_t I2C_SCL_PIN = 5;
 constexpr uint8_t OLED_I2C_ADDRESS_PRIMARY = 0x3C;
 constexpr uint8_t OLED_I2C_ADDRESS_FALLBACK = 0x3D;
 constexpr uint8_t OLED_CONTRAST_NORMAL = 0xCF;
@@ -106,7 +108,7 @@ uint8_t routePreviewPointCount = 0;
 uint32_t lastLivePacketMs = 0;
 bool hasReceivedNavPacket = false;
 uint32_t rejectedPacketCount = 0;
-char lastError[32] = "";
+char lastError[48] = "";
 
 struct DemoStep {
   Direction direction;
@@ -124,6 +126,16 @@ const DemoStep demoRoute[] = {
 };
 
 size_t demoStepIndex = 0;
+
+// Arduino's .ino preprocessor sometimes generates function prototypes before
+// custom enum classes are declared, which breaks types like Direction and
+// DisplayPowerState. Keep explicit prototypes here so the generated sketch
+// compiles reliably in Arduino IDE.
+Direction parseDirection(const char* value);
+const char* directionName(Direction direction);
+void setDisplayPower(DisplayPowerState state);
+void drawDirection(Direction direction);
+void drawMiniRouteMap();
 
 // ======================================================
 // Direction helpers
@@ -167,6 +179,11 @@ const char* directionName(Direction direction) {
 
 void setLastError(const char* message) {
   strlcpy(lastError, message, sizeof(lastError));
+}
+
+void setBadDirectionError(const char* value) {
+  snprintf(lastError, sizeof(lastError), "bad:%.24s",
+           value == nullptr ? "" : value);
 }
 
 bool isLiveFresh() {
@@ -283,9 +300,11 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     Direction direction = parseDirection(dirText);
     if (direction == Direction::Unknown) {
       rejectedPacketCount++;
-      setLastError("bad dir");
+      setBadDirectionError(dirText);
       Serial.print("[BLE] Unknown dir: ");
       Serial.println(dirText);
+      Serial.print("[BLE] Raw: ");
+      Serial.println(value);
       return;
     }
 
@@ -332,6 +351,9 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
 
 void setupBle() {
   BLEDevice::init(DEVICE_NAME);
+  // Stability first: use positive TX power so the phone can rediscover the
+  // device reliably after power switch cycles and app backgrounding.
+  BLEDevice::setPower(ESP_PWR_LVL_P3);
 
   bleServer = BLEDevice::createServer();
   bleServer->setCallbacks(new ServerCallbacks());
@@ -357,86 +379,79 @@ void setupBle() {
 // Drawing
 // ======================================================
 
-int16_t drawOffsetX = 0;
-int16_t drawOffsetY = 0;
-
 void drawThickLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
-  x0 += drawOffsetX;
-  y0 += drawOffsetY;
-  x1 += drawOffsetX;
-  y1 += drawOffsetY;
-
   display.drawLine(x0, y0, x1, y1, OLED_WHITE);
-  display.drawLine(x0 - 1, y0, x1 - 1, y1, OLED_WHITE);
-  display.drawLine(x0 + 1, y0, x1 + 1, y1, OLED_WHITE);
-  display.drawLine(x0, y0 - 1, x1, y1 - 1, OLED_WHITE);
-  display.drawLine(x0, y0 + 1, x1, y1 + 1, OLED_WHITE);
+  if (abs(x1 - x0) > abs(y1 - y0)) {
+    display.drawLine(x0, y0 - 1, x1, y1 - 1, OLED_WHITE);
+    display.drawLine(x0, y0 + 1, x1, y1 + 1, OLED_WHITE);
+  } else {
+    display.drawLine(x0 - 1, y0, x1 - 1, y1, OLED_WHITE);
+    display.drawLine(x0 + 1, y0, x1 + 1, y1, OLED_WHITE);
+  }
 }
 
 void drawArrowUp() {
-  drawThickLine(64, 52, 64, 18);
-  drawThickLine(64, 18, 54, 28);
-  drawThickLine(64, 18, 74, 28);
+  drawThickLine(38, 58, 38, 40);
+  drawThickLine(38, 40, 30, 48);
+  drawThickLine(38, 40, 46, 48);
 }
 
 void drawArrowLeft() {
   // Turn-left instruction: ride forward, then bend left.
-  drawThickLine(72, 52, 72, 40);
-  drawThickLine(72, 40, 66, 32);
-  drawThickLine(66, 32, 56, 28);
-  drawThickLine(56, 28, 36, 28);
-  drawThickLine(36, 28, 50, 18);
-  drawThickLine(36, 28, 50, 38);
+  drawThickLine(50, 58, 50, 51);
+  drawThickLine(50, 51, 44, 45);
+  drawThickLine(44, 45, 24, 45);
+  drawThickLine(24, 45, 36, 37);
+  drawThickLine(24, 45, 36, 53);
 }
 
 void drawArrowRight() {
   // Turn-right instruction: ride forward, then bend right.
-  drawThickLine(56, 52, 56, 40);
-  drawThickLine(56, 40, 62, 32);
-  drawThickLine(62, 32, 72, 28);
-  drawThickLine(72, 28, 92, 28);
-  drawThickLine(92, 28, 78, 18);
-  drawThickLine(92, 28, 78, 38);
+  drawThickLine(26, 58, 26, 51);
+  drawThickLine(26, 51, 32, 45);
+  drawThickLine(32, 45, 52, 45);
+  drawThickLine(52, 45, 40, 37);
+  drawThickLine(52, 45, 40, 53);
 }
 
 void drawBearLeft() {
-  drawThickLine(64, 50, 64, 12);
-  drawThickLine(64, 12, 56, 20);
-  drawThickLine(64, 12, 72, 20);
-  drawThickLine(64, 30, 42, 18);
-  drawThickLine(42, 18, 46, 18);
-  drawThickLine(42, 18, 42, 22);
+  drawThickLine(42, 58, 42, 40);
+  drawThickLine(42, 40, 34, 48);
+  drawThickLine(42, 40, 50, 48);
+  drawThickLine(42, 50, 26, 40);
+  drawThickLine(26, 40, 31, 40);
+  drawThickLine(26, 40, 26, 45);
 }
 
 void drawBearRight() {
-  drawThickLine(64, 50, 64, 12);
-  drawThickLine(64, 12, 56, 20);
-  drawThickLine(64, 12, 72, 20);
-  drawThickLine(64, 30, 86, 18);
-  drawThickLine(86, 18, 82, 18);
-  drawThickLine(86, 18, 86, 22);
+  drawThickLine(34, 58, 34, 40);
+  drawThickLine(34, 40, 26, 48);
+  drawThickLine(34, 40, 42, 48);
+  drawThickLine(34, 50, 50, 40);
+  drawThickLine(50, 40, 45, 40);
+  drawThickLine(50, 40, 50, 45);
 }
 
 void drawUTurn() {
-  drawThickLine(64, 52, 64, 24);
-  drawThickLine(64, 24, 40, 24);
-  drawThickLine(40, 24, 40, 42);
-  drawThickLine(40, 42, 30, 32);
-  drawThickLine(40, 42, 50, 32);
+  drawThickLine(50, 58, 50, 42);
+  drawThickLine(50, 42, 28, 42);
+  drawThickLine(28, 42, 28, 54);
+  drawThickLine(28, 54, 20, 46);
+  drawThickLine(28, 54, 36, 46);
 }
 
 void drawStop() {
-  display.fillRect(44 + drawOffsetX, 16 + drawOffsetY, 40, 40, OLED_WHITE);
+  display.fillRect(24, 40, 28, 20, OLED_WHITE);
 }
 
 void drawArrived() {
-  drawThickLine(30, 36, 52, 54);
-  drawThickLine(52, 54, 94, 18);
+  drawThickLine(20, 50, 32, 60);
+  drawThickLine(32, 60, 56, 38);
 }
 
 void drawUnknown() {
   display.setTextSize(1);
-  display.setCursor(38 + drawOffsetX, 28 + drawOffsetY);
+  display.setCursor(38, 28);
   display.println("UNKNOWN");
 }
 
@@ -472,105 +487,46 @@ void drawDirection(Direction direction) {
   }
 }
 
-void drawDirectionAt(Direction direction, int16_t offsetX, int16_t offsetY) {
-  const int16_t previousOffsetX = drawOffsetX;
-  const int16_t previousOffsetY = drawOffsetY;
-  drawOffsetX = offsetX;
-  drawOffsetY = offsetY;
-  drawDirection(direction);
-  drawOffsetX = previousOffsetX;
-  drawOffsetY = previousOffsetY;
-}
+void drawMiniRouteMap() {
+  if (routePreviewPointCount < 2) return;
 
-void drawMiniRouteMap(Direction direction) {
-  constexpr int16_t left = 82;
-  constexpr int16_t top = 10;
-  constexpr int16_t right = 124;
-  constexpr int16_t bottom = 52;
-  constexpr int16_t centerX = 103;
-
-  display.drawRect(left - 3, top - 3, right - left + 7, bottom - top + 7,
-                   OLED_WHITE);
-
-  if (routePreviewPointCount >= 2) {
-    for (uint8_t i = 0; i + 1 < routePreviewPointCount; i++) {
-      display.drawLine(routePreviewPoints[i].x, routePreviewPoints[i].y,
-                       routePreviewPoints[i + 1].x,
-                       routePreviewPoints[i + 1].y, OLED_WHITE);
-    }
-    display.fillTriangle(centerX, bottom - 8, centerX - 4, bottom,
-                         centerX + 4, bottom, OLED_WHITE);
-    return;
+  for (uint8_t i = 0; i + 1 < routePreviewPointCount; i++) {
+    display.drawLine(routePreviewPoints[i].x, routePreviewPoints[i].y,
+                     routePreviewPoints[i + 1].x,
+                     routePreviewPoints[i + 1].y, OLED_WHITE);
   }
 
-  switch (direction) {
-    case Direction::Left:
-      display.drawLine(centerX, bottom, centerX, 35, OLED_WHITE);
-      display.drawLine(centerX, 35, 95, 28, OLED_WHITE);
-      display.drawLine(95, 28, left, 28, OLED_WHITE);
-      display.drawLine(centerX, 42, right - 2, 42, OLED_WHITE);
-      break;
-    case Direction::Right:
-      display.drawLine(centerX, bottom, centerX, 35, OLED_WHITE);
-      display.drawLine(centerX, 35, 111, 28, OLED_WHITE);
-      display.drawLine(111, 28, right, 28, OLED_WHITE);
-      display.drawLine(centerX, 42, left + 2, 42, OLED_WHITE);
-      break;
-    case Direction::BearLeft:
-      display.drawLine(centerX, bottom, centerX, 34, OLED_WHITE);
-      display.drawLine(centerX, 34, 92, top, OLED_WHITE);
-      display.drawLine(centerX, 31, right - 2, 23, OLED_WHITE);
-      break;
-    case Direction::BearRight:
-      display.drawLine(centerX, bottom, centerX, 34, OLED_WHITE);
-      display.drawLine(centerX, 34, 114, top, OLED_WHITE);
-      display.drawLine(centerX, 31, left + 2, 23, OLED_WHITE);
-      break;
-    case Direction::UTurn:
-      display.drawLine(centerX, bottom, centerX, 24, OLED_WHITE);
-      display.drawLine(centerX, 24, 90, 24, OLED_WHITE);
-      display.drawLine(90, 24, 90, 43, OLED_WHITE);
-      break;
-    case Direction::Arrived:
-      display.drawLine(88, 35, 99, 46, OLED_WHITE);
-      display.drawLine(99, 46, 120, 18, OLED_WHITE);
-      break;
-    case Direction::Up:
-    default:
-      display.drawLine(centerX, bottom, centerX, top, OLED_WHITE);
-      display.drawLine(centerX, 31, left + 2, 31, OLED_WHITE);
-      display.drawLine(centerX, 22, right - 2, 22, OLED_WHITE);
-      break;
-  }
-
-  display.fillTriangle(centerX, bottom - 8, centerX - 4, bottom,
-                       centerX + 4, bottom, OLED_WHITE);
+  // Current-position marker at the bottom of the top mini-map area.
+  constexpr int16_t centerX = 64;
+  constexpr int16_t bottom = 34;
+  display.fillTriangle(centerX, bottom - 6, centerX - 4, bottom + 1,
+                       centerX + 4, bottom + 1, OLED_WHITE);
 }
 
 void drawDistance(int distanceMeters, bool blinkState) {
   if (nav.direction == Direction::Arrived) {
-    display.setTextSize(1);
-    display.setCursor(10, 54);
-    display.println("ARRIVED");
+    display.setTextSize(2);
+    display.setCursor(68, 44);
+    display.println("ARR");
     return;
   }
 
   if (distanceMeters <= 30) {
     if (blinkState) {
       display.setTextSize(2);
-      display.setCursor(10, 48);
+      display.setCursor(72, 44);
       display.println("NOW");
     }
-  } else if (distanceMeters <= 100) {
+  } else if (distanceMeters < 1000) {
     display.setTextSize(2);
-    display.setCursor(8, 48);
+    display.setCursor(68, 44);
     display.print(distanceMeters);
     display.println("m");
   } else {
-    display.setTextSize(1);
-    display.setCursor(18, 54);
-    display.print(distanceMeters);
-    display.println("m");
+    display.setTextSize(2);
+    display.setCursor(68, 44);
+    display.print(distanceMeters / 1000.0, 1);
+    display.println("k");
   }
 }
 
@@ -634,8 +590,8 @@ void renderDisplay(bool blinkState) {
   }
 
   drawTopStatus();
-  drawDirectionAt(nav.direction, -34, 0);
-  drawMiniRouteMap(nav.direction);
+  drawMiniRouteMap();
+  drawDirection(nav.direction);
   drawDistance(nav.distanceMeters, blinkState);
 
   drawBottomError();
@@ -734,7 +690,7 @@ void setup() {
   Serial.println("[BOOT] ESP32 navigation display");
 
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  Wire.setClock(400000);
+  Wire.setClock(100000);
 
   displayAvailable = initDisplay();
   if (!displayAvailable) {

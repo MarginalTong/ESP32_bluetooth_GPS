@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../config/ble_constants.dart';
 import '../../services/ble_service.dart';
 
 class ConnectionCard extends StatelessWidget {
@@ -48,17 +47,23 @@ class ConnectionCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(
-                      BleConstants.deviceName,
-                      style: Theme.of(context).textTheme.labelLarge,
+                      '准备出发',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
                     ),
+                    const SizedBox(height: 1),
                     Text(
                       ble.lastError ?? _label(ble.state),
+                      textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: ble.lastError == null
                                 ? colors.onSurfaceVariant
                                 : colors.error,
@@ -85,10 +90,10 @@ class ConnectionCard extends StatelessWidget {
   }
 
   String _label(BleConnectionState state) => switch (state) {
-        BleConnectionState.idle => '点按连接导航屏',
+        BleConnectionState.idle => '连接设备',
         BleConnectionState.scanning => '正在搜索设备…',
         BleConnectionState.connecting => '正在连接…',
-        BleConnectionState.connected => '导航屏已连接',
-        BleConnectionState.disconnected => '连接已断开 · 点按重连',
+        BleConnectionState.connected => '设备已连接',
+        BleConnectionState.disconnected => '连接设备',
       };
 }

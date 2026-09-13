@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/place_result.dart';
 import '../services/apple_maps_service.dart';
+import '../services/search_history_service.dart';
 
 class PlaceSearchPage extends StatefulWidget {
   const PlaceSearchPage({super.key});
@@ -15,19 +16,38 @@ class PlaceSearchPage extends StatefulWidget {
 class _PlaceSearchPageState extends State<PlaceSearchPage> {
   final _controller = TextEditingController();
   final _service = AppleMapsService();
+  final _historyService = SearchHistoryService();
   Timer? _debounce;
   List<PlaceResult> _results = const [];
   List<PlaceSuggestion> _suggestions = const [];
+  List<PlaceResult> _history = const [];
   bool _loading = false;
   bool _resolving = false;
   String? _error;
   int _requestId = 0;
 
   @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  @override
   void dispose() {
     _debounce?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final history = await _historyService.load();
+      if (!mounted) return;
+      setState(() => _history = history);
+    } catch (_) {
+      // History is a convenience feature. Search must still work if local
+      // storage is unavailable or the platform channel fails.
+    }
   }
 
   void _changed(String value) {
@@ -120,13 +140,31 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
         setState(() => _error = '这个候选没有可导航坐标，换一个试试');
         return;
       }
-      Navigator.pop(context, place);
+      await _selectPlace(place);
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = '这个候选没有可导航坐标，换一个试试');
     } finally {
       if (mounted) setState(() => _resolving = false);
     }
+  }
+
+  Future<void> _selectPlace(PlaceResult place) async {
+    try {
+      await _historyService.save(place);
+    } catch (_) {
+      // Do not block navigation just because history persistence failed.
+    }
+    if (mounted) Navigator.pop(context, place);
+  }
+
+  Future<void> _clearHistory() async {
+    try {
+      await _historyService.clear();
+    } catch (_) {
+      // Ignore storage failures; still clear the current page state.
+    }
+    if (mounted) setState(() => _history = const []);
   }
 
   @override
@@ -164,7 +202,13 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                     _suggestions.isEmpty &&
                     !_loading &&
                     _error == null
-                ? const _SearchHint()
+                ? _history.isEmpty
+                    ? const _SearchHint()
+                    : _SearchHistoryList(
+                        places: _history,
+                        onSelect: _selectPlace,
+                        onClear: _clearHistory,
+                      )
                 : _suggestions.isNotEmpty
                     ? ListView.separated(
                         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -204,13 +248,70 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                               overflow: TextOverflow.ellipsis,
                             ),
                             trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: () => Navigator.pop(context, place),
+                            onTap: () => _selectPlace(place),
                           );
                         },
                       ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SearchHistoryList extends StatelessWidget {
+  const _SearchHistoryList({
+    required this.places,
+    required this.onSelect,
+    required this.onClear,
+  });
+
+  final List<PlaceResult> places;
+  final ValueChanged<PlaceResult> onSelect;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: places.length + 1,
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '最近搜索',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                TextButton(
+                  onPressed: onClear,
+                  child: const Text('清空'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final place = places[index - 1];
+        return ListTile(
+          leading: const Icon(Icons.history_rounded),
+          title: Text(place.name),
+          subtitle: place.address.isEmpty
+              ? null
+              : Text(
+                  place.address,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+          trailing: const Icon(Icons.north_west_rounded),
+          onTap: () => onSelect(place),
+        );
+      },
     );
   }
 }

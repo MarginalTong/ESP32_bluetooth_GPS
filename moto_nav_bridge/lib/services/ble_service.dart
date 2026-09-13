@@ -6,6 +6,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../config/ble_constants.dart';
 import '../models/nav_state.dart';
+import 'navigation_ports.dart';
 import 'send_throttle.dart';
 
 enum BleConnectionState { idle, scanning, connecting, connected, disconnected }
@@ -16,7 +17,7 @@ enum BleConnectionState { idle, scanning, connecting, connected, disconnected }
 /// The firmware characteristic is WRITE-only, so there is no notify/read path
 /// and thus no application-level ACK. "Connected + write returned" is the
 /// strongest delivery signal we have.
-class BleService extends ChangeNotifier {
+class BleService extends ChangeNotifier implements NavigationBlePort {
   BleService({SendThrottle? throttle})
       : _throttle = throttle ?? SendThrottle() {
     _adapterSub = FlutterBluePlus.adapterState.listen((s) {
@@ -84,9 +85,19 @@ class BleService extends ChangeNotifier {
     }
 
     await _stopActiveScan();
-    await _connSub?.cancel();
-    _connSub = null;
-    _characteristic = null;
+
+    if (_state == BleConnectionState.connected &&
+        _device?.isConnected == true &&
+        _characteristic != null) {
+      _setState(BleConnectionState.connected);
+      return;
+    }
+
+    // Do not let an old CoreBluetooth device/characteristic survive into a new
+    // manual connect attempt. ESP32 resets, iOS background restoration, and
+    // overnight idle can all leave this object stale even when the UI thinks it
+    // is merely disconnected.
+    await _releaseCurrentDevice(disconnectDevice: true);
 
     final cached = await _findSystemDevice();
     if (cached != null) {
@@ -207,38 +218,39 @@ class BleService extends ChangeNotifier {
       _setState(BleConnectionState.connected);
       return true;
     } catch (e) {
-      try {
-        await device.disconnect(queue: false);
-      } catch (_) {
-        // Best effort cleanup after a failed iOS CoreBluetooth connect.
-      }
-      _device = null;
-      _characteristic = null;
-      _throttle.reset();
+      await _releaseCurrentDevice(disconnectDevice: true);
       _setState(BleConnectionState.disconnected, error: 'Connect failed: $e');
       return false;
     }
   }
 
+  @override
   Future<void> disconnect() async {
     await _stopActiveScan();
+    await _releaseCurrentDevice(disconnectDevice: true);
+    _setState(BleConnectionState.disconnected);
+  }
+
+  Future<void> _releaseCurrentDevice({required bool disconnectDevice}) async {
     await _connSub?.cancel();
     _connSub = null;
-    try {
-      await _device?.disconnect(queue: false);
-    } catch (e) {
-      if (kDebugMode) debugPrint('Disconnect failed: $e');
+    if (disconnectDevice) {
+      try {
+        await _device?.disconnect(queue: false);
+      } catch (e) {
+        if (kDebugMode) debugPrint('Disconnect failed: $e');
+      }
     }
     _device = null;
     _characteristic = null;
     _throttle.reset();
-    _setState(BleConnectionState.disconnected);
   }
 
   /// Sends [state] if the throttle allows and we are connected.
   ///
   /// Returns true if a write was actually performed. Throttled or
   /// disconnected calls return false without error.
+  @override
   Future<bool> send(NavState state) async {
     final ch = _characteristic;
     if (_state != BleConnectionState.connected || ch == null) return false;
@@ -247,17 +259,8 @@ class BleService extends ChangeNotifier {
     if (!_throttle.shouldSend(state, now)) return false;
 
     try {
-      var wire = state.toWire();
-      // Keep BLE robust: if the optional route preview makes a packet too long
-      // for a specific phone/ESP32 connection, fall back to the original
-      // direction+distance contract instead of failing the whole update.
-      if (utf8.encode(wire).length > 180 &&
-          state.routePreviewPoints.isNotEmpty) {
-        wire = state.copyWith(routePreviewPoints: const []).toWire();
-      }
-
       await ch.write(
-        utf8.encode(wire),
+        utf8.encode(state.toWire()),
         withoutResponse: BleConstants.writeWithoutResponse,
       );
       _throttle.markSent(state, now);
@@ -266,22 +269,6 @@ class BleService extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      if (state.routePreviewPoints.isNotEmpty) {
-        try {
-          await ch.write(
-            utf8.encode(state.copyWith(routePreviewPoints: const []).toWire()),
-            withoutResponse: BleConstants.writeWithoutResponse,
-          );
-          _throttle.markSent(state, now);
-          _lastSent = state.copyWith(routePreviewPoints: const []);
-          _lastError = null;
-          notifyListeners();
-          return true;
-        } catch (_) {
-          // Report the original write error below; it is usually more useful.
-        }
-      }
-
       _lastError = 'Write failed: $e';
       if (kDebugMode) debugPrint(_lastError);
       notifyListeners();

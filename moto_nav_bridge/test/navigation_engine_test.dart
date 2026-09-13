@@ -55,7 +55,8 @@ void main() {
     // Rider is now near/at p1 -> should advance to step 1 (heading to dest).
     final state = engine.update(p1);
     expect(engine.currentStepIndex, 1);
-    expect(state.direction, DeviceDirection.arrived);
+    expect(state.direction, DeviceDirection.up);
+    expect(state.distanceMeters, greaterThan(100));
   });
 
   test('overshooting the turn point still advances the step', () {
@@ -65,14 +66,15 @@ void main() {
     // rider is closer to the next maneuver point than the current one.
     final state = engine.update(const LatLng(0.0016, 0.0));
     expect(engine.currentStepIndex, 1);
-    expect(state.direction, DeviceDirection.arrived);
+    expect(state.direction, DeviceDirection.up);
   });
 
-  test('isFinished becomes true at the destination', () {
+  test('only emits ARRIVED at the destination', () {
     final engine = NavigationEngine(route());
     engine.update(p0);
     engine.update(p1);
-    engine.update(p2); // arrive at destination
+    final state = engine.update(p2); // arrive at destination
+    expect(state.direction, DeviceDirection.arrived);
     expect(engine.isFinished, isTrue);
   });
 
@@ -98,5 +100,19 @@ void main() {
     expect(engine.currentStepIndex, 1);
     expect(engine.isOffRoute(p0), isTrue);
     expect(engine.isOffRoute(const LatLng(0.0015, 0.0)), isFalse);
+  });
+
+  test('route preview points stay inside the top mini-map bounds', () {
+    final engine = NavigationEngine(route());
+    final state = engine.update(p0);
+    final points = state.routePreviewPoints;
+
+    expect(points.length % 2, 0);
+    expect(points.length, lessThanOrEqualTo(12));
+
+    for (var i = 0; i < points.length; i += 2) {
+      expect(points[i], inInclusiveRange(18, 110));
+      expect(points[i + 1], inInclusiveRange(2, 34));
+    }
   });
 }

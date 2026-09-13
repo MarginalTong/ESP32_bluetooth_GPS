@@ -3,12 +3,14 @@ import 'dart:io' show Platform;
 import 'package:geolocator/geolocator.dart';
 
 import '../models/lat_lng.dart';
+import 'navigation_ports.dart';
 
 /// Thin wrapper around geolocator that yields plain [LatLng]s, keeping the
 /// plugin dependency out of the navigation engine and controller logic.
-class LocationService {
+class LocationService implements PositionProvider {
   /// Ensures location services are enabled and permission is granted.
   /// Returns true if we may proceed to stream positions.
+  @override
   Future<bool> ensurePermission() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return false;
@@ -22,6 +24,7 @@ class LocationService {
   }
 
   /// One-shot current position (used to seed the route origin).
+  @override
   Future<LatLng> currentPosition() async {
     final p = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
@@ -30,6 +33,7 @@ class LocationService {
   }
 
   /// Continuous position stream while riding. Emits on ~5 m of movement.
+  @override
   Stream<LatLng> positionStream() {
     return Geolocator.getPositionStream(
       locationSettings: _locationSettings,

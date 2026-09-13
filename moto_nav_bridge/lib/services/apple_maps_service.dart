@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../models/device_direction.dart';
 import '../models/lat_lng.dart';
 import '../models/place_result.dart';
+import '../models/route_candidate.dart';
 import '../models/route_step.dart';
 
 class AppleMapsException implements Exception {
@@ -80,39 +81,27 @@ class AppleMapsService {
     required LatLng origin,
     required LatLng destination,
   }) async {
+    final routes = await fetchRoutes(origin: origin, destination: destination);
+    return routes.first.steps;
+  }
+
+  Future<List<RouteCandidate>> fetchRoutes({
+    required LatLng origin,
+    required LatLng destination,
+  }) async {
     try {
-      final raw = await _channel.invokeListMethod<Object?>('drivingRoute', {
+      final raw = await _channel.invokeListMethod<Object?>('drivingRoutes', {
         'originLatitude': origin.latitude,
         'originLongitude': origin.longitude,
         'destinationLatitude': destination.latitude,
         'destinationLongitude': destination.longitude,
       });
-      final result = <RouteStep>[];
-      for (final item in raw ?? const []) {
-        final map = Map<Object?, Object?>.from(item! as Map);
-        final coordinates =
-            (map['coordinates'] as List<Object?>? ?? const []).map((item) {
-          final point = Map<Object?, Object?>.from(item! as Map);
-          return LatLng(
-            (point['latitude'] as num).toDouble(),
-            (point['longitude'] as num).toDouble(),
-          );
-        }).toList(growable: false);
-        result.add(RouteStep(
-          direction: _direction(map['direction'] as String?),
-          start: LatLng(
-            (map['startLatitude'] as num).toDouble(),
-            (map['startLongitude'] as num).toDouble(),
-          ),
-          end: LatLng(
-            (map['endLatitude'] as num).toDouble(),
-            (map['endLongitude'] as num).toDouble(),
-          ),
-          distanceMeters: (map['distance'] as num).round(),
-          geometry: coordinates,
-          rawManeuver: map['instruction'] as String?,
-        ));
-      }
+      final result = (raw ?? const [])
+          .map((item) => _routeCandidateFromMap(
+                Map<Object?, Object?>.from(item! as Map),
+              ))
+          .where((candidate) => candidate.steps.isNotEmpty)
+          .toList(growable: false);
       if (result.isEmpty) {
         throw const AppleMapsException('没有找到可驾驶路线');
       }
@@ -120,6 +109,46 @@ class AppleMapsService {
     } on PlatformException catch (e) {
       throw AppleMapsException(e.message ?? '路线规划失败');
     }
+  }
+
+  RouteCandidate _routeCandidateFromMap(Map<Object?, Object?> map) {
+    final steps = (map['steps'] as List<Object?>? ?? const [])
+        .map((item) =>
+            _routeStepFromMap(Map<Object?, Object?>.from(item! as Map)))
+        .toList(growable: false);
+
+    return RouteCandidate(
+      steps: steps,
+      name: map['name'] as String?,
+      distanceMeters: (map['distance'] as num?)?.round(),
+      expectedTravelTimeSeconds: (map['expectedTravelTime'] as num?)?.round(),
+    );
+  }
+
+  RouteStep _routeStepFromMap(Map<Object?, Object?> map) {
+    final coordinates =
+        (map['coordinates'] as List<Object?>? ?? const []).map((item) {
+      final point = Map<Object?, Object?>.from(item! as Map);
+      return LatLng(
+        (point['latitude'] as num).toDouble(),
+        (point['longitude'] as num).toDouble(),
+      );
+    }).toList(growable: false);
+
+    return RouteStep(
+      direction: _direction(map['direction'] as String?),
+      start: LatLng(
+        (map['startLatitude'] as num).toDouble(),
+        (map['startLongitude'] as num).toDouble(),
+      ),
+      end: LatLng(
+        (map['endLatitude'] as num).toDouble(),
+        (map['endLongitude'] as num).toDouble(),
+      ),
+      distanceMeters: (map['distance'] as num).round(),
+      geometry: coordinates,
+      rawManeuver: map['instruction'] as String?,
+    );
   }
 
   DeviceDirection _direction(String? value) => switch (value) {

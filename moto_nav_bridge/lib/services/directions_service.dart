@@ -5,9 +5,11 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../models/lat_lng.dart';
+import '../models/route_candidate.dart';
 import '../models/route_step.dart';
 import 'apple_maps_service.dart';
 import 'maneuver_mapper.dart';
+import 'navigation_ports.dart';
 
 /// Thrown when a Directions request fails or returns no usable route.
 class DirectionsException implements Exception {
@@ -19,7 +21,7 @@ class DirectionsException implements Exception {
 
 /// Calls the Google Directions API and converts the response into a list of
 /// [RouteStep]s already mapped to the device protocol.
-class DirectionsService {
+class DirectionsService implements RouteProvider {
   DirectionsService({http.Client? client, String? apiKey})
       : _client = client ?? http.Client(),
         _apiKey = apiKey ?? ApiConfig.googleDirectionsApiKey;
@@ -35,12 +37,22 @@ class DirectionsService {
   ///
   /// Returns the steps of the first route/leg. Throws [DirectionsException] on
   /// network errors, a missing key, or a non-OK API status.
+  @override
   Future<List<RouteStep>> fetchRoute({
     required LatLng origin,
     required LatLng destination,
   }) async {
+    final routes = await fetchRoutes(origin: origin, destination: destination);
+    return routes.first.steps;
+  }
+
+  @override
+  Future<List<RouteCandidate>> fetchRoutes({
+    required LatLng origin,
+    required LatLng destination,
+  }) async {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      return _appleMaps.fetchRoute(origin: origin, destination: destination);
+      return _appleMaps.fetchRoutes(origin: origin, destination: destination);
     }
 
     if (_apiKey.isEmpty) {
@@ -54,6 +66,7 @@ class DirectionsService {
       'origin': '${origin.latitude},${origin.longitude}',
       'destination': '${destination.latitude},${destination.longitude}',
       'mode': 'driving',
+      'alternatives': 'true',
       'key': _apiKey,
     });
 
@@ -68,7 +81,7 @@ class DirectionsService {
       throw DirectionsException('HTTP ${resp.statusCode}');
     }
 
-    return parseRouteJson(resp.body);
+    return parseRoutesJson(resp.body);
   }
 
   /// Parses a raw Directions JSON body into [RouteStep]s.
@@ -76,6 +89,10 @@ class DirectionsService {
   /// Exposed (and static) so it can be unit-tested against captured fixtures
   /// without any network access.
   static List<RouteStep> parseRouteJson(String body) {
+    return parseRoutesJson(body).first.steps;
+  }
+
+  static List<RouteCandidate> parseRoutesJson(String body) {
     final Map<String, dynamic> json;
     try {
       json = jsonDecode(body) as Map<String, dynamic>;
@@ -95,8 +112,37 @@ class DirectionsService {
       throw DirectionsException('No routes returned');
     }
 
-    final legs =
-        (routes.first as Map<String, dynamic>)['legs'] as List<dynamic>?;
+    final result = <RouteCandidate>[];
+    for (var routeIndex = 0; routeIndex < routes.length; routeIndex++) {
+      final route = routes[routeIndex] as Map<String, dynamic>;
+      final steps = _parseRouteSteps(route);
+      if (steps.isEmpty) continue;
+
+      final legs = route['legs'] as List<dynamic>?;
+      final leg = legs?.isNotEmpty == true
+          ? legs!.first as Map<String, dynamic>
+          : const <String, dynamic>{};
+      result.add(RouteCandidate(
+        steps: steps,
+        name: route['summary'] as String? ??
+            (routeIndex == 0 ? '推荐路线' : '路线 ${routeIndex + 1}'),
+        distanceMeters:
+            ((leg['distance'] as Map<String, dynamic>?)?['value'] as num?)
+                ?.round(),
+        expectedTravelTimeSeconds:
+            ((leg['duration'] as Map<String, dynamic>?)?['value'] as num?)
+                ?.round(),
+      ));
+    }
+
+    if (result.isEmpty) {
+      throw DirectionsException('No usable routes returned');
+    }
+    return result;
+  }
+
+  static List<RouteStep> _parseRouteSteps(Map<String, dynamic> route) {
+    final legs = route['legs'] as List<dynamic>?;
     if (legs == null || legs.isEmpty) {
       throw DirectionsException('Route has no legs');
     }
@@ -173,6 +219,7 @@ class DirectionsService {
     return _PolylineValue(delta, index);
   }
 
+  @override
   void dispose() => _client.close();
 }
 

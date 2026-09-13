@@ -19,6 +19,15 @@ void main() {
       expect(NavState.stopped.toWire(), '{"dir":"STOP","dist":0}');
     });
 
+    test('route preview serializes as compact p array', () {
+      const s = NavState(
+        direction: DeviceDirection.up,
+        distanceMeters: 120,
+        routePreviewPoints: [64, 20, 64, 12, 58, 2],
+      );
+      expect(s.toWire(), '{"dir":"UP","dist":120,"p":[64,20,64,12,58,2]}');
+    });
+
     test('toJson keys are dir/dist', () {
       const s = NavState(direction: DeviceDirection.up, distanceMeters: 500);
       expect(s.toJson(), {'dir': 'UP', 'dist': 500});

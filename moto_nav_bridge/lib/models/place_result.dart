@@ -11,6 +11,13 @@ class PlaceResult {
   final String address;
   final LatLng location;
 
+  Map<String, Object> toMap() => {
+        'name': name,
+        'address': address,
+        'latitude': location.latitude,
+        'longitude': location.longitude,
+      };
+
   factory PlaceResult.fromMap(Map<Object?, Object?> map) => PlaceResult(
         name: map['name'] as String? ?? '',
         address: map['address'] as String? ?? '',

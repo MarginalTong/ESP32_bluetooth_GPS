@@ -14,8 +14,9 @@ class InstructionCard extends StatelessWidget {
     final nav = context.watch<NavigationController>();
     final sent = context.watch<BleService>().lastSent;
     final state = nav.current ?? sent;
-    final active =
-        nav.phase == NavPhase.navigating || nav.phase == NavPhase.arrived;
+    final active = nav.phase == NavPhase.navigating ||
+        nav.phase == NavPhase.paused ||
+        nav.phase == NavPhase.arrived;
     final colors = Theme.of(context).colorScheme;
 
     return Container(

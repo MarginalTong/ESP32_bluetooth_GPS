@@ -20,8 +20,8 @@ class NavState {
 
   /// Flattened OLED mini-map points: `[x0,y0,x1,y1,...]`.
   ///
-  /// These are already screen coordinates for the ESP32's right-side mini-map,
-  /// not latitude/longitude. Kept small to fit in one BLE payload.
+  /// These are screen coordinates for the ESP32 display, not latitude/longitude.
+  /// Keep this small so the BLE payload stays reliable.
   final List<int> routePreviewPoints;
 
   /// A safe idle/paused state (matches the firmware's STOP icon).
