@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 
+import '../l10n/app_text.dart';
 import '../models/device_direction.dart';
 import '../models/lat_lng.dart';
 import '../models/place_result.dart';
@@ -38,11 +39,14 @@ class AppleMapsService {
   static const _channel = MethodChannel('moto_nav_bridge/apple_maps');
 
   Future<List<PlaceSuggestion>> complete(String query) async {
-    final text = query.trim();
-    if (text.length < 2) return const [];
+    final text = AppText.system;
+    final queryText = query.trim();
+    if (queryText.length < 2) return const [];
     try {
-      final raw = await _channel
-          .invokeListMethod<Object?>('completePlaces', {'query': text});
+      final raw = await _channel.invokeListMethod<Object?>('completePlaces', {
+        'query': queryText,
+        'languageCode': text.languageCode,
+      });
       return (raw ?? const [])
           .map((item) => PlaceSuggestion.fromMap(
                 Map<Object?, Object?>.from(item! as Map),
@@ -50,23 +54,26 @@ class AppleMapsService {
           .where((item) => item.title.trim().isNotEmpty)
           .toList(growable: false);
     } on PlatformException catch (e) {
-      throw AppleMapsException(e.message ?? '地点联想失败');
+      throw AppleMapsException(e.message ?? text.placeAutocompleteFailed);
     }
   }
 
   Future<List<PlaceResult>> search(String query) async {
-    final text = query.trim();
-    if (text.isEmpty) return const [];
+    final text = AppText.system;
+    final queryText = query.trim();
+    if (queryText.isEmpty) return const [];
     try {
-      final raw = await _channel
-          .invokeListMethod<Object?>('searchPlaces', {'query': text});
+      final raw = await _channel.invokeListMethod<Object?>('searchPlaces', {
+        'query': queryText,
+        'languageCode': text.languageCode,
+      });
       return (raw ?? const [])
           .map((item) => PlaceResult.fromMap(
                 Map<Object?, Object?>.from(item! as Map),
               ))
           .toList(growable: false);
     } on PlatformException catch (e) {
-      throw AppleMapsException(e.message ?? '地点搜索失败');
+      throw AppleMapsException(e.message ?? text.placeSearchFailed);
     }
   }
 
@@ -89,12 +96,14 @@ class AppleMapsService {
     required LatLng origin,
     required LatLng destination,
   }) async {
+    final text = AppText.system;
     try {
       final raw = await _channel.invokeListMethod<Object?>('drivingRoutes', {
         'originLatitude': origin.latitude,
         'originLongitude': origin.longitude,
         'destinationLatitude': destination.latitude,
         'destinationLongitude': destination.longitude,
+        'languageCode': text.languageCode,
       });
       final result = (raw ?? const [])
           .map((item) => _routeCandidateFromMap(
@@ -103,11 +112,11 @@ class AppleMapsService {
           .where((candidate) => candidate.steps.isNotEmpty)
           .toList(growable: false);
       if (result.isEmpty) {
-        throw const AppleMapsException('没有找到可驾驶路线');
+        throw AppleMapsException(text.noDrivingRoute);
       }
       return result;
     } on PlatformException catch (e) {
-      throw AppleMapsException(e.message ?? '路线规划失败');
+      throw AppleMapsException(e.message ?? text.routePlanningFailed);
     }
   }
 

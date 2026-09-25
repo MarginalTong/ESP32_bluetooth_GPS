@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_text.dart';
 import '../../services/ble_service.dart';
 
 class ConnectionCard extends StatelessWidget {
@@ -9,6 +10,7 @@ class ConnectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ble = context.watch<BleService>();
+    final text = AppText.of(context);
     final connected = ble.state == BleConnectionState.connected;
     final busy = ble.state == BleConnectionState.scanning ||
         ble.state == BleConnectionState.connecting;
@@ -51,7 +53,7 @@ class ConnectionCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(
-                      '准备出发',
+                      text.readyToGo,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w800,
@@ -59,7 +61,7 @@ class ConnectionCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 1),
                     Text(
-                      ble.lastError ?? _label(ble.state),
+                      ble.lastError ?? _label(context, ble.state),
                       textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -89,11 +91,14 @@ class ConnectionCard extends StatelessWidget {
     );
   }
 
-  String _label(BleConnectionState state) => switch (state) {
-        BleConnectionState.idle => '连接设备',
-        BleConnectionState.scanning => '正在搜索设备…',
-        BleConnectionState.connecting => '正在连接…',
-        BleConnectionState.connected => '设备已连接',
-        BleConnectionState.disconnected => '连接设备',
-      };
+  String _label(BuildContext context, BleConnectionState state) {
+    final text = AppText.of(context);
+    return switch (state) {
+      BleConnectionState.idle => text.connectDevice,
+      BleConnectionState.scanning => text.searchingDevice,
+      BleConnectionState.connecting => text.connecting,
+      BleConnectionState.connected => text.deviceConnected,
+      BleConnectionState.disconnected => text.connectDevice,
+    };
+  }
 }

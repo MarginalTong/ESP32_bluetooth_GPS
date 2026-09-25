@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../l10n/app_text.dart';
 import '../../models/lat_lng.dart';
 import '../../models/route_candidate.dart';
 
@@ -84,6 +85,7 @@ class _NavigationMapState extends State<NavigationMap> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final text = AppText.of(context);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
@@ -105,7 +107,7 @@ class _NavigationMapState extends State<NavigationMap> {
               color: colorScheme.surfaceContainer,
               alignment: Alignment.center,
               padding: const EdgeInsets.all(18),
-              child: const Text('地图显示目前只接了 iOS MapKit'),
+              child: Text(text.iosMapKitOnly),
             ),
         },
       ),
@@ -125,6 +127,7 @@ class _NavigationMapState extends State<NavigationMap> {
       d?.latitude.toStringAsFixed(6),
       d?.longitude.toStringAsFixed(6),
       map.destinationName,
+      AppText.system.languageCode,
       map.onMapPointSelected != null,
       map.routes.length,
       _routesKeyFor(map.routes),
@@ -156,6 +159,7 @@ class _NavigationMapState extends State<NavigationMap> {
           'destinationLongitude': widget.destination!.longitude,
           'destinationName': widget.destinationName,
         },
+        'languageCode': AppText.system.languageCode,
         'selectedRouteIndex': widget.selectedRouteIndex,
         'mapPointSelectionEnabled': widget.onMapPointSelected != null,
         'routes': [

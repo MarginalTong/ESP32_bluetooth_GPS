@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../controllers/navigation_controller.dart';
+import '../../l10n/app_text.dart';
 import '../../models/device_direction.dart';
 import '../../models/nav_state.dart';
 import '../../services/ble_service.dart';
@@ -47,6 +48,7 @@ class _ActiveInstruction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final text = AppText.of(context);
     final distance = state.distanceMeters >= 1000
         ? '${(state.distanceMeters / 1000).toStringAsFixed(1)} km'
         : '${state.distanceMeters} m';
@@ -55,7 +57,7 @@ class _ActiveInstruction extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          _instruction(state.direction),
+          _instruction(text, state.direction),
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -78,7 +80,9 @@ class _ActiveInstruction extends StatelessWidget {
         ),
         const Spacer(),
         Text(
-          state.direction == DeviceDirection.arrived ? '目的地已到达' : '后续路口',
+          state.direction == DeviceDirection.arrived
+              ? text.destinationReached
+              : text.nextTurn,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
@@ -92,6 +96,7 @@ class _WaitingInstruction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final text = AppText.of(context);
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -101,10 +106,10 @@ class _WaitingInstruction extends StatelessWidget {
           color: colors.primary.withValues(alpha: 0.9),
         ),
         const SizedBox(height: 18),
-        Text('准备出发', style: Theme.of(context).textTheme.headlineSmall),
+        Text(text.readyToGo, style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),
         Text(
-          '连接设备并输入目的地坐标',
+          text.connectDeviceAndEnterDestination,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: colors.onSurfaceVariant,
               ),
@@ -114,15 +119,16 @@ class _WaitingInstruction extends StatelessWidget {
   }
 }
 
-String _instruction(DeviceDirection direction) => switch (direction) {
-      DeviceDirection.up => '继续直行',
-      DeviceDirection.left => '前方左转',
-      DeviceDirection.right => '前方右转',
-      DeviceDirection.bearLeft => '靠左行驶',
-      DeviceDirection.bearRight => '靠右行驶',
-      DeviceDirection.uturn => '前方掉头',
-      DeviceDirection.stop => '导航已暂停',
-      DeviceDirection.arrived => '已到达',
+String _instruction(AppText text, DeviceDirection direction) =>
+    switch (direction) {
+      DeviceDirection.up => text.keepStraight,
+      DeviceDirection.left => text.turnLeftAhead,
+      DeviceDirection.right => text.turnRightAhead,
+      DeviceDirection.bearLeft => text.bearLeft,
+      DeviceDirection.bearRight => text.bearRight,
+      DeviceDirection.uturn => text.uTurnAhead,
+      DeviceDirection.stop => text.navigationPaused,
+      DeviceDirection.arrived => text.arrived,
     };
 
 IconData _icon(DeviceDirection direction) => switch (direction) {

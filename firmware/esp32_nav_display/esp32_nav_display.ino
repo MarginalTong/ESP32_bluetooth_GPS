@@ -1,6 +1,6 @@
-#include <Wire.h>
+#include <SPI.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SH110X.h>
+#include <Adafruit_ST7789.h>
 
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -12,29 +12,43 @@
 // Hardware
 // ======================================================
 
-constexpr uint8_t SCREEN_WIDTH = 128;
-constexpr uint8_t SCREEN_HEIGHT = 64;
-constexpr int8_t OLED_RESET_PIN = -1;
-// ESP32-C3 wiring currently used:
-// OLED SDA -> GPIO4, OLED SCL -> GPIO5.
-constexpr uint8_t I2C_SDA_PIN = 4;
-constexpr uint8_t I2C_SCL_PIN = 5;
-constexpr uint8_t OLED_I2C_ADDRESS_PRIMARY = 0x3C;
-constexpr uint8_t OLED_I2C_ADDRESS_FALLBACK = 0x3D;
-constexpr uint8_t OLED_CONTRAST_NORMAL = 0xCF;
-constexpr uint8_t OLED_CONTRAST_DIM = 0x10;
+constexpr int16_t SCREEN_WIDTH = 240;
+constexpr int16_t SCREEN_HEIGHT = 135;
 
-Adafruit_SH1106G display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET_PIN);
+// The phone still sends route-preview points in the old 128x64 coordinate
+// system, so keep that contract and scale those points into the large TFT map.
+constexpr int16_t ROUTE_SOURCE_WIDTH = 128;
+constexpr int16_t ROUTE_SOURCE_HEIGHT = 64;
 
-// Keep the drawing code independent from the concrete OLED controller.
-constexpr uint16_t OLED_WHITE = SH110X_WHITE;
+// ideaspark / ESP32 built-in 1.14-inch ST7789 configuration. If your board is
+// mirrored or upside-down, change TFT_ROTATION to 3.
+constexpr int8_t TFT_MOSI_PIN = 23;
+constexpr int8_t TFT_SCLK_PIN = 18;
+constexpr int8_t TFT_CS_PIN = 15;
+constexpr int8_t TFT_DC_PIN = 2;
+constexpr int8_t TFT_RESET_PIN = 4;
+constexpr int8_t TFT_BACKLIGHT_PIN = 32;
+constexpr uint8_t TFT_ROTATION = 1;
+constexpr uint8_t BACKLIGHT_NORMAL = 255;
+constexpr uint8_t BACKLIGHT_DIM = 24;
+
+Adafruit_ST7789 tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RESET_PIN);
+GFXcanvas16 display(SCREEN_WIDTH, SCREEN_HEIGHT);
+
+constexpr uint16_t COLOR_BG = ST77XX_BLACK;
+constexpr uint16_t COLOR_WHITE = ST77XX_WHITE;
+constexpr uint16_t COLOR_ROUTE = ST77XX_WHITE;
+// All foreground indications are white; only the background is black.
+constexpr uint16_t COLOR_ACCENT = COLOR_WHITE;
+constexpr uint16_t COLOR_MUTED = COLOR_WHITE;
 bool displayAvailable = false;
+volatile bool displayDirty = true;
 
 // ======================================================
 // Product behavior
 // ======================================================
 
-// Keep this false for real riding. Set true only when bench-testing the OLED
+// Keep this false for real riding. Set true only when bench-testing the TFT
 // without a phone connected.
 constexpr bool ENABLE_DEMO_MODE = false;
 
@@ -44,13 +58,16 @@ constexpr int DEMO_DISTANCE_DELTA_M = 10;
 // If the phone stops sending navigation packets, stop showing a stale turn.
 constexpr uint32_t LIVE_PACKET_TIMEOUT_MS = 8000;
 
-// OLED power policy. BLE keeps running while the display is dim/off.
+// TFT power policy. BLE keeps running while the display is dim/off.
 constexpr uint32_t DISPLAY_DIM_AFTER_IDLE_MS = 15000;
 constexpr uint32_t DISPLAY_OFF_AFTER_IDLE_MS = 60000;
 constexpr uint32_t DISPLAY_REFRESH_MS = 120;
 
 constexpr int MAX_DISTANCE_M = 9999;
 constexpr uint8_t MAX_ROUTE_PREVIEW_POINTS = 6;
+// Two junction arms match the reference cluster view and keep the compact JSON
+// safely below conservative iOS BLE write-without-response payload sizes.
+constexpr uint8_t MAX_SIDE_ROAD_SEGMENTS = 2;
 
 // ======================================================
 // BLE contract - must match the Flutter app.
@@ -102,11 +119,19 @@ struct ScreenPoint {
   int16_t y;
 };
 
+struct ScreenSegment {
+  ScreenPoint start;
+  ScreenPoint end;
+};
+
 ScreenPoint routePreviewPoints[MAX_ROUTE_PREVIEW_POINTS];
 uint8_t routePreviewPointCount = 0;
+ScreenSegment sideRoadSegments[MAX_SIDE_ROAD_SEGMENTS];
+uint8_t sideRoadSegmentCount = 0;
 
 uint32_t lastLivePacketMs = 0;
 bool hasReceivedNavPacket = false;
+bool livePacketTimedOut = false;
 uint32_t rejectedPacketCount = 0;
 char lastError[48] = "";
 
@@ -134,6 +159,7 @@ size_t demoStepIndex = 0;
 Direction parseDirection(const char* value);
 const char* directionName(Direction direction);
 void setDisplayPower(DisplayPowerState state);
+void presentDisplay();
 void drawDirection(Direction direction);
 void drawMiniRouteMap();
 
@@ -178,7 +204,9 @@ const char* directionName(Direction direction) {
 }
 
 void setLastError(const char* message) {
+  if (strncmp(lastError, message, sizeof(lastError)) == 0) return;
   strlcpy(lastError, message, sizeof(lastError));
+  displayDirty = true;
 }
 
 void setBadDirectionError(const char* value) {
@@ -207,20 +235,17 @@ void setDisplayPower(DisplayPowerState state) {
   if (!displayAvailable) return;
   if (displayPowerState == state) return;
   displayPowerState = state;
+  displayDirty = true;
 
   switch (state) {
     case DisplayPowerState::On:
-      display.oled_command(0xAF);  // display on
-      display.oled_command(0x81);  // set contrast
-      display.oled_command(OLED_CONTRAST_NORMAL);
+      analogWrite(TFT_BACKLIGHT_PIN, BACKLIGHT_NORMAL);
       break;
     case DisplayPowerState::Dim:
-      display.oled_command(0xAF);  // display on
-      display.oled_command(0x81);  // set contrast
-      display.oled_command(OLED_CONTRAST_DIM);
+      analogWrite(TFT_BACKLIGHT_PIN, BACKLIGHT_DIM);
       break;
     case DisplayPowerState::Off:
-      display.oled_command(0xAE);  // display off
+      analogWrite(TFT_BACKLIGHT_PIN, 0);
       break;
   }
 }
@@ -243,6 +268,7 @@ void startBleAdvertising() {
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* server) override {
     bleConnected = true;
+    displayDirty = true;
     wakeDisplay();
     setLastError("");
     Serial.println("[BLE] Central connected");
@@ -252,8 +278,11 @@ class ServerCallbacks : public BLEServerCallbacks {
     bleConnected = false;
     hasReceivedNavPacket = false;
     lastLivePacketMs = 0;
+    livePacketTimedOut = false;
     routePreviewPointCount = 0;
+    sideRoadSegmentCount = 0;
     nav = {Direction::Stop, 0};
+    displayDirty = true;
     wakeDisplay();
     setLastError("BLE disconnected");
     Serial.println("[BLE] Central disconnected");
@@ -268,7 +297,8 @@ class ServerCallbacks : public BLEServerCallbacks {
 
 class NavWriteCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* characteristic) override {
-    String value = characteristic->getValue();
+    const auto rawValue = characteristic->getValue();
+    String value(rawValue.c_str());
     value.trim();
 
     if (value.length() == 0) {
@@ -277,14 +307,14 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    if (value.length() > 220) {
+    if (value.length() > 360) {
       rejectedPacketCount++;
       setLastError("packet too large");
       Serial.println("[BLE] Rejected oversized packet");
       return;
     }
 
-    StaticJsonDocument<384> doc;
+    StaticJsonDocument<768> doc;
     DeserializationError error = deserializeJson(doc, value);
     if (error) {
       rejectedPacketCount++;
@@ -320,6 +350,7 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
 
     nav = {direction, distance};
     routePreviewPointCount = 0;
+    sideRoadSegmentCount = 0;
     JsonArray points = doc["p"].as<JsonArray>();
     if (!points.isNull()) {
       const size_t maxValues = MAX_ROUTE_PREVIEW_POINTS * 2;
@@ -329,15 +360,42 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
         if (!points[i].is<int>() || !points[i + 1].is<int>()) break;
         routePreviewPoints[routePreviewPointCount] = {
             static_cast<int16_t>(
-                constrain(points[i].as<int>(), 0, SCREEN_WIDTH - 1)),
+                constrain(points[i].as<int>(), 0, ROUTE_SOURCE_WIDTH - 1)),
             static_cast<int16_t>(
-                constrain(points[i + 1].as<int>(), 0, SCREEN_HEIGHT - 1)),
+                constrain(points[i + 1].as<int>(), 0, ROUTE_SOURCE_HEIGHT - 1)),
         };
         routePreviewPointCount++;
       }
     }
+
+    JsonArray roads = doc["r"].as<JsonArray>();
+    if (!roads.isNull()) {
+      const size_t maxValues = MAX_SIDE_ROAD_SEGMENTS * 4;
+      const size_t valueCount =
+          roads.size() > maxValues ? maxValues : roads.size();
+      for (size_t i = 0; i + 3 < valueCount; i += 4) {
+        if (!roads[i].is<int>() || !roads[i + 1].is<int>() ||
+            !roads[i + 2].is<int>() || !roads[i + 3].is<int>()) {
+          break;
+        }
+        sideRoadSegments[sideRoadSegmentCount] = {
+            {static_cast<int16_t>(
+                 constrain(roads[i].as<int>(), 0, ROUTE_SOURCE_WIDTH - 1)),
+             static_cast<int16_t>(
+                 constrain(roads[i + 1].as<int>(), 0, ROUTE_SOURCE_HEIGHT - 1))},
+            {static_cast<int16_t>(
+                 constrain(roads[i + 2].as<int>(), 0, ROUTE_SOURCE_WIDTH - 1)),
+             static_cast<int16_t>(
+                 constrain(roads[i + 3].as<int>(), 0, ROUTE_SOURCE_HEIGHT - 1))},
+        };
+        sideRoadSegmentCount++;
+      }
+    }
+
     lastLivePacketMs = millis();
+    livePacketTimedOut = false;
     hasReceivedNavPacket = true;
+    displayDirty = true;
     wakeDisplay();
     setLastError("");
 
@@ -345,7 +403,10 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     Serial.print(directionName(nav.direction));
     Serial.print(" ");
     Serial.print(nav.distanceMeters);
-    Serial.println("m");
+    Serial.print("m route=");
+    Serial.print(routePreviewPointCount);
+    Serial.print(" roads=");
+    Serial.println(sideRoadSegmentCount);
   }
 };
 
@@ -379,80 +440,150 @@ void setupBle() {
 // Drawing
 // ======================================================
 
-void drawThickLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
-  display.drawLine(x0, y0, x1, y1, OLED_WHITE);
-  if (abs(x1 - x0) > abs(y1 - y0)) {
-    display.drawLine(x0, y0 - 1, x1, y1 - 1, OLED_WHITE);
-    display.drawLine(x0, y0 + 1, x1, y1 + 1, OLED_WHITE);
-  } else {
-    display.drawLine(x0 - 1, y0, x1 - 1, y1, OLED_WHITE);
-    display.drawLine(x0 + 1, y0, x1 + 1, y1, OLED_WHITE);
+// Borderless map above a compact instruction strip, with no separator line.
+constexpr int16_t MAP_LEFT = 0;
+constexpr int16_t MAP_TOP = 0;
+constexpr int16_t MAP_RIGHT = SCREEN_WIDTH - 1;
+constexpr int16_t MAP_BOTTOM = 94;
+constexpr int16_t ARROW_CENTER_X = 66;
+constexpr int16_t DISTANCE_X = 132;
+
+int16_t scaleValue(int16_t value, int16_t inMin, int16_t inMax, int16_t outMin,
+                   int16_t outMax) {
+  if (inMax == inMin) return outMin;
+  return outMin + static_cast<int32_t>(value - inMin) * (outMax - outMin) /
+                      (inMax - inMin);
+}
+
+int16_t mapPreviewX(int16_t x) {
+  return scaleValue(x, 18, 110, MAP_LEFT + 6, MAP_RIGHT - 6);
+}
+
+int16_t mapPreviewY(int16_t y) {
+  return scaleValue(y, 2, 34, MAP_TOP + 4, MAP_BOTTOM - 12);
+}
+
+void presentDisplay() {
+  tft.drawRGBBitmap(0, 0, display.getBuffer(), SCREEN_WIDTH, SCREEN_HEIGHT);
+}
+
+void drawThickLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+                   uint16_t color = COLOR_WHITE, uint8_t thickness = 3) {
+  const int16_t radius = thickness / 2;
+  for (int16_t dx = -radius; dx <= radius; dx++) {
+    for (int16_t dy = -radius; dy <= radius; dy++) {
+      display.drawLine(x0 + dx, y0 + dy, x1 + dx, y1 + dy, color);
+    }
+  }
+}
+
+void drawSideRoadLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
+  // An unselected branch is drawn as two separated, broken edge-rays. The
+  // black centre and small gaps distinguish it from the solid navigation route
+  // without relying on different colors.
+  constexpr int16_t parts = 4;
+  const int16_t dx = x1 - x0;
+  const int16_t dy = y1 - y0;
+  const int16_t magnitude = max(abs(dx), abs(dy));
+  if (magnitude == 0) return;
+
+  // Three pixels to either side leaves a visible six-pixel black channel.
+  constexpr int16_t railOffset = 3;
+  const int16_t normalX = static_cast<int32_t>(-dy) * railOffset / magnitude;
+  const int16_t normalY = static_cast<int32_t>(dx) * railOffset / magnitude;
+
+  // Leave a short break at the route intersection, then draw each quarter at
+  // 70% duty so even TFT bloom cannot merge the rays into solid white roads.
+  const int16_t rawStartInset = 3 * 256 / magnitude;
+  const int16_t startInset = rawStartInset < 48 ? rawStartInset : 48;
+  const int16_t usable = 256 - startInset;
+
+  for (int16_t rail = -1; rail <= 1; rail += 2) {
+    for (int16_t part = 0; part < parts; part++) {
+      const int16_t partStart = startInset + usable * part / parts;
+      const int16_t partEnd =
+          startInset + usable * (part * 10 + 7) / (parts * 10);
+      const int16_t ax = x0 + static_cast<int32_t>(dx) * partStart / 256;
+      const int16_t ay = y0 + static_cast<int32_t>(dy) * partStart / 256;
+      const int16_t bx = x0 + static_cast<int32_t>(dx) * partEnd / 256;
+      const int16_t by = y0 + static_cast<int32_t>(dy) * partEnd / 256;
+      display.drawLine(ax + normalX * rail, ay + normalY * rail,
+                       bx + normalX * rail, by + normalY * rail,
+                       COLOR_WHITE);
+    }
+  }
+}
+
+void drawSideRoadSegments() {
+  for (uint8_t i = 0; i < sideRoadSegmentCount; i++) {
+    drawSideRoadLine(mapPreviewX(sideRoadSegments[i].start.x),
+                     mapPreviewY(sideRoadSegments[i].start.y),
+                     mapPreviewX(sideRoadSegments[i].end.x),
+                     mapPreviewY(sideRoadSegments[i].end.y));
   }
 }
 
 void drawArrowUp() {
-  drawThickLine(38, 58, 38, 40);
-  drawThickLine(38, 40, 30, 48);
-  drawThickLine(38, 40, 46, 48);
+  drawThickLine(ARROW_CENTER_X, 128, ARROW_CENTER_X, 98);
+  drawThickLine(ARROW_CENTER_X, 98, ARROW_CENTER_X - 15, 113);
+  drawThickLine(ARROW_CENTER_X, 98, ARROW_CENTER_X + 15, 113);
 }
 
 void drawArrowLeft() {
-  // Turn-left instruction: ride forward, then bend left.
-  drawThickLine(50, 58, 50, 51);
-  drawThickLine(50, 51, 44, 45);
-  drawThickLine(44, 45, 24, 45);
-  drawThickLine(24, 45, 36, 37);
-  drawThickLine(24, 45, 36, 53);
+  drawThickLine(82, 128, 82, 116);
+  drawThickLine(82, 116, 74, 106);
+  drawThickLine(74, 106, 42, 106);
+  drawThickLine(42, 106, 60, 93);
+  drawThickLine(42, 106, 60, 119);
 }
 
 void drawArrowRight() {
-  // Turn-right instruction: ride forward, then bend right.
-  drawThickLine(26, 58, 26, 51);
-  drawThickLine(26, 51, 32, 45);
-  drawThickLine(32, 45, 52, 45);
-  drawThickLine(52, 45, 40, 37);
-  drawThickLine(52, 45, 40, 53);
+  drawThickLine(48, 128, 48, 116);
+  drawThickLine(48, 116, 56, 106);
+  drawThickLine(56, 106, 88, 106);
+  drawThickLine(88, 106, 70, 93);
+  drawThickLine(88, 106, 70, 119);
 }
 
 void drawBearLeft() {
-  drawThickLine(42, 58, 42, 40);
-  drawThickLine(42, 40, 34, 48);
-  drawThickLine(42, 40, 50, 48);
-  drawThickLine(42, 50, 26, 40);
-  drawThickLine(26, 40, 31, 40);
-  drawThickLine(26, 40, 26, 45);
+  drawThickLine(ARROW_CENTER_X, 128, ARROW_CENTER_X, 96);
+  drawThickLine(ARROW_CENTER_X, 96, ARROW_CENTER_X - 14, 110);
+  drawThickLine(ARROW_CENTER_X, 96, ARROW_CENTER_X + 14, 110);
+  drawThickLine(ARROW_CENTER_X, 114, 42, 96);
+  drawThickLine(42, 96, 50, 96);
+  drawThickLine(42, 96, 42, 104);
 }
 
 void drawBearRight() {
-  drawThickLine(34, 58, 34, 40);
-  drawThickLine(34, 40, 26, 48);
-  drawThickLine(34, 40, 42, 48);
-  drawThickLine(34, 50, 50, 40);
-  drawThickLine(50, 40, 45, 40);
-  drawThickLine(50, 40, 50, 45);
+  drawThickLine(ARROW_CENTER_X, 128, ARROW_CENTER_X, 96);
+  drawThickLine(ARROW_CENTER_X, 96, ARROW_CENTER_X - 14, 110);
+  drawThickLine(ARROW_CENTER_X, 96, ARROW_CENTER_X + 14, 110);
+  drawThickLine(ARROW_CENTER_X, 114, 90, 96);
+  drawThickLine(90, 96, 82, 96);
+  drawThickLine(90, 96, 90, 104);
 }
 
 void drawUTurn() {
-  drawThickLine(50, 58, 50, 42);
-  drawThickLine(50, 42, 28, 42);
-  drawThickLine(28, 42, 28, 54);
-  drawThickLine(28, 54, 20, 46);
-  drawThickLine(28, 54, 36, 46);
+  drawThickLine(82, 128, 82, 100);
+  drawThickLine(82, 100, 44, 100);
+  drawThickLine(44, 100, 44, 120);
+  drawThickLine(44, 120, 31, 107);
+  drawThickLine(44, 120, 57, 107);
 }
 
 void drawStop() {
-  display.fillRect(24, 40, 28, 20, OLED_WHITE);
+  display.fillRoundRect(42, 98, 48, 30, 4, COLOR_WHITE);
 }
 
 void drawArrived() {
-  drawThickLine(20, 50, 32, 60);
-  drawThickLine(32, 60, 56, 38);
+  drawThickLine(34, 114, 56, 130);
+  drawThickLine(56, 130, 94, 94);
 }
 
 void drawUnknown() {
-  display.setTextSize(1);
-  display.setCursor(38, 28);
-  display.println("UNKNOWN");
+  display.setTextSize(2);
+  display.setCursor(22, 105);
+  display.println("?");
 }
 
 void drawDirection(Direction direction) {
@@ -487,44 +618,95 @@ void drawDirection(Direction direction) {
   }
 }
 
-void drawMiniRouteMap() {
-  if (routePreviewPointCount < 2) return;
+void drawFallbackMapRoute(Direction direction) {
+  const int16_t centerX = (MAP_LEFT + MAP_RIGHT) / 2;
+  const int16_t bottom = MAP_BOTTOM - 8;
+  const int16_t top = MAP_TOP + 12;
+  const int16_t left = MAP_LEFT + 28;
+  const int16_t right = MAP_RIGHT - 28;
 
-  for (uint8_t i = 0; i + 1 < routePreviewPointCount; i++) {
-    display.drawLine(routePreviewPoints[i].x, routePreviewPoints[i].y,
-                     routePreviewPoints[i + 1].x,
-                     routePreviewPoints[i + 1].y, OLED_WHITE);
+  switch (direction) {
+    case Direction::Left:
+      drawThickLine(centerX, bottom, centerX, 55, COLOR_ROUTE, 2);
+      drawThickLine(centerX, 55, centerX - 18, 42, COLOR_ROUTE, 2);
+      drawThickLine(centerX - 18, 42, left, 42, COLOR_ROUTE, 2);
+      break;
+    case Direction::Right:
+      drawThickLine(centerX, bottom, centerX, 55, COLOR_ROUTE, 2);
+      drawThickLine(centerX, 55, centerX + 18, 42, COLOR_ROUTE, 2);
+      drawThickLine(centerX + 18, 42, right, 42, COLOR_ROUTE, 2);
+      break;
+    case Direction::BearLeft:
+      drawThickLine(centerX, bottom, centerX, 58, COLOR_ROUTE, 2);
+      drawThickLine(centerX, 58, centerX - 44, top, COLOR_ROUTE, 2);
+      break;
+    case Direction::BearRight:
+      drawThickLine(centerX, bottom, centerX, 58, COLOR_ROUTE, 2);
+      drawThickLine(centerX, 58, centerX + 44, top, COLOR_ROUTE, 2);
+      break;
+    case Direction::UTurn:
+      drawThickLine(centerX, bottom, centerX, 36, COLOR_ROUTE, 2);
+      drawThickLine(centerX, 36, left + 28, 36, COLOR_ROUTE, 2);
+      drawThickLine(left + 28, 36, left + 28, 68, COLOR_ROUTE, 2);
+      break;
+    default:
+      drawThickLine(centerX, bottom, centerX, top, COLOR_ROUTE, 2);
+      break;
+  }
+}
+
+void drawMiniRouteMap() {
+  drawSideRoadSegments();
+
+  if (routePreviewPointCount >= 2) {
+    for (uint8_t i = 0; i + 1 < routePreviewPointCount; i++) {
+      drawThickLine(mapPreviewX(routePreviewPoints[i].x),
+                    mapPreviewY(routePreviewPoints[i].y),
+                    mapPreviewX(routePreviewPoints[i + 1].x),
+                    mapPreviewY(routePreviewPoints[i + 1].y), COLOR_ROUTE, 6);
+    }
+  } else {
+    drawFallbackMapRoute(nav.direction);
   }
 
-  // Current-position marker at the bottom of the top mini-map area.
-  constexpr int16_t centerX = 64;
-  constexpr int16_t bottom = 34;
-  display.fillTriangle(centerX, bottom - 6, centerX - 4, bottom + 1,
-                       centerX + 4, bottom + 1, OLED_WHITE);
+  const int16_t markerX = (MAP_LEFT + MAP_RIGHT) / 2;
+  const int16_t markerY = MAP_BOTTOM - 12;
+  // Paint the complete black silhouette last over the route, then inset the
+  // white pointer on every side (including the tip and bottom edge).
+  display.fillTriangle(markerX, markerY - 15, markerX - 13, markerY + 10,
+                       markerX + 13, markerY + 10, COLOR_BG);
+  display.fillTriangle(markerX, markerY - 8, markerX - 7, markerY + 4,
+                       markerX + 7, markerY + 4, COLOR_WHITE);
+
+  // Legacy preview coordinates can extend below the map. Keep them out of
+  // the instruction strip without drawing a visible frame or separator.
+  display.fillRect(0, MAP_BOTTOM, SCREEN_WIDTH, SCREEN_HEIGHT - MAP_BOTTOM,
+                   COLOR_BG);
 }
 
 void drawDistance(int distanceMeters, bool blinkState) {
+  display.setTextColor(COLOR_WHITE);
   if (nav.direction == Direction::Arrived) {
-    display.setTextSize(2);
-    display.setCursor(68, 44);
+    display.setTextSize(3);
+    display.setCursor(DISTANCE_X, 104);
     display.println("ARR");
     return;
   }
 
   if (distanceMeters <= 30) {
     if (blinkState) {
-      display.setTextSize(2);
-      display.setCursor(72, 44);
+      display.setTextSize(3);
+      display.setCursor(DISTANCE_X, 104);
       display.println("NOW");
     }
   } else if (distanceMeters < 1000) {
-    display.setTextSize(2);
-    display.setCursor(68, 44);
+    display.setTextSize(3);
+    display.setCursor(DISTANCE_X, 104);
     display.print(distanceMeters);
     display.println("m");
   } else {
-    display.setTextSize(2);
-    display.setCursor(68, 44);
+    display.setTextSize(3);
+    display.setCursor(DISTANCE_X, 104);
     display.print(distanceMeters / 1000.0, 1);
     display.println("k");
   }
@@ -532,7 +714,8 @@ void drawDistance(int distanceMeters, bool blinkState) {
 
 void drawTopStatus() {
   display.setTextSize(1);
-  display.setCursor(0, 0);
+  display.setTextColor(COLOR_MUTED);
+  display.setCursor(8, 8);
 
   if (!bleConnected) {
     display.print("ADV");
@@ -548,25 +731,30 @@ void drawBottomError() {
   if (lastError[0] == '\0') return;
 
   display.setTextSize(1);
-  display.setCursor(0, 54);
+  display.setTextColor(COLOR_ACCENT);
+  display.setCursor(8, SCREEN_HEIGHT - 10);
   display.print(lastError);
 }
 
 void drawStandby() {
-  display.setTextSize(1);
-  display.setCursor(34, 18);
+  display.setTextColor(COLOR_WHITE);
+  display.setTextSize(2);
+  display.setCursor(54, 38);
   display.println("ESP32_NAV");
 
-  display.setCursor(30, 34);
+  display.setTextSize(1);
+  display.setCursor(88, 72);
   display.println("BLE READY");
 }
 
 void drawWaitingForNavigation() {
-  display.setTextSize(1);
-  display.setCursor(34, 18);
+  display.setTextColor(COLOR_WHITE);
+  display.setTextSize(2);
+  display.setCursor(54, 38);
   display.println("ESP32_NAV");
 
-  display.setCursor(18, 34);
+  display.setTextSize(1);
+  display.setCursor(78, 72);
   display.println("WAITING NAV");
 }
 
@@ -574,28 +762,28 @@ void renderDisplay(bool blinkState) {
   if (!displayAvailable) return;
   if (displayPowerState == DisplayPowerState::Off) return;
 
-  display.clearDisplay();
-  display.setTextColor(OLED_WHITE);
+  display.fillScreen(COLOR_BG);
+  display.setTextColor(COLOR_WHITE);
 
   if (isStandby()) {
     drawStandby();
-    display.display();
+    presentDisplay();
     return;
   }
 
   if (isWaitingForNavigation()) {
     drawWaitingForNavigation();
-    display.display();
+    presentDisplay();
     return;
   }
 
-  drawTopStatus();
   drawMiniRouteMap();
+  drawTopStatus();
   drawDirection(nav.direction);
   drawDistance(nav.distanceMeters, blinkState);
 
   drawBottomError();
-  display.display();
+  presentDisplay();
 }
 
 // ======================================================
@@ -610,6 +798,7 @@ void updateDemoMode() {
   lastDemoUpdateMs = millis();
 
   nav.distanceMeters -= DEMO_DISTANCE_DELTA_M;
+  displayDirty = true;
   if (nav.distanceMeters > 0) return;
 
   demoStepIndex++;
@@ -618,11 +807,17 @@ void updateDemoMode() {
   }
   nav.direction = demoRoute[demoStepIndex].direction;
   nav.distanceMeters = demoRoute[demoStepIndex].distanceMeters;
+  displayDirty = true;
 }
 
 void updateLiveTimeout() {
   if (lastLivePacketMs == 0) return;
   if (isLiveFresh()) return;
+
+  if (!livePacketTimedOut) {
+    livePacketTimedOut = true;
+    displayDirty = true;
+  }
 
   // Do not clear the last direction just because the phone did not send a new
   // packet for a few seconds. The app intentionally throttles BLE writes when
@@ -648,35 +843,16 @@ void updateDisplayPower() {
 }
 
 bool initDisplay() {
-  Serial.println("[I2C] scanning bus...");
-  uint8_t foundCount = 0;
-  for (uint8_t address = 1; address < 127; address++) {
-    Wire.beginTransmission(address);
-    const uint8_t error = Wire.endTransmission();
-    if (error == 0) {
-      foundCount++;
-      Serial.print("[I2C] found device at 0x");
-      if (address < 16) Serial.print("0");
-      Serial.println(address, HEX);
-    }
-  }
+  Serial.println("[TFT] init ST7789...");
+  pinMode(TFT_BACKLIGHT_PIN, OUTPUT);
+  analogWrite(TFT_BACKLIGHT_PIN, BACKLIGHT_NORMAL);
 
-  if (foundCount == 0) {
-    Serial.println("[I2C] no devices found; check VCC/GND/SDA/SCL wiring");
-    return false;
-  }
-
-  if (display.begin(OLED_I2C_ADDRESS_PRIMARY, true)) {
-    Serial.println("[OLED] SH1106 display found at 0x3C");
-    return true;
-  }
-
-  if (display.begin(OLED_I2C_ADDRESS_FALLBACK, true)) {
-    Serial.println("[OLED] SH1106 display found at 0x3D");
-    return true;
-  }
-
-  return false;
+  SPI.begin(TFT_SCLK_PIN, -1, TFT_MOSI_PIN, TFT_CS_PIN);
+  tft.init(SCREEN_HEIGHT, SCREEN_WIDTH);
+  tft.setRotation(TFT_ROTATION);
+  tft.fillScreen(COLOR_BG);
+  Serial.println("[TFT] ST7789 ready");
+  return true;
 }
 
 // ======================================================
@@ -689,21 +865,20 @@ void setup() {
   Serial.println();
   Serial.println("[BOOT] ESP32 navigation display");
 
-  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  Wire.setClock(100000);
-
   displayAvailable = initDisplay();
   if (!displayAvailable) {
-    Serial.println("[OLED] init failed");
-    Serial.println("[OLED] continuing without display so BLE still works");
+    Serial.println("[TFT] init failed");
+    Serial.println("[TFT] continuing without display so BLE still works");
   } else {
-    display.clearDisplay();
-    display.setTextColor(OLED_WHITE);
-    display.setTextSize(1);
-    display.setCursor(0, 0);
+    display.fillScreen(COLOR_BG);
+    display.setTextColor(COLOR_WHITE);
+    display.setTextSize(2);
+    display.setCursor(22, 40);
     display.println("Moto Nav Display");
+    display.setTextSize(1);
+    display.setCursor(72, 76);
     display.println("Starting BLE...");
-    display.display();
+    presentDisplay();
   }
   wakeDisplay();
 
@@ -724,14 +899,18 @@ void loop() {
   if (millis() - lastBlinkMs > 300) {
     blinkState = !blinkState;
     lastBlinkMs = millis();
+    if (nav.distanceMeters <= 30) displayDirty = true;
   }
 
   updateLiveTimeout();
   updateDemoMode();
   updateDisplayPower();
 
-  if (millis() - lastRenderMs >= DISPLAY_REFRESH_MS) {
+  if (displayDirty && millis() - lastRenderMs >= DISPLAY_REFRESH_MS) {
     lastRenderMs = millis();
+    // Clear before drawing so a BLE callback arriving during the SPI transfer
+    // schedules another frame instead of having its update erased here.
+    displayDirty = false;
     renderDisplay(blinkState);
   }
 

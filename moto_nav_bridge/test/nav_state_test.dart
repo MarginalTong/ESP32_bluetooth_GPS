@@ -28,6 +28,19 @@ void main() {
       expect(s.toWire(), '{"dir":"UP","dist":120,"p":[64,20,64,12,58,2]}');
     });
 
+    test('side roads serialize as compact r array after route preview', () {
+      const s = NavState(
+        direction: DeviceDirection.left,
+        distanceMeters: 80,
+        routePreviewPoints: [64, 34, 64, 20],
+        sideRoadPreviewPoints: [42, 22, 86, 22],
+      );
+      expect(
+        s.toWire(),
+        '{"dir":"LEFT","dist":80,"p":[64,34,64,20],"r":[42,22,86,22]}',
+      );
+    });
+
     test('toJson keys are dir/dist', () {
       const s = NavState(direction: DeviceDirection.up, distanceMeters: 500);
       expect(s.toJson(), {'dir': 'UP', 'dist': 500});

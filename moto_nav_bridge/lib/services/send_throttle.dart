@@ -29,6 +29,15 @@ class SendThrottle {
 
     if (last == null || lastAt == null) return true;
     if (candidate.direction != last.direction) return true;
+    if (!_listEquals(candidate.routePreviewPoints, last.routePreviewPoints)) {
+      return true;
+    }
+    if (!_listEquals(
+      candidate.sideRoadPreviewPoints,
+      last.sideRoadPreviewPoints,
+    )) {
+      return true;
+    }
     if ((candidate.distanceMeters - last.distanceMeters).abs() >=
         minDistanceDeltaMeters) {
       return true;
@@ -47,4 +56,13 @@ class SendThrottle {
     _last = null;
     _lastSentAt = null;
   }
+}
+
+bool _listEquals(List<int> a, List<int> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }

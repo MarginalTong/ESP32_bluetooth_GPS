@@ -54,6 +54,11 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   StreamSubscription<BluetoothConnectionState>? _connSub;
   StreamSubscription<BluetoothAdapterState>? _adapterSub;
   Future<void>? _connectOp;
+  Future<void>? _writeOp;
+  Timer? _reconnectTimer;
+  NavState? _pendingState;
+  bool _maintainConnection = false;
+  int _reconnectAttempt = 0;
   bool _disposed = false;
 
   void _setState(BleConnectionState s, {String? error}) {
@@ -63,11 +68,21 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   }
 
   /// Scans for the ESP32_NAV device by name and connects to the first match.
-  Future<void> connect({Duration timeout = const Duration(seconds: 15)}) async {
+  Future<void> connect({
+    Duration timeout = const Duration(seconds: 15),
+    bool resetReconnectAttempts = true,
+  }) async {
+    _maintainConnection = true;
+    if (resetReconnectAttempts) _reconnectAttempt = 0;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _connectOp ??= _connectInternal(timeout).whenComplete(() {
       _connectOp = null;
     });
-    return _connectOp;
+    await _connectOp;
+    if (_maintainConnection && _state != BleConnectionState.connected) {
+      _scheduleReconnect();
+    }
   }
 
   Future<void> _connectInternal(Duration timeout) async {
@@ -196,9 +211,15 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     await _connSub?.cancel();
     _connSub = device.connectionState.listen((s) {
       if (s == BluetoothConnectionState.disconnected) {
+        final reason = device.disconnectReason;
+        final detail = reason == null
+            ? 'BLE link disconnected'
+            : 'BLE disconnected (${reason.code}: ${reason.description})';
+        if (kDebugMode) debugPrint('[BLE] $detail');
         _characteristic = null;
         _throttle.reset();
-        _setState(BleConnectionState.disconnected);
+        _setState(BleConnectionState.disconnected, error: detail);
+        _scheduleReconnect();
       }
     });
 
@@ -215,7 +236,11 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         (c) => c.uuid == Guid(BleConstants.characteristicUuid),
         orElse: () => throw Exception('Characteristic not found on device'),
       );
+      _reconnectAttempt = 0;
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
       _setState(BleConnectionState.connected);
+      unawaited(_flushPendingState());
       return true;
     } catch (e) {
       await _releaseCurrentDevice(disconnectDevice: true);
@@ -226,9 +251,35 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
 
   @override
   Future<void> disconnect() async {
+    _maintainConnection = false;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _pendingState = null;
     await _stopActiveScan();
     await _releaseCurrentDevice(disconnectDevice: true);
     _setState(BleConnectionState.disconnected);
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed || !_maintainConnection || _reconnectTimer != null) return;
+    if (_state == BleConnectionState.connected || _connectOp != null) return;
+
+    // Retry only four times after a transient radio drop. If the display has
+    // genuinely lost power, stop after the 8-second attempt instead of
+    // scanning forever and wasting the phone battery. A manual Connect starts
+    // a fresh sequence.
+    const delays = [1, 2, 4, 8];
+    if (_reconnectAttempt >= delays.length) return;
+    final seconds = delays[_reconnectAttempt];
+    _reconnectAttempt++;
+    _reconnectTimer = Timer(Duration(seconds: seconds), () {
+      _reconnectTimer = null;
+      if (_disposed || !_maintainConnection) return;
+      unawaited(connect(
+        timeout: const Duration(seconds: 8),
+        resetReconnectAttempts: false,
+      ));
+    });
   }
 
   Future<void> _releaseCurrentDevice({required bool disconnectDevice}) async {
@@ -252,33 +303,71 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   /// disconnected calls return false without error.
   @override
   Future<bool> send(NavState state) async {
-    final ch = _characteristic;
-    if (_state != BleConnectionState.connected || ch == null) return false;
-
-    final now = DateTime.now();
-    if (!_throttle.shouldSend(state, now)) return false;
-
-    try {
-      await ch.write(
-        utf8.encode(state.toWire()),
-        withoutResponse: BleConstants.writeWithoutResponse,
-      );
-      _throttle.markSent(state, now);
-      _lastSent = state;
-      _lastError = null;
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _lastError = 'Write failed: $e';
-      if (kDebugMode) debugPrint(_lastError);
-      notifyListeners();
+    _pendingState = state;
+    if (_state != BleConnectionState.connected || _characteristic == null) {
       return false;
     }
+
+    // Exactly one drain loop owns the characteristic. New GPS/map updates
+    // merely replace `_pendingState`, so a slow acknowledged BLE write cannot
+    // build a queue of obsolete instructions or create concurrent writes.
+    do {
+      _writeOp ??= _drainPendingWrites().whenComplete(() => _writeOp = null);
+      await _writeOp;
+    } while (_state == BleConnectionState.connected &&
+        _characteristic != null &&
+        _pendingState != null);
+    return _lastSent == state;
+  }
+
+  Future<void> _drainPendingWrites() async {
+    while (_state == BleConnectionState.connected &&
+        _characteristic != null &&
+        _pendingState != null) {
+      final state = _pendingState!;
+      _pendingState = null;
+      final now = DateTime.now();
+      if (!_throttle.shouldSend(state, now)) continue;
+
+      final wire = state.toWire();
+      if (kDebugMode) {
+        debugPrint(
+          '[BLE_NAV] ${utf8.encode(wire).length} bytes, '
+          'route=${state.routePreviewPoints.length ~/ 2}, '
+          'roads=${state.sideRoadPreviewPoints.length ~/ 4}',
+        );
+      }
+
+      try {
+        await _characteristic!.write(
+          utf8.encode(wire),
+          withoutResponse: BleConstants.writeWithoutResponse,
+        );
+        _throttle.markSent(state, now);
+        _lastSent = state;
+        _lastError = null;
+        notifyListeners();
+      } catch (e) {
+        // Preserve the newest unsent instruction for the reconnect flush.
+        _pendingState ??= state;
+        _lastError = 'Write failed: $e';
+        if (kDebugMode) debugPrint(_lastError);
+        notifyListeners();
+        break;
+      }
+    }
+  }
+
+  Future<void> _flushPendingState() async {
+    final pending = _pendingState;
+    if (pending != null) await send(pending);
   }
 
   @override
   void dispose() {
     _disposed = true;
+    _maintainConnection = false;
+    _reconnectTimer?.cancel();
     _scanSub?.cancel();
     _connSub?.cancel();
     _adapterSub?.cancel();

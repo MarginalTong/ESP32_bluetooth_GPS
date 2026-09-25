@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/navigation_controller.dart';
+import '../l10n/app_text.dart';
 import '../models/lat_lng.dart';
 import '../models/place_result.dart';
+import '../models/route_candidate.dart';
 import '../services/ble_service.dart';
 import 'place_search_page.dart';
 import 'widgets/connection_card.dart';
@@ -37,18 +39,25 @@ class _HomePageState extends State<HomePage> {
     final place = await Navigator.of(context).push<PlaceResult>(
       MaterialPageRoute(builder: (_) => const PlaceSearchPage()),
     );
-    if (place != null && mounted) setState(() => _destination = place);
+    if (place != null && mounted) {
+      setState(() => _destination = place);
+      await context
+          .read<NavigationController>()
+          .previewDestination(place.location);
+    }
   }
 
-  void _selectMapDestination(LatLng location) {
+  Future<void> _selectMapDestination(LatLng location) async {
+    final text = AppText.of(context);
     setState(() {
       _destination = PlaceResult(
-        name: '地图选点',
+        name: text.mapPoint,
         address:
             '${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)}',
         location: location,
       );
     });
+    await context.read<NavigationController>().previewDestination(location);
   }
 
   @override
@@ -100,6 +109,8 @@ class _HomePageState extends State<HomePage> {
                     if (!navigating)
                       _DestinationPanel(
                         destination: _destination,
+                        selectedRoute: nav.selectedRoute,
+                        previewingRoute: nav.previewingRoute,
                         canStart: ble.state == BleConnectionState.connected,
                         onChoose: _chooseDestination,
                         onStart: _start,
@@ -145,17 +156,10 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Icon(
-            Icons.near_me_rounded,
-            color: Theme.of(context).colorScheme.primary,
-          ),
+        Icon(
+          Icons.near_me_rounded,
+          size: 38,
+          color: Theme.of(context).colorScheme.primary,
         ),
       ],
     );
@@ -165,18 +169,23 @@ class _Header extends StatelessWidget {
 class _DestinationPanel extends StatelessWidget {
   const _DestinationPanel({
     required this.destination,
+    required this.selectedRoute,
+    required this.previewingRoute,
     required this.canStart,
     required this.onChoose,
     required this.onStart,
   });
 
   final PlaceResult? destination;
+  final RouteCandidate? selectedRoute;
+  final bool previewingRoute;
   final bool canStart;
   final VoidCallback onChoose;
   final VoidCallback onStart;
 
   @override
   Widget build(BuildContext context) {
+    final text = AppText.of(context);
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -194,7 +203,27 @@ class _DestinationPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('目的地', style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              Text(
+                text.destination,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 30),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: _RouteEta(
+                      seconds: selectedRoute?.expectedTravelTimeSeconds,
+                      loading: previewingRoute,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 14),
           InkWell(
             onTap: onChoose,
@@ -212,7 +241,7 @@ class _DestinationPanel extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: destination == null
-                        ? const Text('搜索地点、地址或商家')
+                        ? Text(text.searchPlaceAddressBusiness)
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -244,10 +273,10 @@ class _DestinationPanel extends StatelessWidget {
               icon: const Icon(Icons.navigation_rounded),
               label: Text(
                 !canStart
-                    ? '请先连接导航屏'
+                    ? text.connectNavScreenFirst
                     : destination == null
-                        ? '请先选择目的地'
-                        : '开始导航',
+                        ? text.chooseDestinationFirst
+                        : text.startNavigation,
               ),
             ),
           ),
@@ -255,6 +284,70 @@ class _DestinationPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RouteEta extends StatelessWidget {
+  const _RouteEta({
+    required this.seconds,
+    required this.loading,
+  });
+
+  final int? seconds;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = AppText.of(context);
+    final seconds = this.seconds;
+    if (loading) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox.square(
+            dimension: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            text.planningRouteShort,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      );
+    }
+
+    if (seconds == null) return const SizedBox.shrink();
+
+    final duration = _durationLabel(text, Duration(seconds: seconds));
+    final arrival = TimeOfDay.fromDateTime(
+      DateTime.now().add(Duration(seconds: seconds)),
+    ).format(context);
+
+    return Text(
+      text.etaSummary(duration, arrival),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.right,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.w700,
+          ),
+    );
+  }
+}
+
+String _durationLabel(AppText text, Duration duration) {
+  final minutes = (duration.inSeconds / 60).round().clamp(1, 999);
+  if (minutes < 60) {
+    return text.durationMinutes(minutes);
+  }
+
+  final hours = minutes ~/ 60;
+  final remainingMinutes = minutes % 60;
+  return text.durationHoursMinutes(hours, remainingMinutes);
 }
 
 class _NavigationControls extends StatelessWidget {
@@ -274,6 +367,7 @@ class _NavigationControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final text = AppText.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -302,10 +396,10 @@ class _NavigationControls extends StatelessWidget {
                     : const Icon(Icons.pause_rounded),
             label: Text(
               phase == NavPhase.routing
-                  ? '路线规划中…'
+                  ? text.planningRoute
                   : phase == NavPhase.paused
-                      ? '继续导航'
-                      : '暂停导航',
+                      ? text.resumeNavigation
+                      : text.pauseNavigation,
             ),
           ),
         ),
@@ -315,7 +409,7 @@ class _NavigationControls extends StatelessWidget {
           child: FilledButton.tonalIcon(
             onPressed: phase == NavPhase.routing ? null : onEnd,
             icon: const Icon(Icons.stop_circle_rounded),
-            label: const Text('结束导航并断开'),
+            label: Text(text.endAndDisconnect),
           ),
         ),
       ],

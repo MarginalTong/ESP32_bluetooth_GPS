@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import '../l10n/app_text.dart';
 import '../models/lat_lng.dart';
 import '../models/route_candidate.dart';
 import '../models/route_step.dart';
@@ -124,8 +125,8 @@ class DirectionsService implements RouteProvider {
           : const <String, dynamic>{};
       result.add(RouteCandidate(
         steps: steps,
-        name: route['summary'] as String? ??
-            (routeIndex == 0 ? '推荐路线' : '路线 ${routeIndex + 1}'),
+        name:
+            route['summary'] as String? ?? AppText.system.routeName(routeIndex),
         distanceMeters:
             ((leg['distance'] as Map<String, dynamic>?)?['value'] as num?)
                 ?.round(),

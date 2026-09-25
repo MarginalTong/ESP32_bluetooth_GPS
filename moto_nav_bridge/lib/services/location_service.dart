@@ -32,7 +32,7 @@ class LocationService implements PositionProvider {
     return LatLng(p.latitude, p.longitude);
   }
 
-  /// Continuous position stream while riding. Emits on ~5 m of movement.
+  /// Continuous navigation-grade position stream while riding.
   @override
   Stream<LatLng> positionStream() {
     return Geolocator.getPositionStream(

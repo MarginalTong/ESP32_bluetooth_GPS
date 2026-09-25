@@ -59,6 +59,28 @@ import UIKit
 
   private var searchHistoryKey: String { "moto_nav_bridge.search_history" }
 
+  private func usesEnglish(_ args: [String: Any]) -> Bool {
+    if let languageCode = args["languageCode"] as? String {
+      return languageCode.lowercased().hasPrefix("en")
+    }
+    return Locale.preferredLanguages.first?.lowercased().hasPrefix("en") == true
+  }
+
+  private func noDrivingRouteMessage(_ args: [String: Any]) -> String {
+    usesEnglish(args) ? "No drivable route found" : "没有找到可驾驶路线"
+  }
+
+  private func unnamedPlaceName(_ args: [String: Any]) -> String {
+    usesEnglish(args) ? "Unnamed place" : "未命名地点"
+  }
+
+  private func defaultRouteName(index: Int, args: [String: Any]) -> String {
+    if usesEnglish(args) {
+      return index == 0 ? "Recommended route" : "Route \(index + 1)"
+    }
+    return index == 0 ? "推荐路线" : "路线 \(index + 1)"
+  }
+
   private func loadSearchHistory(result: @escaping FlutterResult) {
     result(UserDefaults.standard.array(forKey: searchHistoryKey) as? [[String: Any]] ?? [])
   }
@@ -142,7 +164,7 @@ import UIKit
       let items = response?.mapItems.prefix(20).map { item -> [String: Any] in
         let coordinate = item.placemark.coordinate
         return [
-          "name": item.name ?? item.placemark.name ?? "未命名地点",
+          "name": item.name ?? item.placemark.name ?? self.unnamedPlaceName(args),
           "address": item.placemark.title ?? "",
           "latitude": coordinate.latitude,
           "longitude": coordinate.longitude,
@@ -165,7 +187,7 @@ import UIKit
       else {
         result(FlutterError(
           code: "NO_ROUTE",
-          message: "没有找到可驾驶路线",
+          message: self.noDrivingRouteMessage(args),
           details: nil
         ))
         return
@@ -218,21 +240,21 @@ import UIKit
       guard let routes = response?.routes, !routes.isEmpty else {
         result(FlutterError(
           code: "NO_ROUTE",
-          message: "没有找到可驾驶路线",
+          message: self.noDrivingRouteMessage(args),
           details: nil
         ))
         return
       }
 
       result(routes.prefix(3).enumerated().map { index, route in
-        self.routeDictionary(route, index: index)
+        self.routeDictionary(route, index: index, args: args)
       })
     }
   }
 
-  private func routeDictionary(_ route: MKRoute, index: Int) -> [String: Any] {
+  private func routeDictionary(_ route: MKRoute, index: Int, args: [String: Any]) -> [String: Any] {
     [
-      "name": route.name.isEmpty ? (index == 0 ? "推荐路线" : "路线 \(index + 1)") : route.name,
+      "name": route.name.isEmpty ? defaultRouteName(index: index, args: args) : route.name,
       "distance": Int(route.distance.rounded()),
       "expectedTravelTime": Int(route.expectedTravelTime.rounded()),
       "steps": routeStepDictionaries(route),
@@ -384,7 +406,55 @@ private final class NavigationMapViewFactory: NSObject, FlutterPlatformViewFacto
   }
 }
 
+// A north-pointing movement pointer behind a white-ringed location dot.
+private final class MovementLocationView: MKAnnotationView {
+  private let pointer = CAShapeLayer()
+
+  override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+    super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+    bounds = CGRect(x: 0, y: 0, width: 56, height: 56)
+    canShowCallout = false
+    displayPriority = .required
+    let blue = UIColor(red: 0.18, green: 0.46, blue: 1, alpha: 1)
+    pointer.frame = bounds
+    let path = UIBezierPath()
+    path.move(to: CGPoint(x: 28, y: 2))
+    path.addLine(to: CGPoint(x: 17, y: 27))
+    path.addLine(to: CGPoint(x: 39, y: 27))
+    path.close()
+    pointer.path = path.cgPath
+    pointer.fillColor = blue.cgColor
+    pointer.isHidden = true
+    layer.addSublayer(pointer)
+    let dot = CAShapeLayer()
+    dot.path = UIBezierPath(ovalIn: CGRect(x: 16, y: 16, width: 24, height: 24)).cgPath
+    dot.fillColor = blue.cgColor
+    dot.strokeColor = UIColor.white.cgColor
+    dot.lineWidth = 4
+    dot.shadowColor = UIColor.black.cgColor
+    dot.shadowOpacity = 0.18
+    dot.shadowRadius = 4
+    dot.shadowOffset = CGSize(width: 0, height: 1)
+    layer.addSublayer(dot)
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+  func update(course: CLLocationDirection?, mapHeading: CLLocationDirection) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    pointer.isHidden = course == nil
+    if let course {
+      pointer.setAffineTransform(CGAffineTransform(rotationAngle: CGFloat(
+        (course - mapHeading) * .pi / 180
+      )))
+    }
+    CATransaction.commit()
+  }
+}
+
 private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MKMapViewDelegate {
+  private var movementCourse: CLLocationDirection?
   private let mapView: MKMapView
   private let eventChannel: FlutterMethodChannel
   private let controlChannel: FlutterMethodChannel
@@ -394,6 +464,7 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
   private var destinationCoordinate: CLLocationCoordinate2D?
   private var selectedPointAnnotation: MKPointAnnotation?
   private var mapPointSelectionEnabled = false
+  private var languageCode = "zh"
   private var didRequestRoute = false
 
   init(frame: CGRect, args: [String: Any]?, messenger: FlutterBinaryMessenger) {
@@ -445,6 +516,10 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
 
   private func configure(args: [String: Any], animated: Bool) {
     mapPointSelectionEnabled = args["mapPointSelectionEnabled"] as? Bool ?? false
+    // The current-position marker must remain visible during navigation too.
+    // Destination picking controls gestures, not user-location visibility.
+    mapView.showsUserLocation = true
+    languageCode = args["languageCode"] as? String ?? languageCode
     selectedRouteIndex = args["selectedRouteIndex"] as? Int ?? 0
 
     guard
@@ -476,10 +551,10 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     mapView.removeAnnotations(mapView.annotations.compactMap { $0 as? MKPointAnnotation })
     let annotation = MKPointAnnotation()
     annotation.coordinate = destination
-    let destinationName = args["destinationName"] as? String ?? "目的地"
+    let destinationName = args["destinationName"] as? String ?? destinationTitle
     annotation.title = destinationName
     mapView.addAnnotation(annotation)
-    if destinationName == "地图选点" {
+    if destinationName == mapPointTitle || destinationName == "地图选点" {
       selectedPointAnnotation = annotation
     } else {
       selectedPointAnnotation = nil
@@ -540,6 +615,18 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
   ) -> Bool {
     abs(first.latitude - second.latitude) < 0.000001
       && abs(first.longitude - second.longitude) < 0.000001
+  }
+
+  private var usesEnglish: Bool {
+    languageCode.lowercased().hasPrefix("en")
+  }
+
+  private var destinationTitle: String {
+    usesEnglish ? "Destination" : "目的地"
+  }
+
+  private var mapPointTitle: String {
+    usesEnglish ? "Map point" : "地图选点"
   }
 
   private func routePolylines(from routes: [[String: Any]]) -> [MKPolyline] {
@@ -660,7 +747,7 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
 
     let annotation = MKPointAnnotation()
     annotation.coordinate = coordinate
-    annotation.title = "地图选点"
+    annotation.title = mapPointTitle
     mapView.addAnnotation(annotation)
     selectedPointAnnotation = annotation
 
@@ -700,6 +787,17 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
   }
 
   func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+    // CLLocation.course is travel direction, not the phone's compass heading.
+    // Reject stationary/poor/stale fixes instead of inventing a direction.
+    if let location = userLocation.location,
+       abs(location.timestamp.timeIntervalSinceNow) <= 10,
+       location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 25,
+       location.speed >= 0.5, location.course >= 0 {
+      movementCourse = location.course
+    } else {
+      movementCourse = nil
+    }
+    updateMovementPointer()
     guard
       let destination = destinationCoordinate,
       !didRequestRoute,
@@ -708,6 +806,26 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       return
     }
     calculateRoute(from: location.coordinate, to: destination, animated: true)
+  }
+
+  func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+    guard annotation is MKUserLocation else { return nil }
+    let identifier = "movement-location"
+    let view = (mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+      as? MovementLocationView) ?? MovementLocationView(
+        annotation: annotation, reuseIdentifier: identifier)
+    view.annotation = annotation
+    view.update(course: movementCourse, mapHeading: mapView.camera.heading)
+    return view
+  }
+
+  func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+    updateMovementPointer()
+  }
+
+  private func updateMovementPointer() {
+    (mapView.view(for: mapView.userLocation) as? MovementLocationView)?.update(
+      course: movementCourse, mapHeading: mapView.camera.heading)
   }
 
   private func fitMap(

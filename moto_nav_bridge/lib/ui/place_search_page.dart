@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_text.dart';
 import '../models/place_result.dart';
 import '../services/apple_maps_service.dart';
 import '../services/search_history_service.dart';
@@ -115,7 +116,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
         _results = results;
         _suggestions = const [];
         if (results.isEmpty) {
-          _error = showErrorWhenEmpty ? '没找到匹配地点，换个关键词试试' : null;
+          _error =
+              showErrorWhenEmpty ? AppText.of(context).noMatchingPlaces : null;
         }
       });
     } catch (e) {
@@ -123,7 +125,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       setState(() {
         _results = const [];
         _suggestions = const [];
-        _error = showErrorWhenEmpty ? '没找到匹配地点，换个关键词试试' : null;
+        _error =
+            showErrorWhenEmpty ? AppText.of(context).noMatchingPlaces : null;
       });
     }
   }
@@ -137,13 +140,13 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       final place = await _service.resolveSuggestion(suggestion);
       if (!mounted) return;
       if (place == null) {
-        setState(() => _error = '这个候选没有可导航坐标，换一个试试');
+        setState(() => _error = AppText.of(context).candidateHasNoCoordinate);
         return;
       }
       await _selectPlace(place);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _error = '这个候选没有可导航坐标，换一个试试');
+      setState(() => _error = AppText.of(context).candidateHasNoCoordinate);
     } finally {
       if (mounted) setState(() => _resolving = false);
     }
@@ -169,8 +172,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    final text = AppText.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('搜索目的地')),
+      appBar: AppBar(title: Text(text.searchDestination)),
       body: Column(
         children: [
           Padding(
@@ -181,9 +185,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               onChanged: _changed,
               onSubmitted: _search,
               textInputAction: TextInputAction.search,
-              decoration: const InputDecoration(
-                hintText: '输入地点、地址或商家名称',
-                prefixIcon: Icon(Icons.search_rounded),
+              decoration: InputDecoration(
+                hintText: text.enterPlaceAddressBusiness,
+                prefixIcon: const Icon(Icons.search_rounded),
               ),
             ),
           ),
@@ -272,6 +276,7 @@ class _SearchHistoryList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final text = AppText.of(context);
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: places.length + 1,
@@ -284,13 +289,13 @@ class _SearchHistoryList extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '最近搜索',
+                    text.recentSearches,
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
                 TextButton(
                   onPressed: onClear,
-                  child: const Text('清空'),
+                  child: Text(text.clear),
                 ),
               ],
             ),
@@ -321,6 +326,7 @@ class _SearchHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final text = AppText.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -331,10 +337,10 @@ class _SearchHint extends StatelessWidget {
             color: Theme.of(context).colorScheme.primary,
           ),
           const SizedBox(height: 14),
-          const Text('想去哪里？'),
+          Text(text.whereTo),
           const SizedBox(height: 6),
           Text(
-            '例如：悉尼歌剧院、机场、咖啡店',
+            text.searchExamples,
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),

@@ -5,6 +5,7 @@ import 'package:moto_nav_bridge/controllers/navigation_controller.dart';
 import 'package:moto_nav_bridge/models/device_direction.dart';
 import 'package:moto_nav_bridge/models/lat_lng.dart';
 import 'package:moto_nav_bridge/models/nav_state.dart';
+import 'package:moto_nav_bridge/models/road_segment.dart';
 import 'package:moto_nav_bridge/models/route_candidate.dart';
 import 'package:moto_nav_bridge/models/route_step.dart';
 import 'package:moto_nav_bridge/services/navigation_ports.dart';
@@ -13,16 +14,19 @@ void main() {
   late FakeBle ble;
   late FakeRoutes routes;
   late FakePositions positions;
+  late FakeSideRoads sideRoads;
   late NavigationController controller;
 
   setUp(() {
     ble = FakeBle();
     routes = FakeRoutes(mainRoute);
     positions = FakePositions(current: p0);
+    sideRoads = FakeSideRoads();
     controller = NavigationController(
       ble: ble,
       directions: routes,
       location: positions,
+      sideRoads: sideRoads,
     );
   });
 
@@ -44,6 +48,17 @@ void main() {
     expect(ble.sent.last.distanceMeters, greaterThan(100));
   });
 
+  test('route planning does not wait for nearby-road lookup', () async {
+    await controller.startNavigation(p2);
+
+    expect(controller.phase, NavPhase.navigating);
+    expect(sideRoads.fetchCount, 0);
+
+    positions.emit(p0);
+    await pumpEventQueue();
+    expect(sideRoads.fetchCount, 1);
+  });
+
   test(
       'off-route confirmation keeps normal turn updates to avoid frozen screen',
       () async {
@@ -54,7 +69,7 @@ void main() {
     await pumpEventQueue();
 
     expect(controller.phase, NavPhase.navigating);
-    expect(controller.error, contains('偏离路线'));
+    expect(controller.error, anyOf(contains('偏离路线'), contains('Off route')));
     expect(ble.sent, hasLength(2));
     expect(ble.sent.map((state) => state.direction), [
       DeviceDirection.left,
@@ -70,6 +85,7 @@ void main() {
       ble: ble,
       directions: routes,
       location: positions,
+      sideRoads: sideRoads,
     );
 
     await controller.startNavigation(p2);
@@ -94,6 +110,7 @@ void main() {
       ble: ble,
       directions: routes,
       location: positions,
+      sideRoads: sideRoads,
     );
 
     await controller.startNavigation(p2);
@@ -120,6 +137,7 @@ void main() {
       ble: ble,
       directions: routes,
       location: positions,
+      sideRoads: sideRoads,
     );
 
     await controller.startNavigation(p2);
@@ -286,6 +304,22 @@ class FakeRoutes implements RouteProvider {
       return [RouteCandidate(steps: reroute!, name: 'Reroute')];
     }
     return alternates ?? [RouteCandidate(steps: routes, name: 'Main')];
+  }
+
+  @override
+  void dispose() {
+    disposed = true;
+  }
+}
+
+class FakeSideRoads implements SideRoadProvider {
+  int fetchCount = 0;
+  bool disposed = false;
+
+  @override
+  Future<List<RoadSegment>> fetchSideRoadsNear(LatLng position) async {
+    fetchCount++;
+    return const [];
   }
 
   @override

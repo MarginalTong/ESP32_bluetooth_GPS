@@ -1,4 +1,5 @@
 import 'lat_lng.dart';
+import 'road_segment.dart';
 import 'route_step.dart';
 
 class RouteCandidate {
@@ -7,12 +8,14 @@ class RouteCandidate {
     this.name,
     this.distanceMeters,
     this.expectedTravelTimeSeconds,
+    this.sideRoads = const [],
   });
 
   final List<RouteStep> steps;
   final String? name;
   final int? distanceMeters;
   final int? expectedTravelTimeSeconds;
+  final List<RoadSegment> sideRoads;
 
   List<LatLng> get polyline {
     final output = <LatLng>[];
@@ -28,4 +31,20 @@ class RouteCandidate {
     }
     return output;
   }
+
+  RouteCandidate copyWith({
+    List<RouteStep>? steps,
+    String? name,
+    int? distanceMeters,
+    int? expectedTravelTimeSeconds,
+    List<RoadSegment>? sideRoads,
+  }) =>
+      RouteCandidate(
+        steps: steps ?? this.steps,
+        name: name ?? this.name,
+        distanceMeters: distanceMeters ?? this.distanceMeters,
+        expectedTravelTimeSeconds:
+            expectedTravelTimeSeconds ?? this.expectedTravelTimeSeconds,
+        sideRoads: sideRoads ?? this.sideRoads,
+      );
 }

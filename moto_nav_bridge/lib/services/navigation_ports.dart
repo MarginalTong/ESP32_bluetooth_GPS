@@ -1,5 +1,6 @@
 import '../models/lat_lng.dart';
 import '../models/nav_state.dart';
+import '../models/road_segment.dart';
 import '../models/route_candidate.dart';
 import '../models/route_step.dart';
 
@@ -19,6 +20,11 @@ abstract interface class RouteProvider {
     required LatLng destination,
   });
 
+  void dispose();
+}
+
+abstract interface class SideRoadProvider {
+  Future<List<RoadSegment>> fetchSideRoadsNear(LatLng position);
   void dispose();
 }
 

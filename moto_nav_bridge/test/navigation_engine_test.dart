@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moto_nav_bridge/models/device_direction.dart';
 import 'package:moto_nav_bridge/models/lat_lng.dart';
+import 'package:moto_nav_bridge/models/road_segment.dart';
 import 'package:moto_nav_bridge/models/route_step.dart';
 import 'package:moto_nav_bridge/services/navigation_engine.dart';
 
@@ -114,5 +115,54 @@ void main() {
       expect(points[i], inInclusiveRange(18, 110));
       expect(points[i + 1], inInclusiveRange(2, 34));
     }
+  });
+
+  test('nearby side roads are projected into mini-map segment coordinates', () {
+    final engine = NavigationEngine(
+      route(),
+      sideRoads: const [
+        RoadSegment(
+          start: LatLng(0.0005, -0.0004),
+          end: LatLng(0.0005, 0.0004),
+        ),
+      ],
+    );
+    final state = engine.update(p0);
+    final roads = state.sideRoadPreviewPoints;
+
+    // A crossing road produces two route-anchored arms.
+    expect(roads.length, 8);
+    expect(roads[0], inInclusiveRange(18, 110));
+    expect(roads[1], inInclusiveRange(2, 34));
+    expect(roads[2], inInclusiveRange(18, 110));
+    expect(roads[3], inInclusiveRange(2, 34));
+  });
+
+  test('parallel nearby roads are not emitted as junctions', () {
+    final engine = NavigationEngine(
+      route(),
+      sideRoads: const [
+        RoadSegment(
+          start: LatLng(0.0001, 0.0001),
+          end: LatLng(0.0008, 0.0001),
+        ),
+      ],
+    );
+
+    expect(engine.update(p0).sideRoadPreviewPoints, isEmpty);
+  });
+
+  test('roads disconnected from the selected route are not emitted', () {
+    final engine = NavigationEngine(
+      route(),
+      sideRoads: const [
+        RoadSegment(
+          start: LatLng(0.0005, 0.0003),
+          end: LatLng(0.0005, 0.0006),
+        ),
+      ],
+    );
+
+    expect(engine.update(p0).sideRoadPreviewPoints, isEmpty);
   });
 }
