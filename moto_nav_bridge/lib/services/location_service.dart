@@ -37,7 +37,11 @@ class LocationService implements PositionProvider {
   Stream<LatLng> positionStream() {
     return Geolocator.getPositionStream(
       locationSettings: _locationSettings,
-    ).map((p) => LatLng(p.latitude, p.longitude));
+    ).map((p) => NavigationFix(p.latitude, p.longitude,
+        heading: p.heading,
+        accuracy: p.accuracy,
+        speed: p.speed,
+        timestamp: p.timestamp));
   }
 
   LocationSettings get _locationSettings {

@@ -28,6 +28,7 @@ class SendThrottle {
     final lastAt = _lastSentAt;
 
     if (last == null || lastAt == null) return true;
+    if (candidate.rerouting != last.rerouting) return true;
     if (candidate.direction != last.direction) return true;
     if (!_listEquals(candidate.routePreviewPoints, last.routePreviewPoints)) {
       return true;

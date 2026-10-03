@@ -9,6 +9,7 @@ import '../models/route_candidate.dart';
 import '../services/ble_service.dart';
 import 'place_search_page.dart';
 import 'widgets/connection_card.dart';
+import 'widgets/glass_panel.dart';
 import 'widgets/instruction_card.dart';
 import 'widgets/navigation_map.dart';
 
@@ -70,98 +71,85 @@ class _HomePageState extends State<HomePage> {
     final showInstruction = nav.phase == NavPhase.navigating ||
         nav.phase == NavPhase.paused ||
         nav.phase == NavPhase.arrived;
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    final idleMapHeight = (screenHeight * 0.42).clamp(320.0, 380.0);
-
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-          child: Column(
-            children: [
-              const _Header(),
-              const SizedBox(height: 18),
-              Expanded(
-                child: ListView(
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  physics: const ClampingScrollPhysics(),
-                  padding: const EdgeInsets.only(bottom: 32),
-                  children: [
-                    const ConnectionCard(),
-                    const SizedBox(height: 18),
-                    NavigationMap(
-                      height: navigating ? 260 : idleMapHeight,
-                      origin: nav.origin,
-                      destination: nav.destination ?? _destination?.location,
-                      destinationName: _destination?.name,
-                      routes: nav.routeOptions,
-                      selectedRouteIndex: nav.selectedRouteIndex,
-                      onRouteSelected: nav.selectRoute,
-                      onMapPointSelected:
-                          navigating ? null : _selectMapDestination,
-                    ),
-                    if (showInstruction) ...[
-                      const SizedBox(height: 18),
-                      const InstructionCard(),
+      body: LayoutBuilder(builder: (context, constraints) {
+        final landscape = constraints.maxWidth > constraints.maxHeight;
+        final safe = MediaQuery.paddingOf(context);
+        final panelWidth = landscape ? 320.0 : constraints.maxWidth - 32;
+        // Reserve space for native map attribution and route framing.
+        final mapInsets = EdgeInsets.fromLTRB(
+          landscape ? panelWidth + 32 : 16,
+          safe.top + (landscape ? 8 : 96),
+          16,
+          safe.bottom + (landscape ? 40 : 300),
+        );
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: NavigationMap(
+                height: constraints.maxHeight,
+                borderRadius: 0,
+                contentPadding: mapInsets,
+                origin: nav.origin,
+                destination: nav.destination ?? _destination?.location,
+                destinationName: _destination?.name,
+                routes: nav.routeOptions,
+                selectedRouteIndex: nav.selectedRouteIndex,
+                onRouteSelected: nav.selectRoute,
+                onMapPointSelected: navigating ? null : _selectMapDestination,
+              ),
+            ),
+            Positioned(
+              top: safe.top + 12,
+              left: 16,
+              width: panelWidth,
+              child: const ConnectionCard(),
+            ),
+            Positioned(
+              left: 16,
+              bottom: safe.bottom + 36,
+              width: panelWidth,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: (constraints.maxHeight - safe.vertical - 128)
+                      .clamp(80, 600),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (showInstruction) ...[
+                        const InstructionCard(),
+                        const SizedBox(height: 10),
+                      ],
+                      if (!navigating)
+                        _DestinationPanel(
+                          destination: _destination,
+                          selectedRoute: nav.selectedRoute,
+                          previewingRoute: nav.previewingRoute,
+                          canStart: ble.state == BleConnectionState.connected,
+                          onChoose: _chooseDestination,
+                          onStart: _start,
+                        )
+                      else
+                        GlassPanel(
+                          padding: const EdgeInsets.all(12),
+                          child: _NavigationControls(
+                            phase: nav.phase,
+                            error: nav.error,
+                            onPause: nav.pause,
+                            onResume: _start,
+                            onEnd: _endNavigation,
+                          ),
+                        ),
                     ],
-                    const SizedBox(height: 18),
-                    if (!navigating)
-                      _DestinationPanel(
-                        destination: _destination,
-                        selectedRoute: nav.selectedRoute,
-                        previewingRoute: nav.previewingRoute,
-                        canStart: ble.state == BleConnectionState.connected,
-                        onChoose: _chooseDestination,
-                        onStart: _start,
-                      )
-                    else
-                      _NavigationControls(
-                        phase: nav.phase,
-                        error: nav.error,
-                        onPause: nav.pause,
-                        onResume: _start,
-                        onEnd: _endNavigation,
-                      ),
-                  ],
+                  ),
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Header extends StatelessWidget {
-  const _Header();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'MOTO NAV',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      letterSpacing: 2.2,
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-            ],
-          ),
-        ),
-        Icon(
-          Icons.near_me_rounded,
-          size: 38,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ],
+            ),
+          ],
+        );
+      }),
     );
   }
 }
@@ -186,20 +174,8 @@ class _DestinationPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = AppText.of(context);
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: const LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            Color(0xff6b3414),
-            Color(0xff4a2f22),
-            Color(0xff2d2521),
-          ],
-        ),
-      ),
+    return GlassPanel(
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -232,7 +208,7 @@ class _DestinationPanel extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               decoration: BoxDecoration(
-                color: const Color(0xff171a1f),
+                color: Colors.white.withValues(alpha: .08),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Row(

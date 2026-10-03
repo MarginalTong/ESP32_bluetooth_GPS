@@ -9,6 +9,8 @@ class RouteCandidate {
     this.distanceMeters,
     this.expectedTravelTimeSeconds,
     this.sideRoads = const [],
+    this.attribution,
+    this.attributionUrl,
   });
 
   final List<RouteStep> steps;
@@ -16,6 +18,8 @@ class RouteCandidate {
   final int? distanceMeters;
   final int? expectedTravelTimeSeconds;
   final List<RoadSegment> sideRoads;
+  final String? attribution;
+  final String? attributionUrl;
 
   List<LatLng> get polyline {
     final output = <LatLng>[];
@@ -38,6 +42,8 @@ class RouteCandidate {
     int? distanceMeters,
     int? expectedTravelTimeSeconds,
     List<RoadSegment>? sideRoads,
+    String? attribution,
+    String? attributionUrl,
   }) =>
       RouteCandidate(
         steps: steps ?? this.steps,
@@ -46,5 +52,7 @@ class RouteCandidate {
         expectedTravelTimeSeconds:
             expectedTravelTimeSeconds ?? this.expectedTravelTimeSeconds,
         sideRoads: sideRoads ?? this.sideRoads,
+        attribution: attribution ?? this.attribution,
+        attributionUrl: attributionUrl ?? this.attributionUrl,
       );
 }

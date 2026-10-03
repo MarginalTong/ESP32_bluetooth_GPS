@@ -12,9 +12,13 @@ class NavState {
     required this.distanceMeters,
     this.routePreviewPoints = const [],
     this.sideRoadPreviewPoints = const [],
+    this.rerouting = false,
   });
 
   final DeviceDirection direction;
+  final bool rerouting;
+  static const recalculating = NavState(
+      direction: DeviceDirection.stop, distanceMeters: 0, rerouting: true);
 
   /// Distance to the next maneuver, in whole meters. Never negative.
   final int distanceMeters;
@@ -38,6 +42,7 @@ class NavState {
   Map<String, dynamic> toJson() => {
         'dir': direction.wire,
         'dist': distanceMeters,
+        if (rerouting) 'rerouting': true,
         if (routePreviewPoints.isNotEmpty) 'p': routePreviewPoints,
         if (sideRoadPreviewPoints.isNotEmpty) 'r': sideRoadPreviewPoints,
       };
@@ -53,6 +58,7 @@ class NavState {
     if (points.isNotEmpty) {
       buffer.write(',"p":[${points.join(',')}]');
     }
+    if (rerouting) buffer.write(',"rerouting":true');
     if (roads.isNotEmpty) {
       buffer.write(',"r":[${roads.join(',')}]');
     }
@@ -65,8 +71,10 @@ class NavState {
     int? distanceMeters,
     List<int>? routePreviewPoints,
     List<int>? sideRoadPreviewPoints,
+    bool? rerouting,
   }) =>
       NavState(
+        rerouting: rerouting ?? this.rerouting,
         direction: direction ?? this.direction,
         distanceMeters: distanceMeters ?? this.distanceMeters,
         routePreviewPoints: routePreviewPoints ?? this.routePreviewPoints,
@@ -77,6 +85,7 @@ class NavState {
   @override
   bool operator ==(Object other) =>
       other is NavState &&
+      other.rerouting == rerouting &&
       other.direction == direction &&
       other.distanceMeters == distanceMeters &&
       _listEquals(other.routePreviewPoints, routePreviewPoints) &&
@@ -85,6 +94,7 @@ class NavState {
   @override
   int get hashCode => Object.hash(
         direction,
+        rerouting,
         distanceMeters,
         Object.hashAll(routePreviewPoints),
         Object.hashAll(sideRoadPreviewPoints),

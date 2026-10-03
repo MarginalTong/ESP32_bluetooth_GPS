@@ -48,6 +48,25 @@ void main() {
     expect(ble.sent.last.distanceMeters, greaterThan(100));
   });
 
+  test('opposite-course candidates fail safely instead of replacing the route',
+      () async {
+    await controller.startNavigation(p2);
+    final now = DateTime.now();
+    for (var i = 0; i < 2; i++) {
+      positions.emit(NavigationFix(0.0002, 0,
+          heading: 180,
+          accuracy: 5,
+          speed: 2,
+          timestamp: now.add(Duration(milliseconds: i))));
+      await pumpEventQueue();
+    }
+    expect(routes.fetchCount, 2);
+    expect(controller.current?.rerouting, isFalse);
+    expect(ble.sent.last.rerouting, isFalse);
+    expect(ble.sent.last, NavState.stopped);
+    expect(controller.error, contains('travel direction'));
+  });
+
   test('route planning does not wait for nearby-road lookup', () async {
     await controller.startNavigation(p2);
 
@@ -59,20 +78,244 @@ void main() {
     expect(sideRoads.fetchCount, 1);
   });
 
+  test('explicit reroute override uses separate provider', () async {
+    final replacement = FakeRoutes(rerouteRoute);
+    controller.dispose();
+    controller = NavigationController(
+        ble: ble,
+        directions: routes,
+        rerouteDirections: replacement,
+        location: positions,
+        sideRoads: sideRoads);
+    await controller.previewDestination(p2);
+    expect(routes.fetchCount, 1);
+    expect(replacement.fetchCount, 0);
+    await controller.startNavigation(p2);
+    final first = NavigationFix(offRoute.latitude, offRoute.longitude,
+        heading: 0, accuracy: 5, speed: 3, timestamp: DateTime.now());
+    positions.emit(first);
+    await pumpEventQueue();
+    expect(replacement.fetchCount, 0);
+    final confirmed = NavigationFix(
+        offRoute.latitude + 0.00001, offRoute.longitude,
+        heading: 0, accuracy: 5, speed: 3, timestamp: DateTime.now());
+    positions.emit(confirmed);
+    await pumpEventQueue();
+    expect(routes.fetchCount, 2); // preview + initial only
+    expect(replacement.fetchCount, 1);
+    expect(replacement.lastOrigin, same(confirmed)); // retain course metadata
+    expect(
+        controller.selectedRoute!.steps.last.direction, DeviceDirection.right);
+    expect(ble.sent.last.direction, DeviceDirection.right);
+  });
+
+  test(
+      'missing Valhalla configuration fails explicitly, without Apple fallback',
+      () async {
+    controller.dispose();
+    controller = NavigationController(
+        ble: ble, location: positions, sideRoads: sideRoads);
+    await controller.previewDestination(p2);
+    expect(controller.error, contains('VALHALLA_ROUTE_URL'));
+    await controller.startNavigation(p2);
+    expect(controller.phase, NavPhase.error);
+    expect(routes.fetchCount, 0);
+    expect(controller.error, contains('VALHALLA_ROUTE_URL'));
+  });
+
+  test('one provider handles preview, start and reroute and is disposed once',
+      () async {
+    await controller.previewDestination(p2);
+    await controller.startNavigation(p2);
+    positions.emit(offRoute);
+    positions.emit(offRoute);
+    await pumpEventQueue();
+    expect(routes.fetchCount, 3);
+    controller.dispose();
+    expect(routes.disposeCount, 1);
+    controller = NavigationController(
+        ble: ble,
+        directions: FakeRoutes(mainRoute),
+        location: positions,
+        sideRoads: FakeSideRoads());
+  });
+
+  test(
+      'only one reroute is in flight; returned route reconciles latest location',
+      () async {
+    final deferred = DeferredRoutes();
+    controller.dispose();
+    controller = NavigationController(
+        ble: ble,
+        directions: routes,
+        rerouteDirections: deferred,
+        location: positions,
+        sideRoads: sideRoads);
+    await controller.startNavigation(p2);
+    positions.emit(offRoute);
+    positions.emit(offRoute);
+    await pumpEventQueue();
+    expect(deferred.fetchCount, 1);
+    final latest = NavigationFix(offRoute.latitude + 0.0005, offRoute.longitude,
+        heading: 0, accuracy: 5, speed: 3, timestamp: DateTime.now());
+    positions.emit(latest);
+    await pumpEventQueue();
+    expect(deferred.fetchCount, 1);
+    deferred.requests.single
+        .complete([const RouteCandidate(steps: rerouteRoute)]);
+    await pumpEventQueue();
+    expect(controller.origin, same(latest));
+    expect(ble.sent.last.direction, DeviceDirection.right);
+    expect(ble.sent.last.distanceMeters, lessThan(70));
+    expect(controller.current?.rerouting, isFalse);
+  });
+
+  for (final action in ['pause', 'stop', 'gps error', 'select route']) {
+    test('late reroute success/failure cannot undo $action', () async {
+      final deferred = DeferredRoutes();
+      routes = FakeRoutes(mainRoute, alternates: [
+        const RouteCandidate(steps: mainRoute),
+        const RouteCandidate(steps: alternateRoute),
+      ]);
+      controller.dispose();
+      controller = NavigationController(
+          ble: ble,
+          directions: routes,
+          rerouteDirections: deferred,
+          location: positions,
+          sideRoads: sideRoads);
+      await controller.startNavigation(p2);
+      positions.emit(offRoute);
+      positions.emit(offRoute);
+      await pumpEventQueue();
+      switch (action) {
+        case 'pause':
+          await controller.pause();
+        case 'stop':
+          await controller.stopNavigation();
+        case 'gps error':
+          positions.fail();
+          await pumpEventQueue();
+        case 'select route':
+          await controller.selectRoute(1);
+      }
+      final phase = controller.phase;
+      final current = controller.current;
+      final error = controller.error;
+      final sends = ble.sent.length;
+      if (action == 'gps error' || action == 'stop') {
+        deferred.requests.single.completeError(Exception('late failure'));
+      } else {
+        deferred.requests.single
+            .complete([const RouteCandidate(steps: rerouteRoute)]);
+      }
+      await pumpEventQueue();
+      expect(controller.phase, phase);
+      expect(controller.current, same(current));
+      expect(controller.error, error);
+      expect(ble.sent.length, sends);
+    });
+  }
+
+  test('old trip response cannot clear new trip reroute single-flight guard',
+      () async {
+    final deferred = DeferredRoutes();
+    controller.dispose();
+    controller = NavigationController(
+        ble: ble,
+        directions: routes,
+        rerouteDirections: deferred,
+        location: positions,
+        sideRoads: sideRoads);
+    await controller.startNavigation(p2);
+    positions.emit(offRoute);
+    positions.emit(offRoute);
+    await pumpEventQueue();
+    await controller.startNavigation(p2);
+    positions.emit(offRoute);
+    positions.emit(offRoute);
+    await pumpEventQueue();
+    expect(deferred.fetchCount, 2);
+    deferred.requests.first.completeError(Exception('old trip error'));
+    await pumpEventQueue();
+    positions.emit(offRoute);
+    positions.emit(offRoute);
+    await pumpEventQueue();
+    expect(deferred.fetchCount, 2);
+    expect(controller.current?.rerouting, isTrue);
+    expect(controller.error, isNot(contains('old trip')));
+    deferred.requests.last
+        .complete([const RouteCandidate(steps: rerouteRoute)]);
+    await pumpEventQueue();
+    expect(controller.current?.direction, DeviceDirection.right);
+  });
+
+  test('route already far behind at response time is not installed', () async {
+    final deferred = DeferredRoutes();
+    controller.dispose();
+    controller = NavigationController(
+        ble: ble,
+        directions: routes,
+        rerouteDirections: deferred,
+        location: positions,
+        sideRoads: sideRoads);
+    await controller.startNavigation(p2);
+    positions.emit(offRoute);
+    positions.emit(offRoute);
+    await pumpEventQueue();
+    positions.emit(const LatLng(0.02, 0.02));
+    await pumpEventQueue();
+    deferred.requests.single
+        .complete([const RouteCandidate(steps: rerouteRoute)]);
+    await pumpEventQueue();
+    expect(ble.sent.last, NavState.stopped);
+    expect(controller.selectedRoute!.steps, mainRoute);
+    expect(controller.error, contains('current position'));
+  });
+
+  test('disposal suppresses late responses and disposes both providers',
+      () async {
+    final deferred = DeferredRoutes();
+    controller.dispose();
+    final subject = NavigationController(
+        ble: ble,
+        directions: routes,
+        rerouteDirections: deferred,
+        location: positions,
+        sideRoads: sideRoads);
+    // Give tearDown a separate, live controller; subject is disposed below.
+    controller = NavigationController(
+        ble: FakeBle(),
+        directions: FakeRoutes(mainRoute),
+        rerouteDirections: FakeRoutes(mainRoute),
+        location: positions,
+        sideRoads: FakeSideRoads());
+    await subject.startNavigation(p2);
+    positions.emit(offRoute);
+    positions.emit(offRoute);
+    await pumpEventQueue();
+    subject.dispose();
+    final sends = ble.sent.length;
+    deferred.requests.single
+        .complete([const RouteCandidate(steps: rerouteRoute)]);
+    await pumpEventQueue();
+    expect(routes.disposed, isTrue);
+    expect(deferred.disposed, isTrue);
+    expect(ble.sent.length, sends);
+  });
+
   test(
       'off-route confirmation keeps normal turn updates to avoid frozen screen',
       () async {
     await controller.startNavigation(p2);
 
     positions.emit(offRoute);
-    positions.emit(offRoute);
     await pumpEventQueue();
 
     expect(controller.phase, NavPhase.navigating);
     expect(controller.error, anyOf(contains('偏离路线'), contains('Off route')));
-    expect(ble.sent, hasLength(2));
+    expect(ble.sent, hasLength(1));
     expect(ble.sent.map((state) => state.direction), [
-      DeviceDirection.left,
       DeviceDirection.left,
     ]);
   });
@@ -84,13 +327,13 @@ void main() {
     controller = NavigationController(
       ble: ble,
       directions: routes,
+      rerouteDirections: routes,
       location: positions,
       sideRoads: sideRoads,
     );
 
     await controller.startNavigation(p2);
 
-    positions.emit(offRoute);
     positions.emit(offRoute);
     await pumpEventQueue();
     final sendsBeforeConfirmedReroute = ble.sent.length;
@@ -99,7 +342,16 @@ void main() {
     await pumpEventQueue(times: 10);
 
     expect(controller.phase, NavPhase.navigating);
-    expect(ble.sent.length, sendsBeforeConfirmedReroute);
+    expect(ble.sent.length, sendsBeforeConfirmedReroute + 2);
+    expect(ble.sent.last, NavState.stopped);
+    expect(controller.error, contains('simulated reroute failure'));
+
+    positions.emit(offRoute);
+    positions.emit(offRoute);
+    await pumpEventQueue();
+    expect(routes.fetchCount, 2);
+    expect(ble.sent.last, NavState.stopped);
+    expect(controller.error, contains('simulated reroute failure'));
   });
 
   test('confirmed off-route fetches a new route from the current position',
@@ -109,13 +361,13 @@ void main() {
     controller = NavigationController(
       ble: ble,
       directions: routes,
+      rerouteDirections: routes,
       location: positions,
       sideRoads: sideRoads,
     );
 
     await controller.startNavigation(p2);
 
-    positions.emit(offRoute);
     positions.emit(offRoute);
     positions.emit(offRoute);
     await pumpEventQueue(times: 10);
@@ -136,6 +388,7 @@ void main() {
     controller = NavigationController(
       ble: ble,
       directions: routes,
+      rerouteDirections: routes,
       location: positions,
       sideRoads: sideRoads,
     );
@@ -280,6 +533,7 @@ class FakeRoutes implements RouteProvider {
   int fetchCount = 0;
   LatLng? lastOrigin;
   bool disposed = false;
+  int disposeCount = 0;
 
   @override
   Future<List<RouteStep>> fetchRoute({
@@ -308,6 +562,7 @@ class FakeRoutes implements RouteProvider {
 
   @override
   void dispose() {
+    disposeCount++;
     disposed = true;
   }
 }
@@ -328,6 +583,20 @@ class FakeSideRoads implements SideRoadProvider {
   }
 }
 
+class DeferredRoutes extends FakeRoutes {
+  DeferredRoutes() : super(mainRoute);
+  final requests = <Completer<List<RouteCandidate>>>[];
+  @override
+  Future<List<RouteCandidate>> fetchRoutes(
+      {required LatLng origin, required LatLng destination}) {
+    fetchCount++;
+    lastOrigin = origin;
+    final request = Completer<List<RouteCandidate>>();
+    requests.add(request);
+    return request.future;
+  }
+}
+
 class FakePositions implements PositionProvider {
   FakePositions({required this.current});
 
@@ -345,6 +614,8 @@ class FakePositions implements PositionProvider {
   Stream<LatLng> positionStream() => _controller.stream;
 
   void emit(LatLng position) => _controller.add(position);
+
+  void fail() => _controller.addError(Exception('GPS lost'));
 
   Future<void> close() => _controller.close();
 }

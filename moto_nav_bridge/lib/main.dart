@@ -27,13 +27,13 @@ class MotoNavBridgeApp extends StatelessWidget {
         title: 'Moto Nav Bridge',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xffff8a3d),
-            brightness: Brightness.dark,
+            seedColor: const Color(0xff007aff),
+            brightness: Brightness.light,
           ),
-          scaffoldBackgroundColor: const Color(0xff0d0f12),
+          scaffoldBackgroundColor: const Color(0xfff2f4f7),
           inputDecorationTheme: InputDecorationTheme(
             filled: true,
-            fillColor: const Color(0xff171a1f),
+            fillColor: const Color(0xffe9eef4),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
               borderSide: BorderSide.none,
@@ -41,6 +41,9 @@ class MotoNavBridgeApp extends StatelessWidget {
           ),
           filledButtonTheme: FilledButtonThemeData(
             style: FilledButton.styleFrom(
+              backgroundColor: const Color(0x387bbfff),
+              foregroundColor: Colors.white,
+              side: const BorderSide(color: Color(0x55ffffff)),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
               ),

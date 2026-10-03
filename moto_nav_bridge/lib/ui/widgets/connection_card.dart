@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../l10n/app_text.dart';
+import 'glass_panel.dart';
 import '../../services/ble_service.dart';
 
 class ConnectionCard extends StatelessWidget {
@@ -16,9 +17,7 @@ class ConnectionCard extends StatelessWidget {
         ble.state == BleConnectionState.connecting;
     final colors = Theme.of(context).colorScheme;
 
-    return Material(
-      color: colors.surfaceContainerHigh.withValues(alpha: 0.78),
-      borderRadius: BorderRadius.circular(18),
+    return GlassPanel(
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: busy ? null : () => connected ? ble.disconnect() : ble.connect(),

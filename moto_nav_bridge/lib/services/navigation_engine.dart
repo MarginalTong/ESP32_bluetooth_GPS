@@ -4,6 +4,7 @@ import '../models/nav_state.dart';
 import '../models/road_segment.dart';
 import '../models/route_step.dart';
 import 'dart:math' as math;
+import 'route_alignment.dart';
 
 /// Turns a route + a live position into the [NavState] to show on the device.
 ///
@@ -28,6 +29,9 @@ class NavigationEngine {
   List<RoadSegment> _sideRoads;
 
   int _index = 0;
+  int _matchSegment = 0;
+  int _matchStep = -1;
+  bool reverseTravel = false;
   int _remainingRouteCacheIndex = -1;
   List<LatLng> _remainingRouteCache = const [];
 
@@ -83,7 +87,21 @@ class NavigationEngine {
 
       final reached = distToCurrentEnd <= arrivalThresholdMeters;
       final overshot = distToNextEnd < distToCurrentEnd;
-      if (reached || overshot) {
+      var advance = reached || overshot;
+      if (RouteAlignment.usable(position)) {
+        final fix = position as NavigationFix;
+        final next = _steps[_index + 1];
+        final points = RouteAlignment.geometry(next);
+        final followsNext = RouteAlignment.aligned(fix, points[0], points[1]);
+        // Near a turn is not the same as having completed it. In particular,
+        // keep an explicit U-turn until motion follows its outgoing segment.
+        final onNext =
+            _distanceToSegmentMeters(fix, points[0], points[1]) <= 15;
+        advance = RouteAlignment.forward(fix, current.end) < 0 &&
+            followsNext &&
+            (distToCurrentEnd < arrivalThresholdMeters || (overshot && onNext));
+      }
+      if (advance) {
         _index++;
         _remainingRouteCacheIndex = -1;
       } else {
@@ -97,11 +115,19 @@ class NavigationEngine {
     // Otherwise show the maneuver performed at the current step's end, which is
     // the next step's mapped direction. On the final leg, keep showing a
     // forward instruction until the rider is actually at the destination.
-    final DeviceDirection dir = (_index >= n - 1)
+    DeviceDirection dir = (_index >= n - 1)
         ? (dist <= arrivalThresholdMeters
             ? DeviceDirection.arrived
             : DeviceDirection.up)
         : _steps[_index + 1].direction;
+    if (_steps[_index].direction == DeviceDirection.uturn &&
+        RouteAlignment.usable(position)) {
+      final points = RouteAlignment.geometry(_steps[_index]);
+      if (!RouteAlignment.aligned(
+          position as NavigationFix, points[0], points[1])) {
+        dir = DeviceDirection.uturn;
+      }
+    }
 
     // Route and junction previews use the same projection frame. Building it
     // once avoids traversing and projecting the remaining route twice for
@@ -115,23 +141,58 @@ class NavigationEngine {
     );
   }
 
-  bool isOffRoute(LatLng position) =>
-      distanceFromRouteMeters(position) > offRouteThresholdMeters;
+  bool isOffRoute(LatLng position) {
+    final distance = distanceFromRouteMeters(position);
+    final accuracy = position is NavigationFix ? position.accuracy : null;
+    final threshold = accuracy == null || !accuracy.isFinite || accuracy < 0
+        ? offRouteThresholdMeters
+        : (accuracy < 10 ? 25.0 : 50.0);
+    return distance > threshold || reverseTravel;
+  }
 
-  /// Returns the shortest distance from [position] to the remaining route.
-  ///
-  /// Route geometry is simplified to each step's start/end segment, because the
-  /// navigation protocol only needs turn points. This is good enough to detect
-  /// meaningful deviations without overreacting to normal GPS noise.
+  /// Match only the current geometry segment and three forward segments.
+  /// A new engine seeds progress within its current maneuver once; subsequent
+  /// fixes cannot jump across a distant bend in the remaining route.
   double distanceFromRouteMeters(LatLng position) {
     var best = double.infinity;
     final points = _remainingRoutePoints();
-    for (var i = 0; i < points.length - 1; i++) {
-      best = math.min(
-        best,
-        _distanceToSegmentMeters(position, points[i], points[i + 1]),
-      );
+    reverseTravel = false;
+    if (points.length < 2) return best;
+    if (_matchStep != _index) {
+      _matchSegment = 0;
+      _matchStep = _index;
+      final count = _geometryForStep(_steps[_index]).length - 1;
+      for (var i = 0; i < math.min(count, points.length - 1); i++) {
+        final distance =
+            _distanceToSegmentMeters(position, points[i], points[i + 1]);
+        if (distance < best) {
+          best = distance;
+          _matchSegment = i;
+        }
+      }
     }
+    best = double.infinity;
+    var selected = _matchSegment;
+    for (var i = _matchSegment;
+        i < math.min(_matchSegment + 4, points.length - 1);
+        i++) {
+      final distance =
+          _distanceToSegmentMeters(position, points[i], points[i + 1]);
+      if (distance < best) {
+        best = distance;
+        selected = i;
+      }
+    }
+    if (position is NavigationFix && position.reliableCourse) {
+      final a = points[selected];
+      final b = points[selected + 1];
+      final dx = (b.longitude - a.longitude) * math.cos(_toRad(a.latitude));
+      final dy = b.latitude - a.latitude;
+      final bearing = (math.atan2(dx, dy) * 180 / math.pi + 360) % 360;
+      final delta = ((position.heading - bearing + 540) % 360 - 180).abs();
+      reverseTravel = best < 60 && delta > 90 && a.distanceTo(b) >= 2;
+    }
+    if (best <= 50 && !reverseTravel) _matchSegment = selected;
     return best;
   }
 

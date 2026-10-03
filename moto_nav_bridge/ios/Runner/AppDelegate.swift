@@ -216,6 +216,8 @@ import UIKit
     }
 
     let request = MKDirections.Request()
+    // MKDirections.Request has no public source heading/bearing parameter.
+    // Latest-position/course reconciliation is performed by the Dart caller.
     request.source = MKMapItem(placemark: MKPlacemark(
       coordinate: CLLocationCoordinate2D(latitude: originLat, longitude: originLng)
     ))
@@ -277,7 +279,14 @@ import UIKit
           continue
         }
         let heading = self.heading(from: start, to: end)
-        let direction = self.maneuver(from: previousHeading, to: heading)
+        let instruction = step.instructions.lowercased()
+          .replacingOccurrences(of: "‑", with: "-")
+          .replacingOccurrences(of: "–", with: "-")
+        let explicitUTurn = instruction.contains("u-turn") ||
+          instruction.contains("u turn") || instruction.contains("uturn") ||
+          instruction.contains("掉头") || instruction.contains("調頭") ||
+          instruction.contains("掉頭")
+        let direction = explicitUTurn ? "UTURN" : self.maneuver(from: previousHeading, to: heading)
         previousHeading = heading
         output.append([
           "direction": direction,
@@ -453,19 +462,22 @@ private final class MovementLocationView: MKAnnotationView {
   }
 }
 
-private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MKMapViewDelegate {
+private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MKMapViewDelegate, UIGestureRecognizerDelegate {
   private var movementCourse: CLLocationDirection?
   private let mapView: MKMapView
   private let eventChannel: FlutterMethodChannel
   private let controlChannel: FlutterMethodChannel
-  private var routeLine: MKPolyline?
   private var routeLines: [MKPolyline] = []
   private var selectedRouteIndex = 0
   private var destinationCoordinate: CLLocationCoordinate2D?
   private var selectedPointAnnotation: MKPointAnnotation?
   private var mapPointSelectionEnabled = false
   private var languageCode = "zh"
-  private var didRequestRoute = false
+  private let attributionButton = UIButton(type: .system)
+  private var attributionURL: URL?
+  private var routePadding = UIEdgeInsets(top: 42, left: 28, bottom: 42, right: 28)
+  private var attributionTop: NSLayoutConstraint!
+  private var attributionLeft: NSLayoutConstraint!
 
   init(frame: CGRect, args: [String: Any]?, messenger: FlutterBinaryMessenger) {
     mapView = MKMapView(frame: frame)
@@ -484,16 +496,37 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     mapView.pointOfInterestFilter = .includingAll
     mapView.isRotateEnabled = true
     mapView.isPitchEnabled = true
-    mapView.addGestureRecognizer(UITapGestureRecognizer(
+    let tap = UITapGestureRecognizer(
       target: self,
       action: #selector(handleMapTap(_:))
-    ))
+    )
+    tap.delegate = self
+    mapView.addGestureRecognizer(tap)
     let longPress = UILongPressGestureRecognizer(
       target: self,
       action: #selector(handleMapLongPress(_:))
     )
     longPress.minimumPressDuration = 0.45
+    longPress.delegate = self
     mapView.addGestureRecognizer(longPress)
+    // This credits third-party route geometry, not the Apple basemap. Keep it
+    // away from MapKit's own attribution and open its licence only on a tap.
+    attributionButton.translatesAutoresizingMaskIntoConstraints = false
+    attributionButton.titleLabel?.font = .systemFont(ofSize: 11)
+    attributionButton.setTitleColor(.label, for: .normal)
+    attributionButton.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.92)
+    attributionButton.layer.cornerRadius = 4
+    attributionButton.addTarget(self, action: #selector(openRouteAttribution), for: .touchUpInside)
+    attributionButton.isHidden = true
+    mapView.addSubview(attributionButton)
+    attributionTop = attributionButton.topAnchor.constraint(equalTo: mapView.topAnchor, constant: 8)
+    attributionLeft = attributionButton.leadingAnchor.constraint(equalTo: mapView.leadingAnchor, constant: 8)
+    NSLayoutConstraint.activate([
+      attributionLeft,
+      attributionTop,
+      attributionButton.trailingAnchor.constraint(lessThanOrEqualTo: mapView.trailingAnchor, constant: -8),
+      attributionButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+    ])
     controlChannel.setMethodCallHandler { [weak self] call, result in
       guard call.method == "updateMap",
             let args = call.arguments as? [String: Any] else {
@@ -515,12 +548,21 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
   }
 
   private func configure(args: [String: Any], animated: Bool) {
+    routePadding = UIEdgeInsets(
+      top: max(42, args["paddingTop"] as? Double ?? 42),
+      left: max(28, args["paddingLeft"] as? Double ?? 28),
+      bottom: max(42, args["paddingBottom"] as? Double ?? 42),
+      right: max(28, args["paddingRight"] as? Double ?? 28))
+    attributionTop.constant = routePadding.top
+    attributionLeft.constant = routePadding.left
     mapPointSelectionEnabled = args["mapPointSelectionEnabled"] as? Bool ?? false
     // The current-position marker must remain visible during navigation too.
     // Destination picking controls gestures, not user-location visibility.
     mapView.showsUserLocation = true
     languageCode = args["languageCode"] as? String ?? languageCode
     selectedRouteIndex = args["selectedRouteIndex"] as? Int ?? 0
+    let routeArguments = args["routes"] as? [[String: Any]] ?? []
+    updateRouteAttribution(routeArguments)
 
     guard
       let destinationLat = args["destinationLatitude"] as? Double,
@@ -528,9 +570,8 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     else {
       destinationCoordinate = nil
       selectedPointAnnotation = nil
-      routeLine = nil
       routeLines = []
-      didRequestRoute = false
+      updateRouteAttribution([])
       mapView.removeAnnotations(mapView.annotations.compactMap { $0 as? MKPointAnnotation })
       mapView.removeOverlays(mapView.overlays)
       mapView.userTrackingMode = .follow
@@ -543,10 +584,6 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       latitude: destinationLat,
       longitude: destinationLng
     )
-    if let previousDestination = destinationCoordinate,
-       !sameCoordinate(previousDestination, destination) {
-      didRequestRoute = false
-    }
     destinationCoordinate = destination
     mapView.removeAnnotations(mapView.annotations.compactMap { $0 as? MKPointAnnotation })
     let annotation = MKPointAnnotation()
@@ -560,9 +597,8 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       selectedPointAnnotation = nil
     }
 
-    let routes = routePolylines(from: args["routes"] as? [[String: Any]] ?? [])
+    let routes = routePolylines(from: routeArguments)
     if !routes.isEmpty {
-      routeLine = nil
       routeLines = routes
       redrawRouteOverlays()
       if let selected = routeLines[safe: selectedRouteIndex] {
@@ -577,7 +613,6 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       return
     }
 
-    routeLine = nil
     routeLines = []
     mapView.removeOverlays(mapView.overlays)
 
@@ -596,7 +631,10 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     }
 
     let origin = CLLocationCoordinate2D(latitude: originLat, longitude: originLng)
-    calculateRoute(from: origin, to: destination, animated: animated)
+    // Dart owns route selection and navigation for every provider. The map is
+    // display-only: never request an independent Apple route that could arrive
+    // late and replace the selected reroute shown by Flutter and the ESP32.
+    fitMap(to: [origin, destination], animated: animated)
   }
 
   private func originCoordinate(_ args: [String: Any]) -> CLLocationCoordinate2D? {
@@ -609,14 +647,6 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     return CLLocationCoordinate2D(latitude: originLat, longitude: originLng)
   }
 
-  private func sameCoordinate(
-    _ first: CLLocationCoordinate2D,
-    _ second: CLLocationCoordinate2D
-  ) -> Bool {
-    abs(first.latitude - second.latitude) < 0.000001
-      && abs(first.longitude - second.longitude) < 0.000001
-  }
-
   private var usesEnglish: Bool {
     languageCode.lowercased().hasPrefix("en")
   }
@@ -627,6 +657,33 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
 
   private var mapPointTitle: String {
     usesEnglish ? "Map point" : "地图选点"
+  }
+
+  private func updateRouteAttribution(_ routes: [[String: Any]]) {
+    // All alternatives are visible, so credit OSM even if its route is not the
+    // selected one. The only supported external licence URL is allowlisted.
+    let attributed = routes.first { ($0["attribution"] as? String)?.isEmpty == false }
+    let credit = attributed?["attribution"] as? String
+    let urlString = attributed?["attributionUrl"] as? String
+    attributionURL = urlString == "https://www.openstreetmap.org/copyright"
+      ? URL(string: "https://www.openstreetmap.org/copyright") : nil
+    attributionButton.isHidden = credit == nil
+    attributionButton.isEnabled = attributionURL != nil
+    if let credit {
+      let prefix = usesEnglish ? "Route" : "路线"
+      attributionButton.setTitle("  \(prefix): \(credit)  ", for: .normal)
+    }
+  }
+
+  @objc private func openRouteAttribution() {
+    guard let url = attributionURL else { return }
+    UIApplication.shared.open(url)
+  }
+
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    // A licence tap must not also select a destination or alternative route.
+    guard let touchedView = touch.view else { return true }
+    return !touchedView.isDescendant(of: attributionButton)
   }
 
   private func routePolylines(from routes: [[String: Any]]) -> [MKPolyline] {
@@ -659,7 +716,6 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
   }
 
   private func centerOnUserFallback() {
-    guard !didRequestRoute else { return }
     let location = mapView.userLocation.coordinate
     guard CLLocationCoordinate2DIsValid(location), location.latitude != 0 else {
       return
@@ -672,32 +728,6 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       ),
       animated: false
     )
-  }
-
-  private func calculateRoute(
-    from origin: CLLocationCoordinate2D,
-    to destination: CLLocationCoordinate2D,
-    animated: Bool
-  ) {
-    guard !didRequestRoute else { return }
-    didRequestRoute = true
-
-    let request = MKDirections.Request()
-    request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-    request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-    request.transportType = .automobile
-
-    MKDirections(request: request).calculate { [weak self] response, _ in
-      guard let self, let route = response?.routes.first else {
-        self?.fitMap(to: [origin, destination], animated: animated)
-        return
-      }
-      self.routeLine = route.polyline
-      self.routeLines = [route.polyline]
-      self.selectedRouteIndex = 0
-      self.mapView.addOverlay(route.polyline)
-      self.fitMap(to: [origin, destination], overlay: route.polyline, animated: animated)
-    }
   }
 
   @objc private func handleMapTap(_ gesture: UITapGestureRecognizer) {
@@ -798,14 +828,6 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       movementCourse = nil
     }
     updateMovementPointer()
-    guard
-      let destination = destinationCoordinate,
-      !didRequestRoute,
-      let location = userLocation.location
-    else {
-      return
-    }
-    calculateRoute(from: location.coordinate, to: destination, animated: true)
   }
 
   func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
@@ -836,7 +858,7 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     if let overlay {
       mapView.setVisibleMapRect(
         overlay.boundingMapRect,
-        edgePadding: UIEdgeInsets(top: 42, left: 28, bottom: 42, right: 28),
+        edgePadding: routePadding,
         animated: animated
       )
       return
@@ -851,7 +873,7 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     }
     mapView.setVisibleMapRect(
       rect,
-      edgePadding: UIEdgeInsets(top: 42, left: 28, bottom: 42, right: 28),
+      edgePadding: routePadding,
       animated: animated
     )
   }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../controllers/navigation_controller.dart';
 import '../../l10n/app_text.dart';
+import 'glass_panel.dart';
 import '../../models/device_direction.dart';
 import '../../models/nav_state.dart';
 import '../../services/ble_service.dart';
@@ -18,22 +19,8 @@ class InstructionCard extends StatelessWidget {
     final active = nav.phase == NavPhase.navigating ||
         nav.phase == NavPhase.paused ||
         nav.phase == NavPhase.arrived;
-    final colors = Theme.of(context).colorScheme;
-
-    return Container(
-      constraints: const BoxConstraints(minHeight: 278),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            colors.primaryContainer,
-            colors.surfaceContainerHighest,
-          ],
-        ),
-      ),
+    return GlassPanel(
+      padding: const EdgeInsets.all(16),
       child: active && state != null
           ? _ActiveInstruction(state: state)
           : const _WaitingInstruction(),
@@ -57,32 +44,38 @@ class _ActiveInstruction extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          _instruction(text, state.direction),
+          state.rerouting
+              ? text.rerouting
+              : _instruction(text, state.direction),
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
         ),
-        const Spacer(),
+        const SizedBox(height: 8),
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Icon(_icon(state.direction), size: 104),
-            const Spacer(),
-            Text(
-              distance,
+            Icon(state.rerouting ? Icons.sync : _icon(state.direction),
+                size: 48),
+            const SizedBox(width: 16),
+            Flexible(
+                child: Text(
+              state.rerouting ? '…' : distance,
               textAlign: TextAlign.right,
               style: Theme.of(context).textTheme.displaySmall?.copyWith(
                     fontWeight: FontWeight.w800,
                     letterSpacing: -1.5,
                   ),
-            ),
+            )),
           ],
         ),
-        const Spacer(),
+        const SizedBox(height: 8),
         Text(
-          state.direction == DeviceDirection.arrived
-              ? text.destinationReached
-              : text.nextTurn,
+          state.rerouting
+              ? text.rerouting
+              : state.direction == DeviceDirection.arrived
+                  ? text.destinationReached
+                  : text.nextTurn,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],

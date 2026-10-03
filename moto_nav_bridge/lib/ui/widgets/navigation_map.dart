@@ -18,6 +18,8 @@ class NavigationMap extends StatefulWidget {
     this.onRouteSelected,
     this.onMapPointSelected,
     this.height = 260,
+    this.borderRadius = 22,
+    this.contentPadding = EdgeInsets.zero,
   });
 
   static const _viewType = 'moto_nav_bridge/navigation_map';
@@ -33,6 +35,8 @@ class NavigationMap extends StatefulWidget {
   final ValueChanged<int>? onRouteSelected;
   final ValueChanged<LatLng>? onMapPointSelected;
   final double height;
+  final double borderRadius;
+  final EdgeInsets contentPadding;
 
   @override
   State<NavigationMap> createState() => _NavigationMapState();
@@ -48,7 +52,11 @@ class _NavigationMapState extends State<NavigationMap> {
   @override
   void didUpdateWidget(covariant NavigationMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_updateKeyFor(widget) != _updateKeyFor(oldWidget)) {
+    // The controller publishes a new immutable list when a route is replaced.
+    // Shape summaries (distance/count/endpoints) can collide for distinct routes,
+    // while hashing every coordinate on each GPS update is unnecessary work.
+    if (!identical(widget.routes, oldWidget.routes) ||
+        _updateKeyFor(widget) != _updateKeyFor(oldWidget)) {
       _sendMapUpdate();
     }
   }
@@ -88,7 +96,7 @@ class _NavigationMapState extends State<NavigationMap> {
     final text = AppText.of(context);
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(widget.borderRadius),
       child: SizedBox(
         height: widget.height,
         child: switch (defaultTargetPlatform) {
@@ -129,25 +137,10 @@ class _NavigationMapState extends State<NavigationMap> {
       map.destinationName,
       AppText.system.languageCode,
       map.onMapPointSelected != null,
-      map.routes.length,
-      _routesKeyFor(map.routes),
+      map.selectedRouteIndex,
+      map.contentPadding,
     ].join(':');
   }
-
-  String _routesKeyFor(List<RouteCandidate> routes) => routes.map((route) {
-        final points = route.polyline;
-        if (points.isEmpty) return 'empty';
-        final first = points.first;
-        final last = points.last;
-        return [
-          route.distanceMeters,
-          points.length,
-          first.latitude.toStringAsFixed(5),
-          first.longitude.toStringAsFixed(5),
-          last.latitude.toStringAsFixed(5),
-          last.longitude.toStringAsFixed(5),
-        ].join(',');
-      }).join('|');
 
   Map<String, Object?> get _creationParams => {
         if (widget.origin != null) ...{
@@ -159,6 +152,10 @@ class _NavigationMapState extends State<NavigationMap> {
           'destinationLongitude': widget.destination!.longitude,
           'destinationName': widget.destinationName,
         },
+        'paddingTop': widget.contentPadding.top,
+        'paddingBottom': widget.contentPadding.bottom,
+        'paddingLeft': widget.contentPadding.left,
+        'paddingRight': widget.contentPadding.right,
         'languageCode': AppText.system.languageCode,
         'selectedRouteIndex': widget.selectedRouteIndex,
         'mapPointSelectionEnabled': widget.onMapPointSelected != null,
@@ -170,6 +167,8 @@ class _NavigationMapState extends State<NavigationMap> {
               'distanceMeters': widget.routes[i].distanceMeters,
               'expectedTravelTimeSeconds':
                   widget.routes[i].expectedTravelTimeSeconds,
+              'attribution': widget.routes[i].attribution,
+              'attributionUrl': widget.routes[i].attributionUrl,
               'points': [
                 for (final point in widget.routes[i].polyline)
                   {

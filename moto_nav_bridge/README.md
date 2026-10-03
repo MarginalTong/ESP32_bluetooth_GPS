@@ -2,12 +2,28 @@
 
 Navigation middleware for the ESP32 motorcycle navigation display.
 
+## Valhalla 偏航重算
+
+首次规划、预览和偏航重算统一使用 Valhalla 服务，传入可靠的移动航向。
+Apple 地图保留为底图，展示 App 选中的路线，
+与 ESP32 共用重算结果。本次没有嵌入离线引擎或地图包。
+
+必须配置有骑行区域路网覆盖的服务，代码不使用公共演示服务器，也不在
+Valhalla 失败时偷偷回退 Apple。未配置时预览和首次规划也会报错，
+**配置并完成真机验证前不要上路依赖此版本**。
+
+```sh
+flutter run --dart-define=VALHALLA_ROUTE_URL=https://YOUR_HOST/route
 ```
-Google Directions API → maneuver parse → protocol map → NavState → BLE JSON → ESP32_NAV
+
+详见 [配置、隐私与测试说明](docs/valhalla-rerouting.md)。
+
+```
+Valhalla /route → maneuver parse → NavigationEngine → NavState → BLE JSON → ESP32_NAV
 ```
 
 The ESP32 stays a thin renderer. This Flutter app does the map API call, maps
-Google `maneuver` strings to the device protocol (`LEFT`, `BEAR_RIGHT`,
+Valhalla maneuvers to the device protocol (`LEFT`, `BEAR_RIGHT`,
 `UTURN`, …), tracks GPS, and writes `{"dir":"LEFT","dist":200}` to the device
 over BLE.
 
@@ -44,10 +60,10 @@ compiled or test-run here. On your machine:
    flutter analyze
    flutter test
    ```
-4. Run on a device with your Google key:
+4. Run on a device with your reachable Valhalla endpoint:
 
    ```sh
-   flutter run --dart-define=GOOGLE_DIRECTIONS_API_KEY=YOUR_KEY
+   flutter run --dart-define=VALHALLA_ROUTE_URL=https://YOUR_HOST/route
    ```
 
 ## Required platform permissions
@@ -84,7 +100,7 @@ Set `minSdkVersion 21` (flutter_blue_plus / geolocator requirement) in
 | Protocol enum | `lib/models/device_direction.dart` | wire tokens match firmware byte-for-byte |
 | Payload | `lib/models/nav_state.dart` | `toWire()` = exact BLE bytes |
 | Maneuver map | `lib/services/maneuver_mapper.dart` | pure fn, fully unit-tested |
-| Directions | `lib/services/directions_service.dart` | API call + `parseRouteJson` (testable) |
+| Directions | `lib/services/valhalla_directions_service.dart` | all route planning and Valhalla parsing |
 | Engine | `lib/services/navigation_engine.dart` | position → step advance → NavState |
 | Throttle | `lib/services/send_throttle.dart` | avoid flooding BLE |
 | BLE | `lib/services/ble_service.dart` | scan/connect/write |

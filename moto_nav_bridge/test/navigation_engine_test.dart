@@ -9,6 +9,46 @@ import 'package:moto_nav_bridge/services/navigation_engine.dart';
 // 1 degree of longitude is a large, easy-to-reason-about distance. We keep the
 // points close together and check relative behavior rather than exact meters.
 void main() {
+  test('local matcher does not jump to a remote future segment', () {
+    final points = List.generate(10, (i) => LatLng(i * 0.001, 0));
+    final engine = NavigationEngine([
+      RouteStep(
+          direction: DeviceDirection.up,
+          start: points.first,
+          end: points.last,
+          distanceMeters: 1000,
+          geometry: points)
+    ]);
+    expect(engine.isOffRoute(points.first), isFalse);
+    expect(engine.isOffRoute(points[8]), isTrue);
+    expect(engine.isOffRoute(points[1]), isFalse);
+  });
+  test('travel course detects reverse movement but ignores stationary heading',
+      () {
+    final engine = NavigationEngine(const [
+      RouteStep(
+        direction: DeviceDirection.up,
+        start: LatLng(0, 0),
+        end: LatLng(0.01, 0),
+        distanceMeters: 1110,
+        rawManeuver: null,
+      )
+    ]);
+    NavigationFix fix(double heading, double speed,
+            {double longitude = 0, double accuracy = 5}) =>
+        NavigationFix(0.001, longitude,
+            heading: heading,
+            speed: speed,
+            accuracy: accuracy,
+            timestamp: DateTime.now());
+    expect(engine.isOffRoute(fix(0, 2)), isFalse);
+    expect(engine.isOffRoute(fix(180, 2)), isTrue);
+    expect(engine.reverseTravel, isTrue);
+    expect(engine.isOffRoute(fix(180, 0)), isFalse);
+    expect(engine.isOffRoute(fix(0, 2, longitude: 0.0003)), isTrue);
+    expect(
+        engine.isOffRoute(fix(0, 2, longitude: 0.0003, accuracy: 20)), isFalse);
+  });
   // Three maneuver points roughly in a line, ~111 m apart (0.001 deg lat).
   const p0 = LatLng(0.000, 0.0); // origin / start of step 0
   const p1 = LatLng(0.001, 0.0); // end of step 0 == turn point (LEFT)

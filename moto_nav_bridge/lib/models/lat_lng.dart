@@ -1,5 +1,28 @@
 import 'dart:math' as math;
 
+/// A measured position; heading is GPS travel course, never compass heading.
+class NavigationFix extends LatLng {
+  const NavigationFix(
+    super.latitude,
+    super.longitude, {
+    required this.heading,
+    required this.accuracy,
+    required this.speed,
+    required this.timestamp,
+  });
+  final double heading;
+  final double accuracy;
+  final double speed;
+  final DateTime timestamp;
+  bool get reliableCourse =>
+      heading.isFinite &&
+      heading >= 0 &&
+      heading < 360 &&
+      speed >= 0.5 &&
+      accuracy >= 0 &&
+      accuracy <= 25;
+}
+
 /// A minimal geographic coordinate used across the navigation engine, so the
 /// core logic does not depend on the geolocator package's `Position` type
 /// (keeps it unit-testable without plugins).

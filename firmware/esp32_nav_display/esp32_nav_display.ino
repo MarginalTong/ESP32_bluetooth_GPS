@@ -113,6 +113,7 @@ struct NavState {
 };
 
 NavState nav = {Direction::Stop, 0};
+bool rerouting = false;
 
 struct ScreenPoint {
   int16_t x;
@@ -349,6 +350,7 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     distance = constrain(distance, 0, MAX_DISTANCE_M);
 
     nav = {direction, distance};
+    rerouting = doc["rerouting"] | false;
     routePreviewPointCount = 0;
     sideRoadSegmentCount = 0;
     JsonArray points = doc["p"].as<JsonArray>();
@@ -777,6 +779,17 @@ void renderDisplay(bool blinkState) {
     return;
   }
 
+  if (rerouting || nav.direction == Direction::Stop) {
+    // STOP/0 is also used by older apps while recalculating. It is not a
+    // turn at zero metres: never render a fallback road, stop block or NOW.
+    drawTopStatus();
+    display.setTextSize(1);
+    display.setCursor(84, 62);
+    display.print(rerouting ? "UPDATING..." : "NO GUIDANCE");
+    presentDisplay();
+    return;
+  }
+
   drawMiniRouteMap();
   drawTopStatus();
   drawDirection(nav.direction);
@@ -899,7 +912,10 @@ void loop() {
   if (millis() - lastBlinkMs > 300) {
     blinkState = !blinkState;
     lastBlinkMs = millis();
-    if (nav.distanceMeters <= 30) displayDirty = true;
+    if (!rerouting && nav.direction != Direction::Stop &&
+        nav.direction != Direction::Arrived && nav.distanceMeters <= 30) {
+      displayDirty = true;
+    }
   }
 
   updateLiveTimeout();

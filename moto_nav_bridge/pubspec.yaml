@@ -14,8 +14,8 @@ dependencies:
   flutter_blue_plus: ^1.32.12
   # Continuous location tracking for the navigation engine.
   geolocator: ^12.0.0
-  # Google Directions API calls.
-  http: ^1.2.2
+  # Routing API calls; AbortableRequest cancels timed-out Valhalla requests.
+  http: ^1.5.0
   # Simple state management for the UI layer.
   provider: ^6.1.2
 
