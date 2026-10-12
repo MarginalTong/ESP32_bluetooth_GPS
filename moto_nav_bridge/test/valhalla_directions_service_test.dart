@@ -13,6 +13,29 @@ void main() {
   const endpoint = 'https://routing.example/route';
   final fails = throwsA(isA<DirectionsException>());
 
+  test('default endpoint is the cloud HTTPS route on port 443', () async {
+    final service =
+        ValhallaDirectionsService(client: MockClient((request) async {
+      expect(request.url.toString(), 'https://nav.williamligallery.uk/route');
+      expect(request.url.port, 443);
+      expect(jsonDecode(request.body)['costing'], 'auto');
+      return http.Response(jsonEncode(response()), 200);
+    }));
+    addTearDown(service.dispose);
+    await service.fetchRoutes(origin: points.first, destination: points.last);
+  });
+
+  test('malformed HTTP body becomes a handled routing error', () async {
+    for (final body in ['<html>upstream error</html>', '{broken', '{}']) {
+      final service = ValhallaDirectionsService(
+          client: MockClient((_) async => http.Response(body, 200)));
+      addTearDown(service.dispose);
+      await expectLater(
+          service.fetchRoutes(origin: points.first, destination: points.last),
+          fails);
+    }
+  });
+
   test(
       'POST sends measured travel heading and actual origin, not a shifted point',
       () async {
@@ -205,6 +228,7 @@ void main() {
     for (final url in [
       '',
       'http://example.com/route',
+      'https://example.com:8002/route',
       'https://u:p@example.com/route',
       'https://example.com/route#secret',
       'https://example.com/other',

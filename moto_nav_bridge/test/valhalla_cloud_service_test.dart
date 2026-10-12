@@ -1,15 +1,22 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:moto_nav_bridge/config/api_config.dart';
 import 'package:moto_nav_bridge/models/lat_lng.dart';
 import 'package:moto_nav_bridge/services/valhalla_directions_service.dart';
 
 // Explicit opt-in: normal test runs never require a server or send coordinates.
-// Uses synthetic Sydney positions and a hard-coded loopback endpoint only.
+// Uses synthetic Sydney positions against the configured cloud endpoint.
 void main() {
-  test('local Valhalla returns parseable routes for opposite travel courses',
-      () async {
-    final service = ValhallaDirectionsService(
-      routeUrl: 'http://127.0.0.1:8002/route',
-    );
+  test('cloud Valhalla status and routes are usable', () async {
+    final client = http.Client();
+    addTearDown(client.close);
+    final status = await client
+        .get(Uri.parse(ApiConfig.valhallaStatusUrl))
+        .timeout(const Duration(seconds: 15));
+    expect(status.statusCode, 200);
+    expect(status.body, contains('3.9.0'));
+    expect(ApiConfig.valhallaRouteUrl, 'https://nav.williamligallery.uk/route');
+    final service = ValhallaDirectionsService();
     addTearDown(service.dispose);
     final lengths = <double>[];
     for (final heading in [0.0, 180.0]) {
@@ -26,5 +33,5 @@ void main() {
       lengths.add(routes.first.distanceMeters!.toDouble());
     }
     expect(lengths.first, isNot(lengths.last));
-  }, skip: !const bool.fromEnvironment('VALHALLA_LOCAL_TEST'));
+  }, skip: !const bool.fromEnvironment('VALHALLA_CLOUD_TEST'));
 }

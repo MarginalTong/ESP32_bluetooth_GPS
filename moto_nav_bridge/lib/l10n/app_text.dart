@@ -23,6 +23,31 @@ class AppText {
       locale.languageCode.toLowerCase().startsWith('en') ? en : zh;
 
   String get languageCode => isEnglish ? 'en' : 'zh';
+  String get mapTab => isEnglish ? 'Map' : '地图';
+  String get cancelAction => isEnglish ? 'Cancel' : '取消';
+  String get confirmAction => isEnglish ? 'Confirm' : '确认';
+  String get myDevices => isEnglish ? 'My devices' : '我的设备';
+  String get noBoundDevice => isEnglish ? 'No display bound' : '尚未绑定屏幕';
+  String get disconnectDevice => isEnglish ? 'Disconnect' : '断开连接';
+  String get disconnectHint =>
+      isEnglish ? 'Keep binding for the next connection.' : '保留绑定，下次仍连接这块屏幕。';
+  String get replaceDevice => isEnglish ? 'Change display' : '更换屏幕';
+  String get replaceHint => isEnglish
+      ? 'Forget this display, then scan and verify another.'
+      : '清除本机绑定，重新扫描并验证其他屏幕。';
+  String get forgetDevice => isEnglish ? 'Forget device' : '忘记设备';
+  String get forgetHint => isEnglish
+      ? 'Clear local binding without connecting another display.'
+      : '清除本机绑定，不立即连接新设备。';
+  String get bindingScope => isEnglish
+      ? 'Binding is saved on this phone only. Forgetting does not revoke access on other phones.'
+      : '绑定仅保存在本机；忘记设备不会撤销其他手机的连接权限。';
+  String get selectDisplay => isEnglish ? 'Select your display' : '选择你的导航屏';
+  String get verifyDisplay => isEnglish ? 'Verify display' : '确认屏幕';
+  String get screenCode =>
+      isEnglish ? 'Enter the 6-digit code on the display' : '输入屏幕上的六位验证码';
+  String get deviceActionFailed =>
+      isEnglish ? 'Device operation failed. Please try again.' : '设备操作失败，请重试。';
 
   String get readyToGo => isEnglish ? 'Ready to go' : '准备出发';
   String get connectDevice => isEnglish ? 'Connect device' : '连接设备';
@@ -43,8 +68,9 @@ class AppText {
   String get planningRouteShort => isEnglish ? 'Planning…' : '规划中…';
   String get resumeNavigation => isEnglish ? 'Resume navigation' : '继续导航';
   String get pauseNavigation => isEnglish ? 'Pause navigation' : '暂停导航';
+  String get endNavigation => isEnglish ? 'End navigation' : '结束导航';
   String get endAndDisconnect =>
-      isEnglish ? 'End navigation and disconnect' : '结束导航并断开';
+      isEnglish ? 'End navigation and disconnect' : '结束并断开导航';
 
   String get nextTurn => isEnglish ? 'Next turn' : '后续路口';
   String get destinationReached => isEnglish ? 'Destination reached' : '目的地已到达';

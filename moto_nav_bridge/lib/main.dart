@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'controllers/navigation_controller.dart';
 import 'services/ble_service.dart';
-import 'ui/home_page.dart';
+import 'ui/app_shell.dart';
 
 void main() {
   runApp(const MotoNavBridgeApp());
@@ -53,7 +53,7 @@ class MotoNavBridgeApp extends StatelessWidget {
           useMaterial3: true,
         ),
         debugShowCheckedModeBanner: false,
-        home: const HomePage(),
+        home: const AppShell(),
       ),
     );
   }

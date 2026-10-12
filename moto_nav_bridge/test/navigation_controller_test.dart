@@ -9,6 +9,7 @@ import 'package:moto_nav_bridge/models/road_segment.dart';
 import 'package:moto_nav_bridge/models/route_candidate.dart';
 import 'package:moto_nav_bridge/models/route_step.dart';
 import 'package:moto_nav_bridge/services/navigation_ports.dart';
+import 'package:moto_nav_bridge/services/valhalla_directions_service.dart';
 
 void main() {
   late FakeBle ble;
@@ -114,13 +115,16 @@ void main() {
       () async {
     controller.dispose();
     controller = NavigationController(
-        ble: ble, location: positions, sideRoads: sideRoads);
+        ble: ble,
+        directions: ValhallaDirectionsService(routeUrl: ''),
+        location: positions,
+        sideRoads: sideRoads);
     await controller.previewDestination(p2);
-    expect(controller.error, contains('VALHALLA_ROUTE_URL'));
+    expect(controller.error, contains('endpoint is empty'));
     await controller.startNavigation(p2);
     expect(controller.phase, NavPhase.error);
     expect(routes.fetchCount, 0);
-    expect(controller.error, contains('VALHALLA_ROUTE_URL'));
+    expect(controller.error, contains('endpoint is empty'));
   });
 
   test('one provider handles preview, start and reroute and is disposed once',
@@ -354,6 +358,34 @@ void main() {
     expect(controller.error, contains('simulated reroute failure'));
   });
 
+  test('failed reroute retries latest fresh fix without another stream event',
+      () async {
+    controller.dispose();
+    routes = FakeRoutes(mainRoute, throwAfterInitialRoute: true);
+    controller = NavigationController(
+        ble: ble,
+        directions: routes,
+        location: positions,
+        sideRoads: sideRoads);
+    await controller.startNavigation(p2);
+    positions.emit(offRoute);
+    await pumpEventQueue();
+    positions.emit(offRoute);
+    await pumpEventQueue();
+    expect(routes.fetchCount, 2);
+    await Future<void>.delayed(const Duration(seconds: 8));
+    positions.emit(NavigationFix(offRoute.latitude, offRoute.longitude,
+        heading: 90, accuracy: 5, speed: 5, timestamp: DateTime.now()));
+    await pumpEventQueue();
+    expect(routes.fetchCount, 2);
+    await Future<void>.delayed(const Duration(seconds: 3));
+    expect(routes.fetchCount, 3);
+    expect(controller.diagnostics, contains('automatic_retry'));
+    expect(controller.diagnostics, contains('accuracy=5'));
+    controller.clearDiagnostics();
+    expect(controller.diagnostics, isEmpty);
+  });
+
   test('confirmed off-route fetches a new route from the current position',
       () async {
     routes = FakeRoutes(mainRoute, reroute: rerouteRoute);
@@ -425,6 +457,20 @@ void main() {
 
     expect(controller.phase, NavPhase.paused);
     expect(ble.sent, [NavState.stopped]);
+  });
+
+  test('ending without disconnect clears trip and ignores later GPS', () async {
+    await controller.startNavigation(p2);
+    await controller.endNavigation(disconnectDevice: false);
+    positions.emit(p0);
+    await pumpEventQueue();
+    expect(controller.phase, NavPhase.idle);
+    expect(controller.destination, isNull);
+    expect(controller.origin, isNull);
+    expect(controller.current, isNull);
+    expect(controller.routeOptions, isEmpty);
+    expect(ble.sent, [NavState.stopped]);
+    expect(ble.disconnectCount, 0);
   });
 
   test('endNavigation clears route state, sends STOP, and disconnects BLE',

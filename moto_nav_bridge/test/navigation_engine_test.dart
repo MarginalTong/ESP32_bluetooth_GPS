@@ -9,6 +9,50 @@ import 'package:moto_nav_bridge/services/navigation_engine.dart';
 // 1 degree of longitude is a large, easy-to-reason-about distance. We keep the
 // points close together and check relative behavior rather than exact meters.
 void main() {
+  test('missed turn fixes recover early on long and curved outgoing roads', () {
+    const a = LatLng(0, 0), b = LatLng(0.001, 0);
+    const bend = LatLng(0.001, 0.0001), c = LatLng(0.006, 0.0001);
+    const d = LatLng(0.006, 0.005);
+    NavigationEngine engine() => NavigationEngine(const [
+          RouteStep(
+              direction: DeviceDirection.up,
+              start: a,
+              end: b,
+              distanceMeters: 111,
+              geometry: [a, b]),
+          RouteStep(
+              direction: DeviceDirection.right,
+              start: b,
+              end: c,
+              distanceMeters: 567,
+              geometry: [b, bend, c]),
+          RouteStep(
+              direction: DeviceDirection.right,
+              start: c,
+              end: d,
+              distanceMeters: 545,
+              geometry: [c, d]),
+        ]);
+    NavigationFix fix(double lat, double lon, double heading) =>
+        NavigationFix(lat, lon,
+            heading: heading, speed: 8, accuracy: 5, timestamp: DateTime.now());
+    final nav = engine();
+    nav.update(fix(0.0007, 0, 0));
+    // Skip the corner and its short eastbound segment entirely.
+    final first = nav.update(fix(0.0013, 0.0001, 0));
+    expect(nav.currentStepIndex, 1);
+    final second = nav.update(fix(0.002, 0.0001, 0));
+    expect(second.distanceMeters, lessThan(first.distanceMeters));
+    // Miss another turn: don't wait until halfway down the outgoing road.
+    nav.update(fix(0.006, 0.0005, 90));
+    expect(nav.currentStepIndex, 2);
+    final reverse = engine();
+    reverse.update(fix(0.0013, 0.0001, 180));
+    expect(reverse.currentStepIndex, 0);
+    final incoming = engine();
+    incoming.update(fix(0.0007, 0, 0));
+    expect(incoming.currentStepIndex, 0);
+  });
   test('local matcher does not jump to a remote future segment', () {
     final points = List.generate(10, (i) => LatLng(i * 0.001, 0));
     final engine = NavigationEngine([
@@ -141,6 +185,25 @@ void main() {
     expect(engine.currentStepIndex, 1);
     expect(engine.isOffRoute(p0), isTrue);
     expect(engine.isOffRoute(const LatLng(0.0015, 0.0)), isFalse);
+  });
+
+  test('mini-map includes a bend beyond 100 m in the 200 m preview', () {
+    final engine = NavigationEngine(const [
+      RouteStep(
+        direction: DeviceDirection.right,
+        start: LatLng(0, 0),
+        end: LatLng(0.001, 0.001),
+        distanceMeters: 222,
+        geometry: [LatLng(0, 0), LatLng(0.001, 0), LatLng(0.001, 0.001)],
+      ),
+    ]);
+    final points = engine.update(const LatLng(0, 0)).routePreviewPoints;
+
+    expect(NavigationEngine.routePreviewDistanceMeters, 200);
+    expect(points.take(2), [64, 34]);
+    // The bend is about 111 m ahead; the eastbound section must be visible.
+    expect(points[points.length - 2], greaterThan(64));
+    expect(points.last, inInclusiveRange(15, 17));
   });
 
   test('route preview points stay inside the top mini-map bounds', () {

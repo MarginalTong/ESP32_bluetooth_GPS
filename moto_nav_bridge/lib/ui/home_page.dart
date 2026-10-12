@@ -31,8 +31,10 @@ class _HomePageState extends State<HomePage> {
         .startNavigation(destination.location);
   }
 
-  Future<void> _endNavigation() async {
-    await context.read<NavigationController>().endNavigation();
+  Future<void> _endNavigation({required bool disconnectDevice}) async {
+    await context.read<NavigationController>().endNavigation(
+          disconnectDevice: disconnectDevice,
+        );
     if (mounted) setState(() => _destination = null);
   }
 
@@ -137,9 +139,10 @@ class _HomePageState extends State<HomePage> {
                           child: _NavigationControls(
                             phase: nav.phase,
                             error: nav.error,
-                            onPause: nav.pause,
-                            onResume: _start,
-                            onEnd: _endNavigation,
+                            onEnd: () =>
+                                _endNavigation(disconnectDevice: false),
+                            onEndAndDisconnect: () =>
+                                _endNavigation(disconnectDevice: true),
                           ),
                         ),
                     ],
@@ -207,9 +210,14 @@ class _DestinationPanel extends StatelessWidget {
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .08),
-                borderRadius: BorderRadius.circular(14),
+              decoration: const ShapeDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0x38ffffff), Color(0x10ffffff)],
+                ),
+                shape: GlassShape(
+                    borderRadius: BorderRadius.all(Radius.circular(14))),
               ),
               child: Row(
                 children: [
@@ -330,16 +338,14 @@ class _NavigationControls extends StatelessWidget {
   const _NavigationControls({
     required this.phase,
     required this.error,
-    required this.onPause,
-    required this.onResume,
     required this.onEnd,
+    required this.onEndAndDisconnect,
   });
 
   final NavPhase phase;
   final String? error;
-  final VoidCallback onPause;
-  final VoidCallback onResume;
   final VoidCallback onEnd;
+  final VoidCallback onEndAndDisconnect;
 
   @override
   Widget build(BuildContext context) {
@@ -357,34 +363,17 @@ class _NavigationControls extends StatelessWidget {
         SizedBox(
           height: 54,
           child: OutlinedButton.icon(
-            onPressed: phase == NavPhase.routing
-                ? null
-                : phase == NavPhase.paused
-                    ? onResume
-                    : onPause,
-            icon: phase == NavPhase.routing
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : phase == NavPhase.paused
-                    ? const Icon(Icons.play_arrow_rounded)
-                    : const Icon(Icons.pause_rounded),
-            label: Text(
-              phase == NavPhase.routing
-                  ? text.planningRoute
-                  : phase == NavPhase.paused
-                      ? text.resumeNavigation
-                      : text.pauseNavigation,
-            ),
+            onPressed: phase == NavPhase.routing ? null : onEnd,
+            icon: const Icon(Icons.stop_circle_rounded),
+            label: Text(text.endNavigation),
           ),
         ),
         const SizedBox(height: 12),
         SizedBox(
           height: 54,
           child: FilledButton.tonalIcon(
-            onPressed: phase == NavPhase.routing ? null : onEnd,
-            icon: const Icon(Icons.stop_circle_rounded),
+            onPressed: phase == NavPhase.routing ? null : onEndAndDisconnect,
+            icon: const Icon(Icons.bluetooth_disabled_rounded),
             label: Text(text.endAndDisconnect),
           ),
         ),

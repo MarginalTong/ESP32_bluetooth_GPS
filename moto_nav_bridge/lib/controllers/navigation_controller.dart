@@ -73,6 +73,53 @@ class NavigationController extends ChangeNotifier {
   StreamSubscription<LatLng>? _posSub;
   bool _rerouting = false;
   bool _awaitingValidRoute = false;
+  Timer? _recoveryTimer;
+  final List<String> _diagnostics = [];
+  String get diagnostics => _diagnostics.join('\n');
+  void clearDiagnostics() => _diagnostics.clear();
+  void _log(String event) {
+    _diagnostics.add('${DateTime.now().toUtc().toIso8601String()} $event');
+    if (_diagnostics.length > 200) _diagnostics.removeAt(0);
+  }
+
+  String _fixDetails(LatLng pos) => pos is NavigationFix
+      ? 'accuracy=${pos.accuracy} speed=${pos.speed} heading=${pos.heading} ageMs=${DateTime.now().difference(pos.timestamp).inMilliseconds}'
+      : 'quality=unknown';
+
+  void _scheduleRecovery() {
+    _recoveryTimer?.cancel();
+    _recoveryTimer = Timer(_minRerouteInterval, () async {
+      if (_disposed || !_awaitingValidRoute || _phase != NavPhase.navigating) {
+        return;
+      }
+      final pos = _latestPosition;
+      // A timer must never turn an old fix into a new navigation decision.
+      if (pos is NavigationFix &&
+          DateTime.now().difference(pos.timestamp).abs() <
+              const Duration(seconds: 10) &&
+          pos.accuracy.isFinite &&
+          pos.accuracy >= 0 &&
+          pos.accuracy <= 50) {
+        _offRouteSamples = _offRouteSamplesBeforeReroute;
+        _log('automatic_retry ${_fixDetails(pos)}');
+        await _onPositionRecovery(pos);
+      } else {
+        _log('retry_waiting_for_fresh_fix');
+      }
+      if (!_disposed && _awaitingValidRoute && !_rerouting) _scheduleRecovery();
+    });
+  }
+
+  Future<void> _onPositionRecovery(LatLng pos) async {
+    if (!await _maybeReroute(pos) &&
+        !_disposed &&
+        _phase == NavPhase.navigating) {
+      _current = _engine?.update(pos);
+      notifyListeners();
+      if (_current != null) await ble.send(_current!);
+    }
+  }
+
   bool _disposed = false;
   int _rerouteRequestId = 0;
   String? _rerouteFailure;
@@ -234,6 +281,8 @@ class NavigationController extends ChangeNotifier {
         // Recovery onto the old route is allowed only after a fresh position
         // matches it again, never merely because the HTTP request failed.
         _awaitingValidRoute = false;
+        _recoveryTimer?.cancel();
+        _log('recovered_on_previous_route');
         _rerouteFailure = null;
         _clearRerouteNotice();
         _error = null;
@@ -264,6 +313,9 @@ class NavigationController extends ChangeNotifier {
     }
 
     _rerouting = true;
+    _recoveryTimer?.cancel();
+    final requestStarted = DateTime.now();
+    _log('reroute_start ${_fixDetails(pos)}');
     _awaitingValidRoute = true;
     _rerouteFailure = null;
     final requestId = ++_rerouteRequestId;
@@ -293,12 +345,17 @@ class NavigationController extends ChangeNotifier {
       }
       final alignedRoutes =
           routes.map((r) => RouteAlignment.trim(r, pos, latest)).toList();
-      final selected = preferredRouteIndex(alignedRoutes, eligible: (route) {
+      _log(
+          'reroute_response elapsedMs=${DateTime.now().difference(requestStarted).inMilliseconds} candidates=${routes.length} movedM=${pos.distanceTo(latest).round()} ${_fixDetails(latest)}');
+      final selected = preferredRouteIndex(alignedRoutes,
+          avoidEarlyUTurns: true, eligible: (route) {
         // Heading on the API request is a preference, not a guarantee. Reject
         // stale/distant or reverse-going starts rather than silently falling
         // back to a route which points back at the missed junction.
-        return !RouteAlignment.conflictsWithCourse(route, latest) &&
-            !NavigationEngine(route.steps).isOffRoute(latest);
+        final reverse = RouteAlignment.conflictsWithCourse(route, latest);
+        final distant = NavigationEngine(route.steps).isOffRoute(latest);
+        _log('candidate reverse=$reverse offRoute=$distant');
+        return !reverse && !distant;
       });
       if (selected < 0) {
         throw DirectionsException(
@@ -307,6 +364,7 @@ class NavigationController extends ChangeNotifier {
       _origin = latest;
       _setRouteOptions(alignedRoutes, selectedIndex: selected);
       _awaitingValidRoute = false;
+      _log('reroute_success selected=$selected');
       _clearRerouteNotice();
       _lastSideRoadRefreshAt = null;
       _sideRoadRefreshPosition = null;
@@ -323,6 +381,10 @@ class NavigationController extends ChangeNotifier {
       // Do not remain on an endless "updating" screen or revive a known-bad
       // maneuver. Keep the route visible for context, but withdraw guidance.
       _rerouteFailure = text.rerouteFailed(e);
+      // Avoid retaining exception URLs or coordinates in diagnostic logs.
+      _log(
+          'reroute_failed type=${e.runtimeType} elapsedMs=${DateTime.now().difference(requestStarted).inMilliseconds}');
+      _scheduleRecovery();
       _clearRerouteNotice();
       _current = NavState.stopped;
       _set(NavPhase.navigating, error: _rerouteFailure);
@@ -348,6 +410,7 @@ class NavigationController extends ChangeNotifier {
   }
 
   void _invalidateReroute() {
+    _recoveryTimer?.cancel();
     _rerouteRequestId++;
     _rerouting = false;
     _awaitingValidRoute = false;

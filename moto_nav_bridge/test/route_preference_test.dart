@@ -23,6 +23,27 @@ void main() {
   test('equal counts keep provider order', () {
     expect(preferredRouteIndex([route(0), route(0)]), 0);
   });
+  test('rerouting prefers later turns but preserves all maneuvers', () {
+    final early = route(1);
+    final later = RouteCandidate(steps: [
+      const RouteStep(
+        direction: DeviceDirection.up,
+        start: LatLng(0, 0),
+        end: LatLng(0.006, 0),
+        distanceMeters: 600,
+      ),
+      ...route(2).steps.skip(1),
+    ]);
+    expect(preferredRouteIndex([early, later]), 0);
+    expect(preferredRouteIndex([early, later], avoidEarlyUTurns: true), 1);
+    expect(preferredRouteIndex([early], avoidEarlyUTurns: true), 0);
+    expect(
+        preferredRouteIndex([early, later],
+            avoidEarlyUTurns: true, eligible: (r) => identical(r, early)),
+        0);
+    expect(later.steps.last.direction, DeviceDirection.uturn);
+    expect(preferredRouteIndex([later, route(0)], avoidEarlyUTurns: true), 1);
+  });
   test('heading eligibility takes precedence over fewer turns', () {
     final reverse = route(0);
     expect(

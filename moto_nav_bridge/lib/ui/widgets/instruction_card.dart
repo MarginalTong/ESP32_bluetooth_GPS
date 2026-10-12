@@ -63,7 +63,7 @@ class _ActiveInstruction extends StatelessWidget {
               state.rerouting ? '…' : distance,
               textAlign: TextAlign.right,
               style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: -1.5,
                   ),
             )),

@@ -16,6 +16,9 @@ class PlaceSearchPage extends StatefulWidget {
 
 class _PlaceSearchPageState extends State<PlaceSearchPage> {
   final _controller = TextEditingController();
+  final _searchFocus = FocusNode(canRequestFocus: false);
+  Animation<double>? _entrance;
+  bool _initialFocusRequested = false;
   final _service = AppleMapsService();
   final _historyService = SearchHistoryService();
   Timer? _debounce;
@@ -34,7 +37,40 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animation = ModalRoute.of(context)?.animation;
+    if (_entrance != animation) {
+      _entrance?.removeStatusListener(_onTransition);
+      _entrance = animation;
+      _entrance?.addStatusListener(_onTransition);
+    }
+    if (animation == null || animation.status == AnimationStatus.completed) {
+      _focusAfterEntrance();
+    }
+  }
+
+  void _onTransition(AnimationStatus status) {
+    if (status == AnimationStatus.completed) _focusAfterEntrance();
+  }
+
+  void _focusAfterEntrance() {
+    if (ModalRoute.of(context)?.offstage ?? false) return;
+    if (_initialFocusRequested) return;
+    _initialFocusRequested = true;
+    // Avoid keyboard layout work while the map and search page are sliding.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && (ModalRoute.of(context)?.isCurrent ?? true)) {
+        _searchFocus.canRequestFocus = true;
+        _searchFocus.requestFocus();
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    _entrance?.removeStatusListener(_onTransition);
+    _searchFocus.dispose();
     _debounce?.cancel();
     _controller.dispose();
     super.dispose();
@@ -181,7 +217,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: TextField(
               controller: _controller,
-              autofocus: true,
+              focusNode: _searchFocus,
               onChanged: _changed,
               onSubmitted: _search,
               textInputAction: TextInputAction.search,

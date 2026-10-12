@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../models/lat_lng.dart';
 import '../models/road_segment.dart';
 import 'navigation_ports.dart';
+import 'navigation_engine.dart';
 
 class SideRoadService implements SideRoadProvider {
   SideRoadService({http.Client? client}) : _client = client ?? http.Client();
@@ -21,7 +22,8 @@ class SideRoadService implements SideRoadProvider {
     'https://z.overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
   ];
-  static const _nearbyRadiusMeters = 140.0;
+  // Keep fetched junction coverage aligned with the device map's lookahead.
+  static const _nearbyRadiusMeters = NavigationEngine.routePreviewDistanceMeters;
   static const _maxSegments = 260;
   static const _timeout = Duration(seconds: 7);
 

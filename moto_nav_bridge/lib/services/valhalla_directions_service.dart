@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
@@ -112,18 +111,16 @@ class ValhallaDirectionsService implements RouteProvider {
   Uri _endpoint() {
     if (_routeUrl.trim().isEmpty) {
       throw DirectionsException(
-        'Valhalla is not configured. Set VALHALLA_ROUTE_URL to your HTTPS /route endpoint.',
+        'Valhalla route endpoint is empty. Check ApiConfig.',
       );
     }
     final uri = Uri.tryParse(_routeUrl.trim());
-    final loopback = uri != null &&
-        const {'localhost', '127.0.0.1', '::1'}.contains(uri.host);
     if (uri == null ||
         uri.host.isEmpty ||
         uri.userInfo.isNotEmpty ||
         uri.hasFragment ||
-        !(uri.scheme == 'https' ||
-            (!kReleaseMode && uri.scheme == 'http' && loopback)) ||
+        uri.scheme != 'https' ||
+        uri.port != 443 ||
         !uri.path.endsWith('/route')) {
       throw DirectionsException('Invalid Valhalla HTTPS /route endpoint');
     }

@@ -43,7 +43,9 @@ class NavigationEngine {
   /// be off-route. This is intentionally conservative to tolerate GPS drift,
   /// multi-lane roads, and simplified route geometry.
   static const double offRouteThresholdMeters = 60.0;
-  static const double routePreviewDistanceMeters = 100.0;
+  // Shared route/side-road scale: show 200 m ahead without changing the BLE
+  // coordinate contract or the firmware's map and pointer layout.
+  static const double routePreviewDistanceMeters = 200.0;
   static const int routePreviewMaxPoints = 6;
   // Two well-chosen junction arms reproduce the cluster-style view and keep
   // the complete JSON below conservative iOS BLE write limits.
@@ -100,6 +102,26 @@ class NavigationEngine {
         advance = RouteAlignment.forward(fix, current.end) < 0 &&
             followsNext &&
             (distToCurrentEnd < arrivalThresholdMeters || (overshot && onNext));
+        // A GPS update can miss the entire turn, or the next road can curve
+        // away from its first segment. Recover only onto the immediate next
+        // step, with a reliable matching course and an unambiguous road match.
+        // Do not require its far endpoint to be nearer than the passed turn.
+        if (!advance) {
+          final match = _closestSegment(fix, points);
+          final currentMatch = _closestSegment(fix, _geometryForStep(current));
+          if (match != null && currentMatch != null) {
+            var progress = 0.0;
+            for (var i = 0; i < match.segmentIndex; i++) {
+              progress += points[i].distanceTo(points[i + 1]);
+            }
+            progress += points[match.segmentIndex].distanceTo(match.projected);
+            advance = match.distanceMeters <= 15 &&
+                currentMatch.distanceMeters > match.distanceMeters + 8 &&
+                progress >= arrivalThresholdMeters &&
+                RouteAlignment.aligned(fix, points[match.segmentIndex],
+                    points[match.segmentIndex + 1]);
+          }
+        }
       }
       if (advance) {
         _index++;

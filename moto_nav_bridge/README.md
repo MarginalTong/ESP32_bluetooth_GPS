@@ -8,12 +8,13 @@ Navigation middleware for the ESP32 motorcycle navigation display.
 Apple 地图保留为底图，展示 App 选中的路线，
 与 ESP32 共用重算结果。本次没有嵌入离线引擎或地图包。
 
-必须配置有骑行区域路网覆盖的服务，代码不使用公共演示服务器，也不在
-Valhalla 失败时偷偷回退 Apple。未配置时预览和首次规划也会报错，
-**配置并完成真机验证前不要上路依赖此版本**。
+云端地址统一配置在 `lib/config/api_config.dart`：
+`https://nav.williamligallery.uk`，通过 HTTPS 443 请求 `/route`。
+不使用公共演示服务器，也不在 Valhalla 失败时回退 Apple。
+旧 `VALHALLA_ROUTE_URL` 构建参数不再生效。仍需完成真机导航验证。
 
 ```sh
-flutter run --dart-define=VALHALLA_ROUTE_URL=https://YOUR_HOST/route
+flutter run
 ```
 
 详见 [配置、隐私与测试说明](docs/valhalla-rerouting.md)。
@@ -63,7 +64,7 @@ compiled or test-run here. On your machine:
 4. Run on a device with your reachable Valhalla endpoint:
 
    ```sh
-   flutter run --dart-define=VALHALLA_ROUTE_URL=https://YOUR_HOST/route
+   flutter run
    ```
 
 ## Required platform permissions

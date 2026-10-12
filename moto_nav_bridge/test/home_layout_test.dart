@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:moto_nav_bridge/controllers/navigation_controller.dart';
 import 'package:moto_nav_bridge/services/ble_service.dart';
 import 'package:moto_nav_bridge/models/nav_state.dart';
+import 'package:moto_nav_bridge/l10n/app_text.dart';
 import 'package:moto_nav_bridge/ui/home_page.dart';
 import 'package:moto_nav_bridge/ui/widgets/navigation_map.dart';
 import 'navigation_controller_test.dart'
@@ -48,6 +49,11 @@ void main() {
       expect(tester.takeException(), isNull);
       await nav.startNavigation(p2);
       await tester.pump();
+      final text = AppText.of(tester.element(find.byType(HomePage)));
+      expect(find.text(text.endNavigation), findsOneWidget);
+      expect(find.text(text.endAndDisconnect), findsOneWidget);
+      expect(find.text(text.pauseNavigation), findsNothing);
+      expect(find.text(text.resumeNavigation), findsNothing);
       expect(tester.takeException(), isNull);
       expect(tester.getSize(find.byType(NavigationMap)), size);
       await tester.pumpWidget(const SizedBox());

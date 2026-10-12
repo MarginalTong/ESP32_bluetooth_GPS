@@ -57,6 +57,15 @@ void main() {
     expect(captured.method, 'GET');
     expect(captured.headers['accept'], 'application/json');
     expect(captured.url.queryParameters['data'], contains('way[highway]'));
+    final bounds = RegExp(r'way\[highway\]\(([^)]+)\)')
+        .firstMatch(captured.url.queryParameters['data']!)!
+        .group(1)!
+        .split(',')
+        .map(double.parse)
+        .toList();
+    // The query reaches 200 m north and south, matching the mini-map.
+    expect((-33.88855 - bounds[0]) * 111320, closeTo(200, 0.01));
+    expect((bounds[2] + 33.88855) * 111320, closeTo(200, 0.01));
     expect(roads, hasLength(1));
     service.dispose();
   });

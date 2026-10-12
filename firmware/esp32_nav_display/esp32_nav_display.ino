@@ -7,6 +7,60 @@
 #include <BLEUtils.h>
 
 #include <ArduinoJson.h>
+#include <time.h>
+#include <sys/time.h>
+#include <stdint.h>
+#include <math.h>
+#include <esp_system.h>
+
+// BEGIN MAP MOTION - kept inline so this sketch can be copied on its own.
+// Display-only interpolation. Never used for maneuver or distance decisions.
+struct MapMotion {
+  static constexpr uint32_t durationMs = 180;
+  float current[20] = {};
+  float start[20] = {};
+  float target[20] = {};
+  uint8_t routes = 0, roads = 0, direction = 0;
+  uint32_t started = 0;
+  bool valid = false, active = false;
+
+  bool tick(uint32_t now) {
+    if (!active) return false;
+    const uint32_t elapsed = now - started;
+    const float t = elapsed >= durationMs ? 1.0f : float(elapsed) / durationMs;
+    const float eased = t * t * (3.0f - 2.0f * t);
+    for (int i = 0; i < 20; ++i)
+      current[i] = start[i] + (target[i] - start[i]) * eased;
+    active = elapsed < durationMs;
+    return true;
+  }
+
+  void accept(const float* points, uint8_t routeCount, uint8_t roadCount,
+              uint8_t newDirection, uint32_t now) {
+    tick(now);
+    bool snap = !valid || routes != routeCount || roads != roadCount ||
+                direction != newDirection;
+    bool changed = snap;
+    for (int i = 0; i < 20; ++i) {
+      changed = changed || points[i] != target[i];
+      // Large geometry jumps are route changes, not motion to animate.
+      snap = snap || fabsf(points[i] - current[i]) > 24.0f;
+    }
+    if (!changed) return;
+    routes = routeCount;
+    roads = roadCount;
+    direction = newDirection;
+    for (int i = 0; i < 20; ++i) {
+      start[i] = snap ? points[i] : current[i];
+      target[i] = points[i];
+      if (snap) current[i] = points[i];
+    }
+    started = now;
+    valid = true;
+    active = !snap;
+  }
+};
+// END MAP MOTION
 
 // ======================================================
 // Hardware
@@ -38,7 +92,7 @@ GFXcanvas16 display(SCREEN_WIDTH, SCREEN_HEIGHT);
 constexpr uint16_t COLOR_BG = ST77XX_BLACK;
 constexpr uint16_t COLOR_WHITE = ST77XX_WHITE;
 constexpr uint16_t COLOR_ROUTE = ST77XX_WHITE;
-// All foreground indications are white; only the background is black.
+// Primary indications are white; side-road edges fade through grayscale.
 constexpr uint16_t COLOR_ACCENT = COLOR_WHITE;
 constexpr uint16_t COLOR_MUTED = COLOR_WHITE;
 bool displayAvailable = false;
@@ -61,7 +115,7 @@ constexpr uint32_t LIVE_PACKET_TIMEOUT_MS = 8000;
 // TFT power policy. BLE keeps running while the display is dim/off.
 constexpr uint32_t DISPLAY_DIM_AFTER_IDLE_MS = 15000;
 constexpr uint32_t DISPLAY_OFF_AFTER_IDLE_MS = 60000;
-constexpr uint32_t DISPLAY_REFRESH_MS = 120;
+constexpr uint32_t DISPLAY_REFRESH_MS = 33;
 
 constexpr int MAX_DISTANCE_M = 9999;
 constexpr uint8_t MAX_ROUTE_PREVIEW_POINTS = 6;
@@ -73,7 +127,13 @@ constexpr uint8_t MAX_SIDE_ROAD_SEGMENTS = 2;
 // BLE contract - must match the Flutter app.
 // ======================================================
 
-constexpr char DEVICE_NAME[] = "ESP32_NAV";
+char DEVICE_NAME[20] = "NAV";
+char deviceIdentity[13] = "";
+char pairingCode[7] = "";
+bool pairingActive = false;
+bool pairingVerified = false;
+uint32_t pairingStartedMs = 0;
+constexpr char PAIRING_UUID[] = "abcd1234-5678-1234-5678-abcdef123457";
 constexpr char SERVICE_UUID[] = "12345678-1234-1234-1234-123456789abc";
 constexpr char CHARACTERISTIC_UUID[] = "abcd1234-5678-1234-5678-abcdef123456";
 
@@ -114,6 +174,7 @@ struct NavState {
 
 NavState nav = {Direction::Stop, 0};
 bool rerouting = false;
+bool clockSynced = false;
 
 struct ScreenPoint {
   int16_t x;
@@ -129,6 +190,13 @@ ScreenPoint routePreviewPoints[MAX_ROUTE_PREVIEW_POINTS];
 uint8_t routePreviewPointCount = 0;
 ScreenSegment sideRoadSegments[MAX_SIDE_ROAD_SEGMENTS];
 uint8_t sideRoadSegmentCount = 0;
+
+// BLE publishes a complete geometry snapshot; only loop() owns animation.
+portMUX_TYPE mapMux = portMUX_INITIALIZER_UNLOCKED;
+float pendingMap[20] = {};
+uint8_t pendingRoutes = 0, pendingRoads = 0, pendingDirection = 0;
+bool pendingMapReady = false;
+MapMotion mapMotion;
 
 uint32_t lastLivePacketMs = 0;
 bool hasReceivedNavPacket = false;
@@ -276,6 +344,8 @@ class ServerCallbacks : public BLEServerCallbacks {
   }
 
   void onDisconnect(BLEServer* server) override {
+    pairingActive = false;
+    pairingVerified = false;
     bleConnected = false;
     hasReceivedNavPacket = false;
     lastLivePacketMs = 0;
@@ -324,6 +394,22 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
       Serial.println(error.c_str());
       Serial.print("[BLE] Raw: ");
       Serial.println(value);
+      return;
+    }
+
+    // Phone-local wall time, separate from navigation: never starts guidance
+    // or refreshes the live-navigation packet timeout.
+    if (doc["clock"].is<uint32_t>()) {
+      const uint32_t seconds = doc["clock"].as<uint32_t>();
+      if (seconds < 1700000000UL) {
+        setLastError("bad clock");
+        return;
+      }
+      timeval now = {static_cast<time_t>(seconds), 0};
+      settimeofday(&now, nullptr);
+      clockSynced = true;
+      displayDirty = true;
+      wakeDisplay();
       return;
     }
 
@@ -394,6 +480,24 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
       }
     }
 
+    portENTER_CRITICAL(&mapMux);
+    memset(pendingMap, 0, sizeof(pendingMap));
+    for (uint8_t i = 0; i < routePreviewPointCount; ++i) {
+      pendingMap[i * 2] = routePreviewPoints[i].x;
+      pendingMap[i * 2 + 1] = routePreviewPoints[i].y;
+    }
+    for (uint8_t i = 0; i < sideRoadSegmentCount; ++i) {
+      pendingMap[12 + i * 4] = sideRoadSegments[i].start.x;
+      pendingMap[13 + i * 4] = sideRoadSegments[i].start.y;
+      pendingMap[14 + i * 4] = sideRoadSegments[i].end.x;
+      pendingMap[15 + i * 4] = sideRoadSegments[i].end.y;
+    }
+    pendingRoutes = routePreviewPointCount;
+    pendingRoads = sideRoadSegmentCount;
+    pendingDirection = static_cast<uint8_t>(direction);
+    pendingMapReady = true;
+    portEXIT_CRITICAL(&mapMux);
+
     lastLivePacketMs = millis();
     livePacketTimedOut = false;
     hasReceivedNavPacket = true;
@@ -412,6 +516,38 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
+// Physical-screen confirmation prevents accidental selection, not spoofing.
+// This is deliberately separate from the navigation write characteristic.
+class PairingCallbacks : public BLECharacteristicCallbacks {
+  void onRead(BLECharacteristic* characteristic) override {
+    char response[80];
+    snprintf(response, sizeof(response), "{\"id\":\"%s\",\"verified\":%s}",
+             deviceIdentity, pairingVerified ? "true" : "false");
+    characteristic->setValue(response);
+  }
+  void onWrite(BLECharacteristic* characteristic) override {
+    const auto value = characteristic->getValue();
+    StaticJsonDocument<128> doc;
+    if (value.length() > 80 || deserializeJson(doc, value.c_str())) return;
+    const char* action = doc["pair"] | "";
+    if (strcmp(action, "start") == 0) {
+      snprintf(pairingCode, sizeof(pairingCode), "%06lu",
+               static_cast<unsigned long>(esp_random() % 1000000));
+      pairingStartedMs = millis();
+      pairingActive = true;
+      pairingVerified = false;
+      wakeDisplay();
+      displayDirty = true;
+      return;
+    }
+    const char* code = doc["code"] | "";
+    pairingVerified = pairingActive && millis() - pairingStartedMs < 60000 &&
+                      strlen(code) == 6 && strcmp(code, pairingCode) == 0;
+    pairingActive = false; // One attempt per generated code.
+    displayDirty = true;
+  }
+};
+
 void setupBle() {
   BLEDevice::init(DEVICE_NAME);
   // Stability first: use positive TX power so the phone can rediscover the
@@ -422,6 +558,9 @@ void setupBle() {
   bleServer->setCallbacks(new ServerCallbacks());
 
   BLEService* service = bleServer->createService(SERVICE_UUID);
+  BLECharacteristic* pairing = service->createCharacteristic(
+      PAIRING_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+  pairing->setCallbacks(new PairingCallbacks());
 
   BLECharacteristic* characteristic = service->createCharacteristic(
       CHARACTERISTIC_UUID,
@@ -447,6 +586,9 @@ constexpr int16_t MAP_LEFT = 0;
 constexpr int16_t MAP_TOP = 0;
 constexpr int16_t MAP_RIGHT = SCREEN_WIDTH - 1;
 constexpr int16_t MAP_BOTTOM = 94;
+// Zoom geometry around the rider, without enlarging the instruction strip.
+constexpr float MAP_ZOOM = 1.50f;
+constexpr int16_t MAP_CLIP_BOTTOM = MAP_BOTTOM - 4;
 constexpr int16_t ARROW_CENTER_X = 66;
 constexpr int16_t DISTANCE_X = 132;
 
@@ -457,12 +599,16 @@ int16_t scaleValue(int16_t value, int16_t inMin, int16_t inMax, int16_t outMin,
                       (inMax - inMin);
 }
 
-int16_t mapPreviewX(int16_t x) {
-  return scaleValue(x, 18, 110, MAP_LEFT + 6, MAP_RIGHT - 6);
+int16_t mapPreviewX(float x) {
+  const float center = (MAP_LEFT + MAP_RIGHT) / 2.0f;
+  const float projected = MAP_LEFT + 6 + (x - 18) * (MAP_RIGHT - MAP_LEFT - 12) / 92.0f;
+  return lroundf(center + (projected - center) * MAP_ZOOM);
 }
 
-int16_t mapPreviewY(int16_t y) {
-  return scaleValue(y, 2, 34, MAP_TOP + 4, MAP_BOTTOM - 12);
+int16_t mapPreviewY(float y) {
+  const float anchor = MAP_BOTTOM - 12;
+  const float projected = MAP_TOP + 4 + (y - 2) * (MAP_BOTTOM - MAP_TOP - 16) / 32.0f;
+  return lroundf(anchor + (projected - anchor) * MAP_ZOOM);
 }
 
 void presentDisplay() {
@@ -480,48 +626,52 @@ void drawThickLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 }
 
 void drawSideRoadLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
-  // An unselected branch is drawn as two separated, broken edge-rays. The
-  // black centre and small gaps distinguish it from the solid navigation route
-  // without relying on different colors.
-  constexpr int16_t parts = 4;
-  const int16_t dx = x1 - x0;
-  const int16_t dy = y1 - y0;
-  const int16_t magnitude = max(abs(dx), abs(dy));
-  if (magnitude == 0) return;
-
-  // Three pixels to either side leaves a visible six-pixel black channel.
-  constexpr int16_t railOffset = 3;
-  const int16_t normalX = static_cast<int32_t>(-dy) * railOffset / magnitude;
-  const int16_t normalY = static_cast<int32_t>(dx) * railOffset / magnitude;
-
-  // Leave a short break at the route intersection, then draw each quarter at
-  // 70% duty so even TFT bloom cannot merge the rays into solid white roads.
-  const int16_t rawStartInset = 3 * 256 / magnitude;
-  const int16_t startInset = rawStartInset < 48 ? rawStartInset : 48;
-  const int16_t usable = 256 - startInset;
-
-  for (int16_t rail = -1; rail <= 1; rail += 2) {
-    for (int16_t part = 0; part < parts; part++) {
-      const int16_t partStart = startInset + usable * part / parts;
-      const int16_t partEnd =
-          startInset + usable * (part * 10 + 7) / (parts * 10);
-      const int16_t ax = x0 + static_cast<int32_t>(dx) * partStart / 256;
-      const int16_t ay = y0 + static_cast<int32_t>(dy) * partStart / 256;
-      const int16_t bx = x0 + static_cast<int32_t>(dx) * partEnd / 256;
-      const int16_t by = y0 + static_cast<int32_t>(dy) * partEnd / 256;
-      display.drawLine(ax + normalX * rail, ay + normalY * rail,
-                       bx + normalX * rail, by + normalY * rail,
-                       COLOR_WHITE);
+  // The phone orders each branch from its route junction towards its outer
+  // endpoint. Continuous hollow rails fade outwards, beneath the white route.
+  const float dx = x1 - x0;
+  const float dy = y1 - y0;
+  const float length = sqrtf(dx * dx + dy * dy);
+  if (length < 1.0f) return;
+  const float ux = dx / length;
+  const float uy = dy / length;
+  // These are schematic junction arms, not measured road endpoints. Extend
+  // only their visual rays; leave the junction and branch direction unchanged.
+  const float visibleLength = fmaxf(42.0f, fminf(length * 1.5f, length + 24.0f));
+  x1 = lroundf(x0 + ux * visibleLength);
+  y1 = lroundf(y0 + uy * visibleLength);
+  constexpr float railOffset = 3.0f;
+  constexpr float softWidth = 1.9f;
+  // Clip before rasterizing: off-screen geometry never expands frame cost.
+  const int16_t left = max(0, min(x0, x1) - 5);
+  const int16_t right = min(int(SCREEN_WIDTH - 1), max(x0, x1) + 5);
+  const int16_t top = max(0, min(y0, y1) - 5);
+  const int16_t bottom = min(int(MAP_CLIP_BOTTOM - 1), max(y0, y1) + 5);
+  uint16_t* pixels = display.getBuffer();
+  for (int16_t y = top; y <= bottom; ++y) {
+    for (int16_t x = left; x <= right; ++x) {
+      const float px = x - x0;
+      const float py = y - y0;
+      const float along = px * ux + py * uy;
+      if (along < 0.0f || along >= visibleLength) continue;
+      const float edgeDistance = fabsf(fabsf(px * uy - py * ux) - railOffset);
+      if (edgeDistance >= softWidth) continue;
+      // Keep the first 45% bright; reserve the fade for the outer end.
+      const float t = fmaxf(0.0f, (along / visibleLength - 0.45f) / 0.55f);
+      const float fade = 1.0f - t * t * (3.0f - 2.0f * t);
+      const uint8_t gray = lroundf(245.0f * fade * (1.0f - edgeDistance / softWidth));
+      const uint16_t color = ((gray >> 3) << 11) | ((gray >> 2) << 5) | (gray >> 3);
+      uint16_t& pixel = pixels[y * SCREEN_WIDTH + x];
+      // Overlapping branches must not erase a brighter edge already drawn.
+      if (color > pixel) pixel = color;
     }
   }
 }
 
 void drawSideRoadSegments() {
-  for (uint8_t i = 0; i < sideRoadSegmentCount; i++) {
-    drawSideRoadLine(mapPreviewX(sideRoadSegments[i].start.x),
-                     mapPreviewY(sideRoadSegments[i].start.y),
-                     mapPreviewX(sideRoadSegments[i].end.x),
-                     mapPreviewY(sideRoadSegments[i].end.y));
+  for (uint8_t i = 0; i < mapMotion.roads; i++) {
+    const float* p = mapMotion.current + 12 + i * 4;
+    drawSideRoadLine(mapPreviewX(p[0]), mapPreviewY(p[1]),
+                     mapPreviewX(p[2]), mapPreviewY(p[3]));
   }
 }
 
@@ -548,21 +698,17 @@ void drawArrowRight() {
 }
 
 void drawBearLeft() {
-  drawThickLine(ARROW_CENTER_X, 128, ARROW_CENTER_X, 96);
-  drawThickLine(ARROW_CENTER_X, 96, ARROW_CENTER_X - 14, 110);
-  drawThickLine(ARROW_CENTER_X, 96, ARROW_CENTER_X + 14, 110);
-  drawThickLine(ARROW_CENTER_X, 114, 42, 96);
-  drawThickLine(42, 96, 50, 96);
-  drawThickLine(42, 96, 42, 104);
+  drawThickLine(66, 128, 66, 118, COLOR_WHITE, 4);
+  drawThickLine(66, 118, 62, 112, COLOR_WHITE, 4);
+  drawThickLine(62, 112, 50, 100, COLOR_WHITE, 4);
+  display.fillTriangle(43, 96, 61, 99, 46, 114, COLOR_WHITE);
 }
 
 void drawBearRight() {
-  drawThickLine(ARROW_CENTER_X, 128, ARROW_CENTER_X, 96);
-  drawThickLine(ARROW_CENTER_X, 96, ARROW_CENTER_X - 14, 110);
-  drawThickLine(ARROW_CENTER_X, 96, ARROW_CENTER_X + 14, 110);
-  drawThickLine(ARROW_CENTER_X, 114, 90, 96);
-  drawThickLine(90, 96, 82, 96);
-  drawThickLine(90, 96, 90, 104);
+  drawThickLine(66, 128, 66, 118, COLOR_WHITE, 4);
+  drawThickLine(66, 118, 70, 112, COLOR_WHITE, 4);
+  drawThickLine(70, 112, 82, 100, COLOR_WHITE, 4);
+  display.fillTriangle(89, 96, 71, 99, 86, 114, COLOR_WHITE);
 }
 
 void drawUTurn() {
@@ -660,12 +806,11 @@ void drawFallbackMapRoute(Direction direction) {
 void drawMiniRouteMap() {
   drawSideRoadSegments();
 
-  if (routePreviewPointCount >= 2) {
-    for (uint8_t i = 0; i + 1 < routePreviewPointCount; i++) {
-      drawThickLine(mapPreviewX(routePreviewPoints[i].x),
-                    mapPreviewY(routePreviewPoints[i].y),
-                    mapPreviewX(routePreviewPoints[i + 1].x),
-                    mapPreviewY(routePreviewPoints[i + 1].y), COLOR_ROUTE, 6);
+  if (mapMotion.routes >= 2) {
+    for (uint8_t i = 0; i + 1 < mapMotion.routes; i++) {
+      const float* p = mapMotion.current + i * 2;
+      drawThickLine(mapPreviewX(p[0]), mapPreviewY(p[1]),
+                    mapPreviewX(p[2]), mapPreviewY(p[3]), COLOR_ROUTE, 6);
     }
   } else {
     drawFallbackMapRoute(nav.direction);
@@ -682,7 +827,7 @@ void drawMiniRouteMap() {
 
   // Legacy preview coordinates can extend below the map. Keep them out of
   // the instruction strip without drawing a visible frame or separator.
-  display.fillRect(0, MAP_BOTTOM, SCREEN_WIDTH, SCREEN_HEIGHT - MAP_BOTTOM,
+  display.fillRect(0, MAP_CLIP_BOTTOM, SCREEN_WIDTH, SCREEN_HEIGHT - MAP_CLIP_BOTTOM,
                    COLOR_BG);
 }
 
@@ -714,21 +859,6 @@ void drawDistance(int distanceMeters, bool blinkState) {
   }
 }
 
-void drawTopStatus() {
-  display.setTextSize(1);
-  display.setTextColor(COLOR_MUTED);
-  display.setCursor(8, 8);
-
-  if (!bleConnected) {
-    display.print("ADV");
-  } else if (isLiveFresh()) {
-    display.print("LIVE");
-  } else {
-    display.print("WAIT");
-  }
-
-}
-
 void drawBottomError() {
   if (lastError[0] == '\0') return;
 
@@ -738,26 +868,44 @@ void drawBottomError() {
   display.print(lastError);
 }
 
-void drawStandby() {
+void drawStandbyClock() {
   display.setTextColor(COLOR_WHITE);
-  display.setTextSize(2);
-  display.setCursor(54, 38);
-  display.println("ESP32_NAV");
+  if (clockSynced) {
+    char text[6];
+    const time_t now = time(nullptr);
+    struct tm localClock;
+    // The phone has already applied its local UTC offset.
+    gmtime_r(&now, &localClock);
+    snprintf(text, sizeof(text), "%02d:%02d", localClock.tm_hour,
+             localClock.tm_min);
+    display.setTextSize(7);
+    display.setCursor(15, 30);
+    display.print(text);
+  } else {
+    // No clock source until the phone syncs: show a calm standby title,
+    // never a placeholder time. A synced clock keeps running after disconnect.
+    display.setTextSize(3);
+    display.setCursor(48, 39);
+    display.print("MOTO NAV");
+    if (!bleConnected) {
+      display.setTextSize(1);
+      display.setCursor(81, 91);
+      display.print("CONNECT PHONE");
+    }
+  }
+  if (bleConnected) {
+    display.setTextSize(2);
+    display.setCursor(54, 99);
+    display.print("ready to go");
+  }
+}
 
-  display.setTextSize(1);
-  display.setCursor(88, 72);
-  display.println("BLE READY");
+void drawStandby() {
+  drawStandbyClock();
 }
 
 void drawWaitingForNavigation() {
-  display.setTextColor(COLOR_WHITE);
-  display.setTextSize(2);
-  display.setCursor(54, 38);
-  display.println("ESP32_NAV");
-
-  display.setTextSize(1);
-  display.setCursor(78, 72);
-  display.println("WAITING NAV");
+  drawStandbyClock();
 }
 
 void renderDisplay(bool blinkState) {
@@ -766,6 +914,20 @@ void renderDisplay(bool blinkState) {
 
   display.fillScreen(COLOR_BG);
   display.setTextColor(COLOR_WHITE);
+
+  if (pairingActive) {
+    display.setTextSize(1);
+    display.setCursor(12, 12);
+    display.print(DEVICE_NAME);
+    display.setTextSize(4);
+    display.setCursor(48, 48);
+    display.print(pairingCode);
+    display.setTextSize(1);
+    display.setCursor(30, 108);
+    display.print("ENTER CODE ON PHONE");
+    presentDisplay();
+    return;
+  }
 
   if (isStandby()) {
     drawStandby();
@@ -782,7 +944,6 @@ void renderDisplay(bool blinkState) {
   if (rerouting || nav.direction == Direction::Stop) {
     // STOP/0 is also used by older apps while recalculating. It is not a
     // turn at zero metres: never render a fallback road, stop block or NOW.
-    drawTopStatus();
     display.setTextSize(1);
     display.setCursor(84, 62);
     display.print(rerouting ? "UPDATING..." : "NO GUIDANCE");
@@ -791,7 +952,6 @@ void renderDisplay(bool blinkState) {
   }
 
   drawMiniRouteMap();
-  drawTopStatus();
   drawDirection(nav.direction);
   drawDistance(nav.distanceMeters, blinkState);
 
@@ -873,6 +1033,11 @@ bool initDisplay() {
 // ======================================================
 
 void setup() {
+  const uint64_t chipId = ESP.getEfuseMac();
+  snprintf(deviceIdentity, sizeof(deviceIdentity), "%04X%08lX",
+           static_cast<unsigned int>((chipId >> 32) & 0xffff),
+           static_cast<unsigned long>(chipId & 0xffffffff));
+  snprintf(DEVICE_NAME, sizeof(DEVICE_NAME), "NAV-%s", deviceIdentity);
   Serial.begin(115200);
   delay(100);
   Serial.println();
@@ -884,13 +1049,7 @@ void setup() {
     Serial.println("[TFT] continuing without display so BLE still works");
   } else {
     display.fillScreen(COLOR_BG);
-    display.setTextColor(COLOR_WHITE);
-    display.setTextSize(2);
-    display.setCursor(22, 40);
-    display.println("Moto Nav Display");
-    display.setTextSize(1);
-    display.setCursor(72, 76);
-    display.println("Starting BLE...");
+    drawStandbyClock();
     presentDisplay();
   }
   wakeDisplay();
@@ -905,6 +1064,38 @@ void setup() {
 }
 
 void loop() {
+  if (pairingActive && millis() - pairingStartedMs >= 60000) {
+    pairingActive = false;
+    displayDirty = true;
+  }
+  float nextMap[20];
+  uint8_t routes, roads, direction;
+  portENTER_CRITICAL(&mapMux);
+  const bool hasMap = pendingMapReady;
+  if (hasMap) {
+    memcpy(nextMap, pendingMap, sizeof(nextMap));
+    routes = pendingRoutes;
+    roads = pendingRoads;
+    direction = pendingDirection;
+    pendingMapReady = false;
+  }
+  portEXIT_CRITICAL(&mapMux);
+  if (isStandby() || isWaitingForNavigation() || rerouting ||
+      nav.direction == Direction::Stop) {
+    mapMotion.valid = false;
+    mapMotion.active = false;
+  }
+  if (hasMap) {
+    mapMotion.accept(nextMap, routes, roads, direction, millis());
+    displayDirty = true;
+  }
+  if (mapMotion.tick(millis())) displayDirty = true;
+  static time_t lastClockMinute = -1;
+  const time_t clockMinute = time(nullptr) / 60;
+  if (clockMinute != lastClockMinute) {
+    lastClockMinute = clockMinute;
+    if (isStandby() || isWaitingForNavigation()) displayDirty = true;
+  }
   static bool blinkState = true;
   static uint32_t lastBlinkMs = 0;
   static uint32_t lastRenderMs = 0;
@@ -930,5 +1121,5 @@ void loop() {
     renderDisplay(blinkState);
   }
 
-  delay(30);
+  delay(5);
 }

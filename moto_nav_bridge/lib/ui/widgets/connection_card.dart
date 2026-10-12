@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../l10n/app_text.dart';
 import 'glass_panel.dart';
 import '../../services/ble_service.dart';
+import '../device_pairing.dart';
 
 class ConnectionCard extends StatelessWidget {
   const ConnectionCard({super.key});
@@ -18,9 +19,14 @@ class ConnectionCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
 
     return GlassPanel(
+      // Native-map trial rendered black on device. Keep this card on the
+      // readable fallback until platform-view sampling is verified.
+      experimentalLiquid: false,
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: busy ? null : () => connected ? ble.disconnect() : ble.connect(),
+        onTap: busy
+            ? null
+            : () => connected ? ble.disconnect() : connectDisplay(context, ble),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           child: Row(
@@ -55,7 +61,7 @@ class ConnectionCard extends StatelessWidget {
                       text.readyToGo,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w600,
                           ),
                     ),
                     const SizedBox(height: 1),

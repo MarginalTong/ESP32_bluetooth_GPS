@@ -22,11 +22,9 @@ class ApiConfig {
 
   static bool get hasDirectionsKey => googleDirectionsApiKey.isNotEmpty;
 
-  /// Full HTTPS Valhalla /route endpoint for all route planning.
-  /// No public demo server is used by default. Configure a service with road
-  /// coverage for the riding area before field testing. Compile-time defines
-  /// are configuration, not secret storage (they are present in the app).
-  static const String valhallaRouteUrl = String.fromEnvironment(
-    'VALHALLA_ROUTE_URL',
-  );
+  /// Single production origin. Legacy VALHALLA_ROUTE_URL build defines are
+  /// intentionally ignored so stale Xcode settings cannot select the old server.
+  static const String valhallaBaseUrl = 'https://nav.williamligallery.uk';
+  static const String valhallaRouteUrl = '$valhallaBaseUrl/route';
+  static const String valhallaStatusUrl = '$valhallaBaseUrl/status';
 }
