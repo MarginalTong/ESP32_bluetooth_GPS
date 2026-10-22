@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'display_binding.dart';
@@ -29,7 +30,26 @@ class KeychainStringStore implements SecureStringStore {
   Future<void> delete() => _channel.invokeMethod<void>('clear');
 }
 
-/// Fallback for platforms without the Keychain channel (Android, desktop).
+/// Android: encrypted with a key held in the Android Keystore. If a restored
+/// backup can no longer be decrypted the value is reset, which simply asks
+/// for a new BOOT pairing.
+class AndroidSecureStringStore implements SecureStringStore {
+  const AndroidSecureStringStore();
+  static const _key = 'nav_display_binding';
+  static const _storage =
+      FlutterSecureStorage(aOptions: AndroidOptions(resetOnError: true));
+
+  @override
+  Future<String?> read() => _storage.read(key: _key);
+
+  @override
+  Future<void> write(String value) => _storage.write(key: _key, value: value);
+
+  @override
+  Future<void> delete() => _storage.delete(key: _key);
+}
+
+/// Fallback for platforms with neither (desktop, tests).
 class PreferencesStringStore implements SecureStringStore {
   const PreferencesStringStore();
   static const _key = 'nav_display_binding_v2';
@@ -58,7 +78,9 @@ class DisplayBindingStore {
       : _secure = secure ??
             (Platform.isIOS
                 ? const KeychainStringStore()
-                : const PreferencesStringStore());
+                : Platform.isAndroid
+                    ? const AndroidSecureStringStore()
+                    : const PreferencesStringStore());
 
   final SecureStringStore _secure;
 

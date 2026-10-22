@@ -342,7 +342,11 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
 
     try {
       if (!device.isConnected) {
-        await device.connect(timeout: const Duration(seconds: 10), mtu: null);
+        // Android starts at the 23-byte minimum MTU (20-byte writes), far too
+        // small for a signed packet; ask for a large one. iOS negotiates its
+        // own MTU and ignores this.
+        await device.connect(
+            timeout: const Duration(seconds: 10), mtu: BleConstants.requestMtu);
       }
       final services = await device.discoverServices();
       final service = services.firstWhere(
@@ -362,8 +366,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       final first = await status();
       final identity = first['id'] as String;
       // New every connection; without it this is pre-signing firmware.
-      final nonce =
-          PacketSigner.parseHex(first['s'], PacketSigner.nonceBytes);
+      final nonce = PacketSigner.parseHex(first['s'], PacketSigner.nonceBytes);
       if (nonce == null) {
         throw Exception('Update display firmware before binding');
       }
@@ -418,6 +421,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       await _characteristic!.write(
         utf8.encode(_signer!.sign(jsonEncode({'clock': localSeconds}))),
         withoutResponse: BleConstants.writeWithoutResponse,
+        allowLongWrite: BleConstants.allowLongWrite,
       );
       _reconnectAttempt = 0;
       _reconnectTimer?.cancel();
@@ -547,6 +551,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         await _characteristic!.write(
           utf8.encode(wire),
           withoutResponse: BleConstants.writeWithoutResponse,
+          allowLongWrite: BleConstants.allowLongWrite,
         );
         _throttle.markSent(state, now);
         _lastSent = state;

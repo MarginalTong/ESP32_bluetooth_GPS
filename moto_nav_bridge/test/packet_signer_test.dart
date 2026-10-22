@@ -1,6 +1,11 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:moto_nav_bridge/config/ble_constants.dart';
+import 'package:moto_nav_bridge/models/device_direction.dart';
+import 'package:moto_nav_bridge/models/nav_state.dart';
+import 'package:moto_nav_bridge/services/navigation_engine.dart';
 import 'package:moto_nav_bridge/services/packet_signer.dart';
 
 void main() {
@@ -44,6 +49,29 @@ void main() {
         throwsArgumentError);
     expect(() => PacketSigner(key: key, sessionNonce: nonce).sign('[]'),
         throwsArgumentError);
+  });
+
+  test('the largest navigation packet fits the firmware limit', () {
+    // Every field at its widest: three-digit coordinates, all preview points
+    // and side roads, rerouting, a 4-digit distance and a huge counter. The
+    // firmware drops anything longer, so this must hold for any NavState.
+    final widest = NavState(
+      direction: DeviceDirection.bearRight,
+      distanceMeters: 9999,
+      rerouting: true,
+      routePreviewPoints:
+          List.filled(NavigationEngine.routePreviewMaxPoints * 2, 127),
+      sideRoadPreviewPoints:
+          List.filled(NavigationEngine.sideRoadPreviewMaxSegments * 4, 127),
+    );
+    final signer = PacketSigner(key: key, sessionNonce: nonce);
+    for (var i = 0; i < 999999; i++) {
+      signer.sign('{}'); // Push the counter to 7 digits.
+    }
+    final wire = utf8.encode(signer.sign(widest.toWire()));
+    expect(wire.length, lessThanOrEqualTo(BleConstants.maxSignedPacketBytes));
+    // And within the 512-byte attribute limit Android enforces.
+    expect(wire.length, lessThanOrEqualTo(512));
   });
 
   test('parses fixed-length hex only', () {

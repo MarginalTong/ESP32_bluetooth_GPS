@@ -21,4 +21,17 @@ class BleConstants {
   /// an acknowledged write lets the drain loop detect failures and retry the
   /// newest state.
   static const bool writeWithoutResponse = false;
+
+  /// MTU requested on connect (Android only; iOS negotiates its own). The
+  /// firmware accepts up to 517, and 512 keeps a signed packet in one write.
+  static const int requestMtu = 512;
+
+  /// If a phone or display caps the MTU lower, a signed packet would exceed
+  /// MTU-3 and Android would reject the write outright. A long (queued) write
+  /// still delivers it. Only valid with write-with-response.
+  static const bool allowLongWrite = true;
+
+  /// The firmware rejects navigation writes longer than this, signature
+  /// included (NavWriteCallbacks in the sketch).
+  static const int maxSignedPacketBytes = 400;
 }

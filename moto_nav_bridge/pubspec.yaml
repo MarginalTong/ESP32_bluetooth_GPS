@@ -23,6 +23,9 @@ dependencies:
   vector_tile: ^4.0.0
   # Simple state management for the UI layer.
   provider: ^6.1.2
+  # Android Keystore-backed storage for the display pairing key. iOS uses the
+  # app's own Keychain channel (ios/Runner/AppDelegate.swift).
+  flutter_secure_storage: ^11.2.0
 
 dev_dependencies:
   flutter_test:

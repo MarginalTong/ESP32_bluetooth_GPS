@@ -1,4 +1,30 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Valhalla routing and the voice gateway. Flutter only adds this to the
+         debug/profile manifests, so release builds need it here. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- BLE link to the ESP32 display. flutter_blue_plus requests these at
+         runtime but declares none itself. Android 12+ (API 31): -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Android 11 and lower: -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="true" />
+
+    <!-- Navigation GPS (geolocator); also needed for BLE scanning on
+         Android 11 and lower. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <application
         android:label="moto_nav_bridge"
         android:name="${applicationName}"
