@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/ble_constants.dart';
 import '../models/nav_state.dart';
@@ -11,6 +10,7 @@ import 'navigation_ports.dart';
 import 'packet_signer.dart';
 import 'send_throttle.dart';
 import 'display_binding.dart';
+import 'display_binding_store.dart';
 
 enum BleConnectionState {
   idle,
@@ -27,8 +27,9 @@ enum BleConnectionState {
 /// Navigation is write-only; a separate read/write characteristic confirms a
 /// physical BOOT press before the first binding is saved on this phone.
 class BleService extends ChangeNotifier implements NavigationBlePort {
-  BleService({SendThrottle? throttle})
-      : _throttle = throttle ?? SendThrottle() {
+  BleService({SendThrottle? throttle, DisplayBindingStore? bindingStore})
+      : _throttle = throttle ?? SendThrottle(),
+        _bindingStore = bindingStore ?? DisplayBindingStore() {
     _adapterSub = FlutterBluePlus.adapterState.listen((s) {
       // CoreBluetooth reports `unknown` briefly while iOS is restoring its
       // state. Treating that transitional value as Bluetooth-off tears down a
@@ -49,6 +50,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   }
 
   final SendThrottle _throttle;
+  final DisplayBindingStore _bindingStore;
 
   BleConnectionState _state = BleConnectionState.idle;
   BleConnectionState get state => _state;
@@ -80,7 +82,6 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   PacketSigner? _signer;
   bool _legacyBindingDropped = false;
   Future<BluetoothDevice?> Function(List<ScanResult>)? _chooseDevice;
-  static const _bindingKey = 'nav_display_binding_v1';
   int _session = 0;
   bool _loadingBinding = false;
   String? get boundIdentity => _boundIdentity;
@@ -93,9 +94,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     await disconnect();
     // Let cancelled connection work finish before allowing another device.
     await _connectOp;
-    if (!await (await SharedPreferences.getInstance()).remove(_bindingKey)) {
-      throw StateError('Could not remove saved binding');
-    }
+    await _bindingStore.delete();
     _boundRemote = null;
     _boundIdentity = null;
     _boundKey = null;
@@ -105,15 +104,11 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   }
 
   Future<void> _loadBinding() async {
-    final store = await SharedPreferences.getInstance();
-    final raw = store.getString(_bindingKey);
-    final data = raw == null ? null : jsonDecode(raw) as Map<String, dynamic>;
+    final data = await _bindingStore.read();
     if (data != null && !data.containsKey('key')) {
       // Saved before the display signed packets: it holds no key, so the
-      // display would ignore every write. Pair again with a BOOT press.
-      if (!await store.remove(_bindingKey)) {
-        throw StateError('Could not remove saved binding');
-      }
+      // display would ignore every write. The store has already discarded
+      // it; pair again with a BOOT press.
       _legacyBindingDropped = true;
     }
     if (data == null || !data.containsKey('key')) {
@@ -405,9 +400,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         }
         if (!confirmed) throw Exception('BOOT confirmation timed out');
         final binding = DisplayBinding(device.remoteId.str, identity, key!);
-        final saved = await (await SharedPreferences.getInstance())
-            .setString(_bindingKey, jsonEncode(binding.toJson()));
-        if (!saved) throw Exception('Could not save display binding');
+        await _bindingStore.write(binding);
         _boundRemote = binding.remote;
         _boundIdentity = binding.identity;
         _boundKey = binding.key;
