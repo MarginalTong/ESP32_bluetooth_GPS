@@ -764,8 +764,10 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
-// Physical BOOT confirmation prevents accidental selection, not spoofing.
-// This is deliberately separate from the navigation write characteristic.
+// Pairing: a physical BOOT press confirms the phone in front of the display,
+// which then receives the key that signs every navigation write (see PACKET
+// AUTH). Kept separate from the navigation characteristic. Every read also
+// returns this connection's session nonce.
 class PairingCallbacks : public BLECharacteristicCallbacks {
   void onRead(BLECharacteristic* characteristic) override {
     uint8_t nonce[AUTH_NONCE_BYTES];

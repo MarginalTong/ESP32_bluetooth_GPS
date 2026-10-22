@@ -1,13 +1,10 @@
-/// BLE identifiers — must match the ESP32 navigation display firmware.
+/// BLE identifiers — must match the ESP32 navigation display firmware
+/// (firmware/esp32_nav_display/esp32_nav_display.ino, "BLE contract").
 ///
-/// Source of truth is the Arduino sketch:
-///   BLEDevice::init("NAV-<chip identity>");
-///   #define SERVICE_UUID        "12345678-1234-1234-1234-123456789abc"
-///   #define CHARACTERISTIC_UUID "abcd1234-5678-1234-5678-abcdef123456"
-///   ...createCharacteristic(CHARACTERISTIC_UUID, PROPERTY_WRITE)
-///
-/// Navigation is write-only; a separate read/write pairing characteristic
-/// reports physical BOOT confirmation before the phone saves a new binding.
+/// The navigation characteristic is write-only and accepts only packets
+/// signed by [PacketSigner](../services/packet_signer.dart). A separate
+/// read/write pairing characteristic confirms a physical BOOT press, issues
+/// the signing key, and reports each connection's session nonce.
 class BleConstants {
   const BleConstants._();
 
@@ -17,8 +14,11 @@ class BleConstants {
   static const String serviceUuid = '12345678-1234-1234-1234-123456789abc';
   static const String characteristicUuid =
       'abcd1234-5678-1234-5678-abcdef123456';
+  static const String pairingCharacteristicUuid =
+      'abcd1234-5678-1234-5678-abcdef123457';
 
-  /// The firmware exposes PROPERTY_WRITE (write-with-response), so we write
-  /// with `withoutResponse: false`.
+  /// Write with response: the firmware exposes both WRITE and WRITE_NR, and
+  /// an acknowledged write lets the drain loop detect failures and retry the
+  /// newest state.
   static const bool writeWithoutResponse = false;
 }

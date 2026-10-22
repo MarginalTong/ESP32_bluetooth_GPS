@@ -2,10 +2,10 @@ import 'device_direction.dart';
 
 /// The navigation payload sent to the ESP32 over BLE.
 ///
-/// Serializes to exactly `{"dir":"LEFT","dist":200}` — the contract the
-/// firmware parses with `doc["dir"]` / `doc["dist"]`. The firmware reads
-/// `dist` as an `int`, so [distanceMeters] is emitted without a fractional
-/// part. Keep the payload small: the firmware buffer is `StaticJsonDocument<768>`.
+/// Serializes to compact JSON such as
+/// `{"dir":"LEFT","dist":200,"p":[...],"r":[...]}`; `PacketSigner` then adds
+/// the counter and signature before it is written. The firmware reads `dist`
+/// as an `int`, so [distanceMeters] is emitted without a fractional part.
 class NavState {
   const NavState({
     required this.direction,
@@ -47,8 +47,9 @@ class NavState {
         if (sideRoadPreviewPoints.isNotEmpty) 'r': sideRoadPreviewPoints,
       };
 
-  /// The exact bytes written to the BLE characteristic.
-  /// Uses no whitespace to stay well under the firmware's 200-byte buffer.
+  /// The unsigned JSON body of a navigation write (see `PacketSigner`).
+  /// No whitespace: the firmware rejects writes over 400 bytes, signature
+  /// included.
   String toWire() {
     final points = routePreviewPoints;
     final roads = sideRoadPreviewPoints;

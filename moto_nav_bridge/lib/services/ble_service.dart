@@ -359,7 +359,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         orElse: () => throw Exception('Characteristic not found on device'),
       );
       final pairing = service.characteristics.firstWhere(
-        (c) => c.uuid == Guid('abcd1234-5678-1234-5678-abcdef123457'),
+        (c) => c.uuid == Guid(BleConstants.pairingCharacteristicUuid),
         orElse: () => throw Exception('Update display firmware before binding'),
       );
       Future<Map<String, dynamic>> status() async =>
