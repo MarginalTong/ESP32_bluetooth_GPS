@@ -7,9 +7,10 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import time
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 AUDIO_INTENTS = ['greeting', 'chat', 'repeat', 'eta', 'next_turn', 'avoid_tolls', 'change_destination', 'find_nearby', 'unsupported_request',
                  'confirm', 'cancel', 'select_one', 'select_two', 'select_three', 'unknown']
@@ -269,13 +270,16 @@ def draft_reply(value, key, model):
 class Budget:
     """Persistent global request cap. Failed calls also consume budget; no retries."""
     def __init__(self, path, daily=100, per_minute=6):
-        self.db = sqlite3.connect(path)
+        # One connection shared by the request threads; the lock makes the
+        # count-then-insert below atomic so concurrent calls cannot overspend.
+        self.db = sqlite3.connect(path, check_same_thread=False)
+        self.lock = threading.Lock()
         self.db.execute('CREATE TABLE IF NOT EXISTS calls (at REAL)')
         self.daily, self.per_minute = daily, per_minute
 
     def take(self, now=None):
         now = time.time() if now is None else now
-        with self.db:
+        with self.lock, self.db:
             self.db.execute('DELETE FROM calls WHERE at < ?', (now - 86400,))
             daily = self.db.execute('SELECT count(*) FROM calls').fetchone()[0]
             minute = self.db.execute('SELECT count(*) FROM calls WHERE at > ?', (now - 60,)).fetchone()[0]
@@ -352,7 +356,11 @@ def main():
     model = os.environ.get('GEMINI_MODEL', '')
     if not key or len(token) < 32 or not re.fullmatch(r'[a-zA-Z0-9._-]+', model):
         raise SystemExit('Set GEMINI_API_KEY, GEMINI_MODEL and a random VOICE_TEST_TOKEN (32+ characters).')
-    server = HTTPServer(('127.0.0.1', int(os.environ.get('PORT', '8091'))), Handler)
+    # A Gemini call can take 20 s; one thread per request keeps other riders
+    # from queueing behind it (nginx gives up after 35 s). The Budget still
+    # caps total upstream calls.
+    server = ThreadingHTTPServer(('127.0.0.1', int(os.environ.get('PORT', '8091'))), Handler)
+    server.daemon_threads = True
     server.key, server.token, server.model = key, token, model
     server.audio_enabled = os.environ.get('VOICE_AUDIO_ENABLED') == 'true'
     server.budget = Budget(os.environ.get('VOICE_BUDGET_DB', 'voice_budget.sqlite'))

@@ -66,8 +66,13 @@ BLE contract:
   press sets `verified=true` for that connection. The board then generates a
   random 16-byte key, stores it in NVS, and returns it as `"k"` in the pairing
   read, on that connection only. The confirmation window lasts 60 seconds on
-  the device and 35 seconds in the app. A new BOOT pairing replaces the key,
-  so a previously paired phone stops working (one owner at a time).
+  the device and 35 seconds in the app.
+- Re-pairing is recoverable. A new BOOT pairing issues a new key, but the
+  previously proven key stays valid until the new key is used on a later,
+  ordinary connection; only then is the old key retired (one owner at a
+  time). So if the link drops right after BOOT, before the phone stores the
+  new key, the phone keeps working with its old key. NVS holds `k` (current),
+  `kp` (current proven) and `p` (previous, while `k` is unproven).
 - Every pairing read also returns `"s"`: a random 8-byte session nonce that
   is new on each connection.
 - Service UUID: `12345678-1234-1234-1234-123456789abc`

@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 binary=$(mktemp "${TMPDIR:-/tmp}/packet-auth-test.XXXXXX")
 trap 'rm -f "$binary"' EXIT
 awk '
-  BEGIN { print "#include <stddef.h>\n#include <stdint.h>" }
+  BEGIN { print "#include <stddef.h>\n#include <stdint.h>\n#include <string.h>" }
   FNR == NR {
     if (/^\/\/ BEGIN PACKET AUTH/) copying = 1;
     if (copying) print;
