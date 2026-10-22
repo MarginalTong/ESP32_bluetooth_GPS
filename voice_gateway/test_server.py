@@ -1,3 +1,5 @@
+import threading
+import time
 import unittest
 import json
 from unittest.mock import patch, MagicMock
@@ -103,6 +105,32 @@ class GatewayTests(unittest.TestCase):
         self.assertTrue(budget.take(161))
         self.assertFalse(budget.take(222))
         self.assertTrue(budget.take(90000))
+
+    def test_concurrent_requests_cannot_overspend(self):
+        # The server is threaded: racing requests share one Budget.
+        budget = Budget(':memory:', daily=50, per_minute=50)
+        granted, errors = [], []
+        start = threading.Barrier(20, timeout=5)
+
+        def worker():
+            start.wait()
+            for _ in range(5):
+                try:
+                    granted.append(budget.take(1000))
+                except Exception as error:  # noqa: BLE001 - recorded for the assert
+                    errors.append(error)
+
+        # Daemon threads with a deadline: an unsafe Budget can wedge the shared
+        # connection, which must fail this test rather than hang the suite.
+        threads = [threading.Thread(target=worker, daemon=True) for _ in range(20)]
+        for thread in threads:
+            thread.start()
+        deadline = time.monotonic() + 10
+        for thread in threads:
+            thread.join(timeout=max(0, deadline - time.monotonic()))
+        self.assertFalse(any(thread.is_alive() for thread in threads), 'Budget deadlocked')
+        self.assertEqual(errors, [])
+        self.assertEqual(granted.count(True), 50)
 
     def test_verified_reply_rejects_new_navigation_claim_without_fact(self):
         value = validate_reply_request({'intent': 'repeat', 'fact': 'Turn right in 200 metres.',
