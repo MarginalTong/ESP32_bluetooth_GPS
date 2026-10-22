@@ -59,6 +59,41 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets(
+      'start token reaches native map once without resending on rebuild',
+      (tester) async {
+    final routes = List<RouteCandidate>.unmodifiable([candidate(0.001)]);
+    await tester.pumpWidget(map(routes));
+    await tester.pumpWidget(map(routes, animationId: 1));
+    await tester.pump();
+    expect(updates, hasLength(1));
+    expect(updates.single.arguments['routeAnimationId'], 1);
+    await tester.pumpWidget(map(routes, animationId: 1));
+    await tester.pump();
+    expect(updates, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('map appearance changes reach native view without route changes',
+      (tester) async {
+    final routes = List<RouteCandidate>.unmodifiable([candidate(0.001)]);
+    await tester.pumpWidget(map(routes));
+    await tester.pumpWidget(map(routes, style: 'hybrid', traffic: true));
+    await tester.pump();
+    expect(updates, hasLength(1));
+    expect(updates.single.arguments['mapStyle'], 'hybrid');
+    expect(updates.single.arguments['showTraffic'], isTrue);
+    await tester.pumpWidget(const SizedBox());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('native map receives gestures without an eager Flutter recognizer',
+      (tester) async {
+    await tester.pumpWidget(map(const []));
+    final platformView = tester.widget<UiKitView>(find.byType(UiKitView));
+    expect(platformView.gestureRecognizers, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 }
 
 RouteCandidate candidate(double middleLongitude) => RouteCandidate(
@@ -80,10 +115,17 @@ RouteCandidate candidate(double middleLongitude) => RouteCandidate(
       attributionUrl: 'https://www.openstreetmap.org/copyright',
     );
 
-Widget map(List<RouteCandidate> routes) => MaterialApp(
+Widget map(List<RouteCandidate> routes,
+        {int animationId = 0,
+        String style = 'standard',
+        bool traffic = false}) =>
+    MaterialApp(
         home: Scaffold(
             body: NavigationMap(
       origin: const LatLng(0, 0),
       destination: const LatLng(0.002, 0),
       routes: routes,
+      routeAnimationId: animationId,
+      mapStyle: style,
+      showTraffic: traffic,
     )));

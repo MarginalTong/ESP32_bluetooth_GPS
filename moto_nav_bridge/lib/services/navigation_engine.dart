@@ -53,6 +53,7 @@ class NavigationEngine {
   static const double sideRoadConnectionToleranceMeters = 14.0;
   static const double sideRoadMinimumBranchMeters = 8.0;
   static const double sideRoadMinimumCrossingSin = 0.30;
+  static const double _sideRoadDirectionPreviewUnits = 10.0;
   static const int _previewLeft = 18;
   static const int _previewTop = 2;
   static const int _previewRight = 110;
@@ -165,12 +166,20 @@ class NavigationEngine {
 
   bool isOffRoute(LatLng position) {
     final distance = distanceFromRouteMeters(position);
+    lastRouteDistanceMeters = distance;
     final accuracy = position is NavigationFix ? position.accuracy : null;
     final threshold = accuracy == null || !accuracy.isFinite || accuracy < 0
         ? offRouteThresholdMeters
-        : (accuracy < 10 ? 25.0 : 50.0);
+        // Avoid a 25 -> 50 m jump at 10 m reported accuracy. A few metres of
+        // road-centreline offset must not invalidate a newly returned route.
+        : (25.0 + accuracy).clamp(30.0, 50.0).toDouble();
+    lastOffRouteThresholdMeters = threshold;
     return distance > threshold || reverseTravel;
   }
+
+  double? lastRouteDistanceMeters;
+  double? lastOffRouteThresholdMeters;
+  double? lastCourseDeltaDegrees;
 
   /// Match only the current geometry segment and three forward segments.
   /// A new engine seeds progress within its current maneuver once; subsequent
@@ -179,6 +188,7 @@ class NavigationEngine {
     var best = double.infinity;
     final points = _remainingRoutePoints();
     reverseTravel = false;
+    lastCourseDeltaDegrees = null;
     if (points.length < 2) return best;
     if (_matchStep != _index) {
       _matchSegment = 0;
@@ -212,6 +222,7 @@ class NavigationEngine {
       final dy = b.latitude - a.latitude;
       final bearing = (math.atan2(dx, dy) * 180 / math.pi + 360) % 360;
       final delta = ((position.heading - bearing + 540) % 360 - 180).abs();
+      lastCourseDeltaDegrees = delta;
       reverseTravel = best < 60 && delta > 90 && a.distanceTo(b) >= 2;
     }
     if (best <= 50 && !reverseTravel) _matchSegment = selected;
@@ -306,7 +317,25 @@ class NavigationEngine {
         if (crossingSin < sideRoadMinimumCrossingSin) continue;
 
         final a = preview.screenPoint(connection.routePoint);
-        final b = preview.screenPoint(end);
+        // The BLE segment describes a direction, not the measured length of
+        // the side road. Avoid clamping a distant endpoint to the source-map
+        // edge: that used to distort the ray and vary its apparent length.
+        final branchLength = math.sqrt(branchVector.dx * branchVector.dx +
+            branchVector.dy * branchVector.dy);
+        final b = (
+          x: (a.x +
+                  branchVector.dx /
+                      branchLength *
+                      _sideRoadDirectionPreviewUnits)
+              .round()
+              .clamp(0, 127),
+          y: (a.y -
+                  branchVector.dy /
+                      branchLength *
+                      _sideRoadDirectionPreviewUnits)
+              .round()
+              .clamp(0, 63),
+        );
         if ((a.x - b.x).abs() + (a.y - b.y).abs() < 5) continue;
         candidates.add(_SideRoadCandidate(
           a: a,

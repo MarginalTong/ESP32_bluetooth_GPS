@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,8 +14,12 @@ class NavigationMap extends StatefulWidget {
     this.destinationName,
     this.routes = const [],
     this.selectedRouteIndex = 0,
+    this.routeAnimationId = 0,
+    this.mapStyle = 'standard',
+    this.showTraffic = false,
     this.onRouteSelected,
     this.onMapPointSelected,
+    this.onDiagnostic,
     this.height = 260,
     this.borderRadius = 22,
     this.contentPadding = EdgeInsets.zero,
@@ -32,8 +35,14 @@ class NavigationMap extends StatefulWidget {
   final String? destinationName;
   final List<RouteCandidate> routes;
   final int selectedRouteIndex;
+
+  /// Increment to replay the selected route from origin to destination.
+  final int routeAnimationId;
+  final String mapStyle;
+  final bool showTraffic;
   final ValueChanged<int>? onRouteSelected;
   final ValueChanged<LatLng>? onMapPointSelected;
+  final ValueChanged<String>? onDiagnostic;
   final double height;
   final double borderRadius;
   final EdgeInsets contentPadding;
@@ -76,6 +85,10 @@ class _NavigationMapState extends State<NavigationMap> {
   Future<void> _handleMapEvent(MethodCall call) async {
     final args = Map<Object?, Object?>.from(call.arguments as Map);
     switch (call.method) {
+      case 'mapDiagnostic':
+        final event = args['event'];
+        if (event is String) widget.onDiagnostic?.call(event);
+        return;
       case 'routeSelected':
         final index = args['index'] as int?;
         if (index == null) return;
@@ -105,11 +118,10 @@ class _NavigationMapState extends State<NavigationMap> {
               viewType: NavigationMap._viewType,
               creationParams: _creationParams,
               creationParamsCodec: const StandardMessageCodec(),
-              gestureRecognizers: {
-                Factory<OneSequenceGestureRecognizer>(
-                  () => EagerGestureRecognizer(),
-                ),
-              },
+              // Let MapKit's pan, pinch and rotation recognizers own gestures
+              // that begin on the map. An eager Flutter recognizer can keep
+              // winning subsequent touch sequences in a platform view.
+              gestureRecognizers: const {},
             ),
           _ => Container(
               color: colorScheme.surfaceContainer,
@@ -138,6 +150,9 @@ class _NavigationMapState extends State<NavigationMap> {
       AppText.system.languageCode,
       map.onMapPointSelected != null,
       map.selectedRouteIndex,
+      map.routeAnimationId,
+      map.mapStyle,
+      map.showTraffic,
       map.contentPadding,
     ].join(':');
   }
@@ -158,6 +173,9 @@ class _NavigationMapState extends State<NavigationMap> {
         'paddingRight': widget.contentPadding.right,
         'languageCode': AppText.system.languageCode,
         'selectedRouteIndex': widget.selectedRouteIndex,
+        'routeAnimationId': widget.routeAnimationId,
+        'mapStyle': widget.mapStyle,
+        'showTraffic': widget.showTraffic,
         'mapPointSelectionEnabled': widget.onMapPointSelected != null,
         'routes': [
           for (var i = 0; i < widget.routes.length; i++)

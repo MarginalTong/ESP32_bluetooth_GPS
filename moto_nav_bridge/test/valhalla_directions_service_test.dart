@@ -5,13 +5,37 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:moto_nav_bridge/models/device_direction.dart';
 import 'package:moto_nav_bridge/models/lat_lng.dart';
-import 'package:moto_nav_bridge/services/directions_service.dart';
+import 'package:moto_nav_bridge/services/directions_exception.dart';
 import 'package:moto_nav_bridge/services/navigation_engine.dart';
 import 'package:moto_nav_bridge/services/valhalla_directions_service.dart';
 
 void main() {
   const endpoint = 'https://routing.example/route';
   final fails = throwsA(isA<DirectionsException>());
+
+  test('route preferences are included for every route request', () async {
+    final service = ValhallaDirectionsService(
+        routePreferences: () => {
+              'use_highways': 0.0,
+              'use_tolls': 0.0,
+              'use_ferry': 0.0,
+              'exclude_tunnels': true
+            },
+        client: MockClient((request) async {
+          expect(jsonDecode(request.body)['costing_options'], {
+            'auto': {
+              'use_highways': 0.0,
+              'use_tolls': 0.0,
+              'use_ferry': 0.0,
+              'exclude_tunnels': true
+            }
+          });
+          return http.Response(jsonEncode(response()), 200);
+        }));
+    addTearDown(service.dispose);
+    await service.fetchRoutes(origin: points.first, destination: points.last);
+    await service.fetchRoutes(origin: points[1], destination: points.last);
+  });
 
   test('default endpoint is the cloud HTTPS route on port 443', () async {
     final service =

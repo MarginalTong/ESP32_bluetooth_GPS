@@ -107,7 +107,8 @@ class _DevicesPageState extends State<DevicesPage> {
     final ble = context.watch<BleService>();
     final busy = _working ||
         ble.state == BleConnectionState.scanning ||
-        ble.state == BleConnectionState.connecting;
+        ble.state == BleConnectionState.connecting ||
+        ble.state == BleConnectionState.awaitingBoot;
     final connected = ble.state == BleConnectionState.connected;
     return CupertinoPageScaffold(
       backgroundColor: const Color(0xfff2f2f7),

@@ -11,13 +11,20 @@ import 'navigation_ports.dart';
 import 'send_throttle.dart';
 import 'display_binding.dart';
 
-enum BleConnectionState { idle, scanning, connecting, connected, disconnected }
+enum BleConnectionState {
+  idle,
+  scanning,
+  connecting,
+  awaitingBoot,
+  connected,
+  disconnected
+}
 
 /// Owns the BLE link to the ESP32_NAV peripheral: scan -> connect -> discover
 /// the write characteristic -> push [NavState] payloads (throttled).
 ///
-/// Navigation is write-only; a separate read/write characteristic confirms
-/// physical-screen selection before the first binding is saved.
+/// Navigation is write-only; a separate read/write characteristic confirms a
+/// physical BOOT press before the first binding is saved on this phone.
 class BleService extends ChangeNotifier implements NavigationBlePort {
   BleService({SendThrottle? throttle})
       : _throttle = throttle ?? SendThrottle() {
@@ -30,6 +37,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         _throttle.reset();
         if (_state == BleConnectionState.scanning ||
             _state == BleConnectionState.connecting ||
+            _state == BleConnectionState.awaitingBoot ||
             _state == BleConnectionState.connected) {
           _setState(BleConnectionState.disconnected,
               error: 'Bluetooth is ${s.name}. Turn it on and reconnect.');
@@ -55,16 +63,16 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   StreamSubscription<BluetoothConnectionState>? _connSub;
   StreamSubscription<BluetoothAdapterState>? _adapterSub;
   Future<void>? _connectOp;
-  Future<void>? _writeOp;
+  Future<bool>? _writeOp;
   Timer? _reconnectTimer;
   NavState? _pendingState;
+  DateTime? _pendingStateAt;
   bool _maintainConnection = false;
   int _reconnectAttempt = 0;
   bool _disposed = false;
   String? _boundRemote;
   String? _boundIdentity;
   Future<BluetoothDevice?> Function(List<ScanResult>)? _chooseDevice;
-  Future<String?> Function()? _enterCode;
   static const _bindingKey = 'nav_display_binding_v1';
   int _session = 0;
   bool _loadingBinding = false;
@@ -102,6 +110,12 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   }
 
   void _setState(BleConnectionState s, {String? error}) {
+    if (s == BleConnectionState.disconnected) {
+      // The display clears its turn on link loss. Do not replay a pre-loss
+      // instruction as soon as CoreBluetooth reconnects.
+      _pendingState = null;
+      _pendingStateAt = null;
+    }
     _state = s;
     _lastError = error;
     notifyListeners();
@@ -112,13 +126,12 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     Duration timeout = const Duration(seconds: 15),
     bool resetReconnectAttempts = true,
     Future<BluetoothDevice?> Function(List<ScanResult>)? chooseDevice,
-    Future<String?> Function()? enterCode,
   }) async {
     if (_connectOp != null || _loadingBinding) return;
     final session = _session;
     _loadingBinding = true;
+    _setState(BleConnectionState.connecting);
     _chooseDevice = chooseDevice;
-    _enterCode = enterCode;
     try {
       await _loadBinding();
     } catch (_) {
@@ -185,6 +198,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     _setState(BleConnectionState.scanning);
     final completer = Completer<BluetoothDevice?>();
     final candidates = <String, ScanResult>{};
+    Timer? candidateWindow;
 
     await _scanSub?.cancel();
     _scanSub = FlutterBluePlus.onScanResults.listen((results) {
@@ -192,6 +206,9 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         if (_matchesDevice(r)) {
           if (_boundRemote == null) {
             candidates[r.device.remoteId.str] = r;
+            candidateWindow ??= Timer(const Duration(milliseconds: 1100), () {
+              if (!completer.isCompleted) completer.complete(null);
+            });
           } else if (r.device.remoteId.str == _boundRemote) {
             if (!completer.isCompleted) completer.complete(r.device);
             return;
@@ -222,6 +239,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       _setState(BleConnectionState.idle, error: 'Scan failed: $e');
       return;
     } finally {
+      candidateWindow?.cancel();
       await _stopActiveScan();
     }
 
@@ -259,8 +277,11 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
 
   bool _matchesDevice(ScanResult result) {
     final serviceUuid = Guid(BleConstants.serviceUuid);
-    return result.device.platformName == BleConstants.deviceName ||
-        result.advertisementData.advName == BleConstants.deviceName ||
+    final name = result.advertisementData.advName.isNotEmpty
+        ? result.advertisementData.advName
+        : result.device.platformName;
+    return name == BleConstants.deviceName ||
+        RegExp(r'^NAV-[0-9A-F]{12}$').hasMatch(name) ||
         result.advertisementData.serviceUuids.contains(serviceUuid);
   }
 
@@ -282,8 +303,14 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     _setState(BleConnectionState.connecting);
 
     await _connSub?.cancel();
+    bool ready = false;
     _connSub = device.connectionState.listen((s) {
+      if (_disposed || session != _session) return;
       if (s == BluetoothConnectionState.disconnected) {
+        // The stream immediately replays its initial disconnected value.
+        // During connection/discovery, failures are handled by the await/catch
+        // below; they are not an established link being lost.
+        if (!ready) return;
         final reason = device.disconnectReason;
         final detail = reason == null
             ? 'BLE link disconnected'
@@ -325,23 +352,24 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
           throw Exception('Display identity mismatch');
         }
       } else {
-        if (_enterCode == null) throw Exception('Manual binding required');
         await pairing.write(utf8.encode('{"pair":"start"}'));
-        final code = await _enterCode!();
-        if (code == null ||
-            !_maintainConnection ||
-            _disposed ||
-            session != _session) {
-          throw Exception('Binding cancelled');
+        _setState(BleConnectionState.awaitingBoot);
+        var confirmed = false;
+        for (var attempt = 0; attempt < 100; attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 350));
+          if (session != _session || !_maintainConnection || _disposed) {
+            throw Exception('Binding cancelled');
+          }
+          final result = await status();
+          if (result['id'] != identity) {
+            throw Exception('Display identity changed during pairing');
+          }
+          if (result['verified'] == true) {
+            confirmed = true;
+            break;
+          }
         }
-        await pairing.write(utf8.encode(jsonEncode({'code': code})));
-        final result = await status();
-        if (session != _session || !_maintainConnection || _disposed) {
-          return false;
-        }
-        if (result['id'] != identity || result['verified'] != true) {
-          throw Exception('Incorrect or expired code. Try connecting again.');
-        }
+        if (!confirmed) throw Exception('BOOT confirmation timed out');
         final saved = await (await SharedPreferences.getInstance()).setString(
             _bindingKey,
             jsonEncode({'remote': device.remoteId.str, 'identity': identity}));
@@ -364,6 +392,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       _reconnectAttempt = 0;
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
+      ready = true;
       _setState(BleConnectionState.connected);
       unawaited(_flushPendingState());
       return true;
@@ -403,6 +432,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     if (_reconnectAttempt >= delays.length) return;
     final seconds = delays[_reconnectAttempt];
     _reconnectAttempt++;
+    _setState(BleConnectionState.connecting);
     _reconnectTimer = Timer(Duration(seconds: seconds), () {
       _reconnectTimer = null;
       if (_disposed || !_maintainConnection) return;
@@ -435,6 +465,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   @override
   Future<bool> send(NavState state) async {
     _pendingState = state;
+    _pendingStateAt = DateTime.now();
     if (_state != BleConnectionState.connected || _characteristic == null) {
       return false;
     }
@@ -442,21 +473,27 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     // Exactly one drain loop owns the characteristic. New GPS/map updates
     // merely replace `_pendingState`, so a slow acknowledged BLE write cannot
     // build a queue of obsolete instructions or create concurrent writes.
+    // A failed write ends this call: the newest state stays pending and is
+    // retried by the next update or the reconnect flush, never in a hot loop.
+    bool succeeded;
     do {
       _writeOp ??= _drainPendingWrites().whenComplete(() => _writeOp = null);
-      await _writeOp;
-    } while (_state == BleConnectionState.connected &&
+      succeeded = await _writeOp!;
+    } while (succeeded &&
+        _state == BleConnectionState.connected &&
         _characteristic != null &&
         _pendingState != null);
     return _lastSent == state;
   }
 
-  Future<void> _drainPendingWrites() async {
+  /// Returns false when a write failed and the drain stopped early.
+  Future<bool> _drainPendingWrites() async {
     while (_state == BleConnectionState.connected &&
         _characteristic != null &&
         _pendingState != null) {
       final state = _pendingState!;
       _pendingState = null;
+      _pendingStateAt = null;
       final now = DateTime.now();
       if (!_throttle.shouldSend(state, now)) continue;
 
@@ -481,17 +518,27 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       } catch (e) {
         // Preserve the newest unsent instruction for the reconnect flush.
         _pendingState ??= state;
+        _pendingStateAt ??= now;
         _lastError = 'Write failed: $e';
         if (kDebugMode) debugPrint(_lastError);
         notifyListeners();
-        break;
+        return false;
       }
     }
+    return true;
   }
 
   Future<void> _flushPendingState() async {
     final pending = _pendingState;
-    if (pending != null) await send(pending);
+    final age = _pendingStateAt == null
+        ? null
+        : DateTime.now().difference(_pendingStateAt!);
+    if (pending != null && age != null && age < const Duration(seconds: 10)) {
+      await send(pending);
+    } else {
+      _pendingState = null;
+      _pendingStateAt = null;
+    }
   }
 
   @override

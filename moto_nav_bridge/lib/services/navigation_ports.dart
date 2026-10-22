@@ -28,6 +28,16 @@ abstract interface class SideRoadProvider {
   void dispose();
 }
 
+/// Optional rolling, display-only route cache. GPS updates never wait for it.
+abstract interface class RouteSideRoadProvider implements SideRoadProvider {
+  void prefetchRoute(List<LatLng> route, LatLng position,
+      void Function(LatLng loadedNear) onProgress);
+  void advancePrefetch(LatLng position);
+  List<RoadSegment> cachedSideRoadsNear(LatLng position);
+  int get cacheVersion;
+  void cancelPrefetch();
+}
+
 abstract interface class PositionProvider {
   Future<bool> ensurePermission();
   Future<LatLng> currentPosition();

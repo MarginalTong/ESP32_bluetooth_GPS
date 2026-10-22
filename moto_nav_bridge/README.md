@@ -100,7 +100,6 @@ Set `minSdkVersion 21` (flutter_blue_plus / geolocator requirement) in
 |---|---|---|
 | Protocol enum | `lib/models/device_direction.dart` | wire tokens match firmware byte-for-byte |
 | Payload | `lib/models/nav_state.dart` | `toWire()` = exact BLE bytes |
-| Maneuver map | `lib/services/maneuver_mapper.dart` | pure fn, fully unit-tested |
 | Directions | `lib/services/valhalla_directions_service.dart` | all route planning and Valhalla parsing |
 | Engine | `lib/services/navigation_engine.dart` | position → step advance → NavState |
 | Throttle | `lib/services/send_throttle.dart` | avoid flooding BLE |

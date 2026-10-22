@@ -58,7 +58,8 @@ class AppleMapsService {
     }
   }
 
-  Future<List<PlaceResult>> search(String query) async {
+  Future<List<PlaceResult>> search(String query,
+      {LatLng? near, String? category}) async {
     final text = AppText.system;
     final queryText = query.trim();
     if (queryText.isEmpty) return const [];
@@ -66,6 +67,11 @@ class AppleMapsService {
       final raw = await _channel.invokeListMethod<Object?>('searchPlaces', {
         'query': queryText,
         'languageCode': text.languageCode,
+        if (near != null && category != null) ...{
+          'latitude': near.latitude,
+          'longitude': near.longitude,
+          'category': category,
+        },
       });
       return (raw ?? const [])
           .map((item) => PlaceResult.fromMap(

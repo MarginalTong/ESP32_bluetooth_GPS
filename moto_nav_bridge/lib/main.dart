@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'controllers/navigation_controller.dart';
 import 'services/ble_service.dart';
 import 'ui/app_shell.dart';
 
-void main() {
-  runApp(const MotoNavBridgeApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final preferences = await SharedPreferences.getInstance();
+  runApp(MotoNavBridgeApp(preferences: preferences));
 }
 
 class MotoNavBridgeApp extends StatelessWidget {
-  const MotoNavBridgeApp({super.key});
+  const MotoNavBridgeApp({super.key, this.preferences});
+  final SharedPreferences? preferences;
 
   @override
   Widget build(BuildContext context) {
@@ -18,9 +22,11 @@ class MotoNavBridgeApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => BleService()),
         ChangeNotifierProxyProvider<BleService, NavigationController>(
-          create: (ctx) => NavigationController(ble: ctx.read<BleService>()),
+          create: (ctx) => NavigationController(
+              ble: ctx.read<BleService>(), preferences: preferences),
           update: (ctx, ble, previous) =>
-              previous ?? NavigationController(ble: ble),
+              previous ??
+              NavigationController(ble: ble, preferences: preferences),
         ),
       ],
       child: MaterialApp(

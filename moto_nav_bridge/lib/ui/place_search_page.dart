@@ -1,14 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/app_text.dart';
 import '../models/place_result.dart';
 import '../services/apple_maps_service.dart';
 import '../services/search_history_service.dart';
+import '../services/location_link_parser.dart';
 
 class PlaceSearchPage extends StatefulWidget {
-  const PlaceSearchPage({super.key});
+  const PlaceSearchPage({super.key, this.initialQuery});
+  final String? initialQuery;
 
   @override
   State<PlaceSearchPage> createState() => _PlaceSearchPageState();
@@ -34,6 +37,13 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   void initState() {
     super.initState();
     _loadHistory();
+    final initial = widget.initialQuery?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      _controller.text = initial;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _search(initial);
+      });
+    }
   }
 
   @override
@@ -89,6 +99,12 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
   void _changed(String value) {
     _debounce?.cancel();
+    ++_requestId;
+    setState(() {
+      _results = const [];
+      _suggestions = const [];
+      _error = null;
+    });
     if (value.trim().isEmpty) {
       setState(() {
         _results = const [];
@@ -103,6 +119,10 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   }
 
   Future<void> _complete(String value) async {
+    if (LocationLinkParser.accepts(value)) {
+      await _search(value);
+      return;
+    }
     final id = ++_requestId;
     final query = value.trim();
     setState(() {
@@ -129,6 +149,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   }
 
   Future<void> _search(String value) async {
+    _debounce?.cancel();
     final id = ++_requestId;
     final query = value.trim();
     setState(() {
@@ -146,7 +167,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   }) async {
     if (query.isEmpty) return;
     try {
-      final results = await _service.search(query);
+      final results = LocationLinkParser.accepts(query)
+          ? await LocationLinkParser(geocode: _service.search).parse(query)
+          : await _service.search(query);
       if (!mounted || id != _requestId) return;
       setState(() {
         _results = results;
@@ -161,8 +184,14 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       setState(() {
         _results = const [];
         _suggestions = const [];
-        _error =
-            showErrorWhenEmpty ? AppText.of(context).noMatchingPlaces : null;
+        final english = AppText.of(context).isEnglish;
+        _error = LocationLinkParser.accepts(query)
+            ? (english
+                ? 'Could not resolve this location link. Check the link or search by name/address. Only supported HTTPS map links are accepted.'
+                : '无法解析此位置链接。请检查链接，或改用名称、地址搜索；仅支持指定地图域名的 HTTPS 链接。')
+            : (showErrorWhenEmpty
+                ? AppText.of(context).noMatchingPlaces
+                : null);
       });
     }
   }
@@ -189,6 +218,25 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   }
 
   Future<void> _selectPlace(PlaceResult place) async {
+    if (place.resolutionStatus != null) {
+      final english = AppText.of(context).isEnglish;
+      final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: Text(english ? 'Confirm destination' : '确认目的地'),
+                content: Text(
+                    '${place.name}\n${place.address}\n\n${place.resolutionStatus == 'viewport' ? (english ? 'This is the map view centre, not a verified place. Check the pin on the map before navigating.' : '这是地图视角中心，不是已验证的地点。请在地图上检查位置后再开始导航。') : (english ? 'Check this destination on the map before starting navigation.' : '请在地图上确认此目的地后再开始导航。')}'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text(english ? 'Cancel' : '取消')),
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text(english ? 'Show on map' : '在地图上查看'))
+                ],
+              ));
+      if (confirmed != true || !mounted) return;
+    }
     try {
       await _historyService.save(place);
     } catch (_) {
@@ -224,6 +272,16 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               decoration: InputDecoration(
                 hintText: text.enterPlaceAddressBusiness,
                 prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: IconButton(
+                  tooltip: text.isEnglish ? 'Paste location link' : '粘贴位置链接',
+                  icon: const Icon(Icons.content_paste_rounded),
+                  onPressed: () async {
+                    final data = await Clipboard.getData(Clipboard.kTextPlain);
+                    if (!mounted || data?.text == null) return;
+                    _controller.text = data!.text!;
+                    _changed(data.text!);
+                  },
+                ),
               ),
             ),
           ),

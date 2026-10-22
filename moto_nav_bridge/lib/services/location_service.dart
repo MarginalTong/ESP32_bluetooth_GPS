@@ -23,13 +23,18 @@ class LocationService implements PositionProvider {
         permission == LocationPermission.whileInUse;
   }
 
-  /// One-shot current position (used to seed the route origin).
+  /// One-shot measured position (also refreshes a quiet navigation stream
+  /// before voice place search or a confirmed destination change).
   @override
   Future<LatLng> currentPosition() async {
     final p = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
-    return LatLng(p.latitude, p.longitude);
+    return NavigationFix(p.latitude, p.longitude,
+        heading: p.heading,
+        accuracy: p.accuracy,
+        speed: p.speed,
+        timestamp: p.timestamp);
   }
 
   /// Continuous navigation-grade position stream while riding.

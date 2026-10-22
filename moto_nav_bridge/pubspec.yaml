@@ -1,5 +1,5 @@
 name: moto_nav_bridge
-description: Navigation middleware bridging Google Directions API to an ESP32 BLE navigation display.
+description: Navigation middleware bridging Valhalla routes to an ESP32 BLE navigation display.
 publish_to: "none"
 version: 0.1.0
 
@@ -10,7 +10,6 @@ environment:
 dependencies:
   cupertino_icons: ^1.0.8
   shared_preferences: ^2.5.3
-  liquid_glass_renderer: 0.2.0-dev.4
   flutter:
     sdk: flutter
   # BLE — communicates with the ESP32_NAV peripheral (write-with-response).
@@ -19,12 +18,15 @@ dependencies:
   geolocator: ^12.0.0
   # Routing API calls; AbortableRequest cancels timed-out Valhalla requests.
   http: ^1.5.0
+  vector_tile: ^4.0.0
   # Simple state management for the UI layer.
   provider: ^6.1.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Already pinned by flutter_test; declared for timer-driven controller tests.
+  fake_async: ^1.3.3
   flutter_lints: ^4.0.0
 
 flutter:

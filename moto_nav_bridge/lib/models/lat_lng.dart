@@ -18,7 +18,11 @@ class NavigationFix extends LatLng {
       heading.isFinite &&
       heading >= 0 &&
       heading < 360 &&
-      speed >= 0.5 &&
+      // At walking/creeping speeds, course can swing while position remains
+      // usable. Ignore course only; keep distance-based navigation available.
+      speed.isFinite &&
+      speed >= 2.5 &&
+      accuracy.isFinite &&
       accuracy >= 0 &&
       accuracy <= 25;
 }

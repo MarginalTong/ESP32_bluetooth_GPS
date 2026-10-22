@@ -1,6 +1,18 @@
+// 1: Waveshare ESP32-S3-Touch-LCD-1.46; 0: original ideaspark ST7789.
+#ifndef NAV_WAVESHARE_146
+#define NAV_WAVESHARE_146 1
+#endif
 #include <SPI.h>
 #include <Adafruit_GFX.h>
+#if NAV_WAVESHARE_146
+#include <Wire.h>
+#include <Arduino_GFX_Library.h>
+#if !defined(CONFIG_IDF_TARGET_ESP32S3)
+#error "Select ESP32S3 Dev Module for the Waveshare 1.46 board"
+#endif
+#else
 #include <Adafruit_ST7789.h>
+#endif
 
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -66,14 +78,45 @@ struct MapMotion {
 // Hardware
 // ======================================================
 
+// Keep the old panel's layout; give the round panel a square map/instruction
+// layout instead of letterboxing the 240x135 strip in the middle of the LCD.
 constexpr int16_t SCREEN_WIDTH = 240;
+#if NAV_WAVESHARE_146
+constexpr int16_t SCREEN_HEIGHT = 240;
+#else
 constexpr int16_t SCREEN_HEIGHT = 135;
+#endif
 
 // The phone still sends route-preview points in the old 128x64 coordinate
 // system, so keep that contract and scale those points into the large TFT map.
 constexpr int16_t ROUTE_SOURCE_WIDTH = 128;
 constexpr int16_t ROUTE_SOURCE_HEIGHT = 64;
 
+#if NAV_WAVESHARE_146
+constexpr int8_t TFT_DATA0_PIN = 46;
+constexpr int8_t TFT_DATA1_PIN = 45;
+constexpr int8_t TFT_DATA2_PIN = 42;
+constexpr int8_t TFT_DATA3_PIN = 41;
+constexpr int8_t TFT_SCLK_PIN = 40;
+constexpr int8_t TFT_CS_PIN = 21;
+constexpr int8_t TFT_BACKLIGHT_PIN = 5;
+constexpr int8_t BOARD_I2C_SDA_PIN = 11;
+constexpr int8_t BOARD_I2C_SCL_PIN = 10;
+// EXIO2 is bit 1 of TCA9554 at 0x20, NOT ESP32 GPIO2.
+constexpr uint8_t LCD_RESET_MASK = 1U << 1;
+constexpr uint8_t IO_EXPANDER_ADDRESS = 0x20;
+constexpr int16_t PANEL_SIZE = 412;
+constexpr int16_t PANEL_VIEW_WIDTH = 380;
+constexpr int16_t PANEL_VIEW_HEIGHT = 380;
+constexpr int16_t PANEL_VIEW_X = (PANEL_SIZE - PANEL_VIEW_WIDTH) / 2;
+constexpr int16_t PANEL_VIEW_Y = (PANEL_SIZE - PANEL_VIEW_HEIGHT) / 2;
+constexpr int16_t PANEL_VISIBLE_RADIUS = PANEL_SIZE / 2 - 3;
+static_assert(PANEL_VIEW_WIDTH * SCREEN_HEIGHT == PANEL_VIEW_HEIGHT * SCREEN_WIDTH,
+              "Preserve the logical canvas aspect ratio");
+Arduino_ESP32QSPI lcdBus(TFT_CS_PIN, TFT_SCLK_PIN, TFT_DATA0_PIN,
+                        TFT_DATA1_PIN, TFT_DATA2_PIN, TFT_DATA3_PIN);
+Arduino_SPD2010 tft(&lcdBus, GFX_NOT_DEFINED);
+#else
 // ideaspark / ESP32 built-in 1.14-inch ST7789 configuration. If your board is
 // mirrored or upside-down, change TFT_ROTATION to 3.
 constexpr int8_t TFT_MOSI_PIN = 23;
@@ -83,15 +126,16 @@ constexpr int8_t TFT_DC_PIN = 2;
 constexpr int8_t TFT_RESET_PIN = 4;
 constexpr int8_t TFT_BACKLIGHT_PIN = 32;
 constexpr uint8_t TFT_ROTATION = 1;
+Adafruit_ST7789 tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RESET_PIN);
+#endif
 constexpr uint8_t BACKLIGHT_NORMAL = 255;
 constexpr uint8_t BACKLIGHT_DIM = 24;
 
-Adafruit_ST7789 tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RESET_PIN);
 GFXcanvas16 display(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-constexpr uint16_t COLOR_BG = ST77XX_BLACK;
-constexpr uint16_t COLOR_WHITE = ST77XX_WHITE;
-constexpr uint16_t COLOR_ROUTE = ST77XX_WHITE;
+constexpr uint16_t COLOR_BG = 0x0000;
+constexpr uint16_t COLOR_WHITE = 0xFFFF;
+constexpr uint16_t COLOR_ROUTE = COLOR_WHITE;
 // Primary indications are white; side-road edges fade through grayscale.
 constexpr uint16_t COLOR_ACCENT = COLOR_WHITE;
 constexpr uint16_t COLOR_MUTED = COLOR_WHITE;
@@ -129,10 +173,14 @@ constexpr uint8_t MAX_SIDE_ROAD_SEGMENTS = 2;
 
 char DEVICE_NAME[20] = "NAV";
 char deviceIdentity[13] = "";
-char pairingCode[7] = "";
-bool pairingActive = false;
-bool pairingVerified = false;
-uint32_t pairingStartedMs = 0;
+// Waveshare's BOOT button pulls GPIO0 low. Never hold it while resetting,
+// because GPIO0 is also the ESP32-S3 download-mode strap.
+constexpr int8_t BOOT_BUTTON_PIN = 0;
+volatile bool pairingActive = false;
+volatile bool pairingVerified = false;
+volatile bool pairingButtonReleased = false;
+volatile uint32_t pairingStartedMs = 0;
+uint32_t bootLowSinceMs = 0;
 constexpr char PAIRING_UUID[] = "abcd1234-5678-1234-5678-abcdef123457";
 constexpr char SERVICE_UUID[] = "12345678-1234-1234-1234-123456789abc";
 constexpr char CHARACTERISTIC_UUID[] = "abcd1234-5678-1234-5678-abcdef123456";
@@ -141,6 +189,7 @@ BLEServer* bleServer = nullptr;
 BLEAdvertising* bleAdvertising = nullptr;
 
 bool bleConnected = false;
+bool hadBleConnection = false;
 
 enum class DisplayPowerState : uint8_t {
   On,
@@ -186,16 +235,30 @@ struct ScreenSegment {
   ScreenPoint end;
 };
 
-ScreenPoint routePreviewPoints[MAX_ROUTE_PREVIEW_POINTS];
-uint8_t routePreviewPointCount = 0;
-ScreenSegment sideRoadSegments[MAX_SIDE_ROAD_SEGMENTS];
-uint8_t sideRoadSegmentCount = 0;
+constexpr uint8_t MAP_VALUE_COUNT =
+    MAX_ROUTE_PREVIEW_POINTS * 2 + MAX_SIDE_ROAD_SEGMENTS * 4;
+static_assert(MAP_VALUE_COUNT == 20, "MapMotion stores 20 map values");
 
-// BLE publishes a complete geometry snapshot; only loop() owns animation.
-portMUX_TYPE mapMux = portMUX_INITIALIZER_UNLOCKED;
-float pendingMap[20] = {};
-uint8_t pendingRoutes = 0, pendingRoads = 0, pendingDirection = 0;
-bool pendingMapReady = false;
+// BLE callbacks run on the Bluetooth stack's FreeRTOS task. They only publish
+// into this mailbox under stateMux; loop() takes a snapshot each iteration and
+// owns every navigation, timeout, error and backlight variable.
+struct BleMailbox {
+  bool connected = false;
+  uint32_t disconnects = 0;
+  bool clockSynced = false;
+  bool navReady = false;
+  NavState nav = {Direction::Stop, 0};
+  bool rerouting = false;
+  float map[MAP_VALUE_COUNT] = {};
+  uint8_t routes = 0, roads = 0;
+  bool errorReady = false;
+  char error[48] = "";
+  bool wake = false;
+};
+// Also guards every read and write of the pairing flags, which the BLE task
+// and loop() share.
+portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
+BleMailbox mailbox;
 MapMotion mapMotion;
 
 uint32_t lastLivePacketMs = 0;
@@ -230,7 +293,7 @@ const char* directionName(Direction direction);
 void setDisplayPower(DisplayPowerState state);
 void presentDisplay();
 void drawDirection(Direction direction);
-void drawMiniRouteMap();
+void drawMiniRouteMap(bool showRider = true);
 
 // ======================================================
 // Direction helpers
@@ -278,9 +341,19 @@ void setLastError(const char* message) {
   displayDirty = true;
 }
 
-void setBadDirectionError(const char* value) {
-  snprintf(lastError, sizeof(lastError), "bad:%.24s",
-           value == nullptr ? "" : value);
+// BLE task only: hand an error message to loop().
+void publishError(const char* message) {
+  portENTER_CRITICAL(&stateMux);
+  strlcpy(mailbox.error, message, sizeof(mailbox.error));
+  mailbox.errorReady = true;
+  portEXIT_CRITICAL(&stateMux);
+  displayDirty = true;
+}
+
+void publishBadDirectionError(const char* value) {
+  char message[sizeof(lastError)];
+  snprintf(message, sizeof(message), "bad:%.24s", value == nullptr ? "" : value);
+  publishError(message);
 }
 
 bool isLiveFresh() {
@@ -336,26 +409,33 @@ void startBleAdvertising() {
 
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* server) override {
-    bleConnected = true;
+    portENTER_CRITICAL(&stateMux);
+    pairingActive = false;
+    pairingVerified = false;
+    mailbox.connected = true;
+    mailbox.error[0] = '\0';
+    mailbox.errorReady = true;
+    mailbox.wake = true;
+    portEXIT_CRITICAL(&stateMux);
     displayDirty = true;
-    wakeDisplay();
-    setLastError("");
     Serial.println("[BLE] Central connected");
   }
 
   void onDisconnect(BLEServer* server) override {
+    portENTER_CRITICAL(&stateMux);
     pairingActive = false;
     pairingVerified = false;
-    bleConnected = false;
-    hasReceivedNavPacket = false;
-    lastLivePacketMs = 0;
-    livePacketTimedOut = false;
-    routePreviewPointCount = 0;
-    sideRoadSegmentCount = 0;
-    nav = {Direction::Stop, 0};
+    pairingButtonReleased = false;
+    mailbox.connected = false;
+    // loop() clears the maneuver and geometry when this counter changes.
+    mailbox.disconnects++;
+    // A packet queued before the drop is obsolete and must not be shown.
+    mailbox.navReady = false;
+    strlcpy(mailbox.error, "BLE disconnected", sizeof(mailbox.error));
+    mailbox.errorReady = true;
+    mailbox.wake = true;
+    portEXIT_CRITICAL(&stateMux);
     displayDirty = true;
-    wakeDisplay();
-    setLastError("BLE disconnected");
     Serial.println("[BLE] Central disconnected");
 
     // Critical for iPhone reconnects. While connected, an ESP32 peripheral
@@ -374,13 +454,13 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
 
     if (value.length() == 0) {
       rejectedPacketCount++;
-      setLastError("empty packet");
+      publishError("empty packet");
       return;
     }
 
     if (value.length() > 360) {
       rejectedPacketCount++;
-      setLastError("packet too large");
+      publishError("packet too large");
       Serial.println("[BLE] Rejected oversized packet");
       return;
     }
@@ -389,7 +469,7 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     DeserializationError error = deserializeJson(doc, value);
     if (error) {
       rejectedPacketCount++;
-      setLastError("bad json");
+      publishError("bad json");
       Serial.print("[BLE] JSON error: ");
       Serial.println(error.c_str());
       Serial.print("[BLE] Raw: ");
@@ -402,14 +482,16 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     if (doc["clock"].is<uint32_t>()) {
       const uint32_t seconds = doc["clock"].as<uint32_t>();
       if (seconds < 1700000000UL) {
-        setLastError("bad clock");
+        publishError("bad clock");
         return;
       }
       timeval now = {static_cast<time_t>(seconds), 0};
       settimeofday(&now, nullptr);
-      clockSynced = true;
+      portENTER_CRITICAL(&stateMux);
+      mailbox.clockSynced = true;
+      mailbox.wake = true;
+      portEXIT_CRITICAL(&stateMux);
       displayDirty = true;
-      wakeDisplay();
       return;
     }
 
@@ -417,7 +499,7 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     Direction direction = parseDirection(dirText);
     if (direction == Direction::Unknown) {
       rejectedPacketCount++;
-      setBadDirectionError(dirText);
+      publishBadDirectionError(dirText);
       Serial.print("[BLE] Unknown dir: ");
       Serial.println(dirText);
       Serial.print("[BLE] Raw: ");
@@ -427,7 +509,7 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
 
     if (!doc["dist"].is<int>()) {
       rejectedPacketCount++;
-      setLastError("bad dist");
+      publishError("bad dist");
       Serial.println("[BLE] Missing/invalid dist");
       return;
     }
@@ -435,10 +517,11 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     int distance = doc["dist"].as<int>();
     distance = constrain(distance, 0, MAX_DISTANCE_M);
 
-    nav = {direction, distance};
-    rerouting = doc["rerouting"] | false;
-    routePreviewPointCount = 0;
-    sideRoadSegmentCount = 0;
+    const bool reroutingPacket = doc["rerouting"] | false;
+    ScreenPoint routePreviewPoints[MAX_ROUTE_PREVIEW_POINTS];
+    uint8_t routePreviewPointCount = 0;
+    ScreenSegment sideRoadSegments[MAX_SIDE_ROAD_SEGMENTS];
+    uint8_t sideRoadSegmentCount = 0;
     JsonArray points = doc["p"].as<JsonArray>();
     if (!points.isNull()) {
       const size_t maxValues = MAX_ROUTE_PREVIEW_POINTS * 2;
@@ -480,35 +563,36 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
       }
     }
 
-    portENTER_CRITICAL(&mapMux);
-    memset(pendingMap, 0, sizeof(pendingMap));
+    // Publish the whole packet at once so loop() never sees a new direction
+    // with the previous distance, flags or geometry.
+    constexpr uint8_t roadOffset = MAX_ROUTE_PREVIEW_POINTS * 2;
+    portENTER_CRITICAL(&stateMux);
+    memset(mailbox.map, 0, sizeof(mailbox.map));
     for (uint8_t i = 0; i < routePreviewPointCount; ++i) {
-      pendingMap[i * 2] = routePreviewPoints[i].x;
-      pendingMap[i * 2 + 1] = routePreviewPoints[i].y;
+      mailbox.map[i * 2] = routePreviewPoints[i].x;
+      mailbox.map[i * 2 + 1] = routePreviewPoints[i].y;
     }
     for (uint8_t i = 0; i < sideRoadSegmentCount; ++i) {
-      pendingMap[12 + i * 4] = sideRoadSegments[i].start.x;
-      pendingMap[13 + i * 4] = sideRoadSegments[i].start.y;
-      pendingMap[14 + i * 4] = sideRoadSegments[i].end.x;
-      pendingMap[15 + i * 4] = sideRoadSegments[i].end.y;
+      mailbox.map[roadOffset + i * 4] = sideRoadSegments[i].start.x;
+      mailbox.map[roadOffset + 1 + i * 4] = sideRoadSegments[i].start.y;
+      mailbox.map[roadOffset + 2 + i * 4] = sideRoadSegments[i].end.x;
+      mailbox.map[roadOffset + 3 + i * 4] = sideRoadSegments[i].end.y;
     }
-    pendingRoutes = routePreviewPointCount;
-    pendingRoads = sideRoadSegmentCount;
-    pendingDirection = static_cast<uint8_t>(direction);
-    pendingMapReady = true;
-    portEXIT_CRITICAL(&mapMux);
-
-    lastLivePacketMs = millis();
-    livePacketTimedOut = false;
-    hasReceivedNavPacket = true;
+    mailbox.nav = {direction, distance};
+    mailbox.rerouting = reroutingPacket;
+    mailbox.routes = routePreviewPointCount;
+    mailbox.roads = sideRoadSegmentCount;
+    mailbox.navReady = true;
+    mailbox.error[0] = '\0';
+    mailbox.errorReady = true;
+    mailbox.wake = true;
+    portEXIT_CRITICAL(&stateMux);
     displayDirty = true;
-    wakeDisplay();
-    setLastError("");
 
     Serial.print("[NAV] ");
-    Serial.print(directionName(nav.direction));
+    Serial.print(directionName(direction));
     Serial.print(" ");
-    Serial.print(nav.distanceMeters);
+    Serial.print(distance);
     Serial.print("m route=");
     Serial.print(routePreviewPointCount);
     Serial.print(" roads=");
@@ -516,13 +600,16 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
-// Physical-screen confirmation prevents accidental selection, not spoofing.
+// Physical BOOT confirmation prevents accidental selection, not spoofing.
 // This is deliberately separate from the navigation write characteristic.
 class PairingCallbacks : public BLECharacteristicCallbacks {
   void onRead(BLECharacteristic* characteristic) override {
+    portENTER_CRITICAL(&stateMux);
+    const bool verified = pairingVerified;
+    portEXIT_CRITICAL(&stateMux);
     char response[80];
     snprintf(response, sizeof(response), "{\"id\":\"%s\",\"verified\":%s}",
-             deviceIdentity, pairingVerified ? "true" : "false");
+             deviceIdentity, verified ? "true" : "false");
     characteristic->setValue(response);
   }
   void onWrite(BLECharacteristic* characteristic) override {
@@ -531,20 +618,16 @@ class PairingCallbacks : public BLECharacteristicCallbacks {
     if (value.length() > 80 || deserializeJson(doc, value.c_str())) return;
     const char* action = doc["pair"] | "";
     if (strcmp(action, "start") == 0) {
-      snprintf(pairingCode, sizeof(pairingCode), "%06lu",
-               static_cast<unsigned long>(esp_random() % 1000000));
+      portENTER_CRITICAL(&stateMux);
       pairingStartedMs = millis();
       pairingActive = true;
       pairingVerified = false;
-      wakeDisplay();
+      pairingButtonReleased = false; // Require a fresh press after arming.
+      bootLowSinceMs = 0;
+      mailbox.wake = true;
+      portEXIT_CRITICAL(&stateMux);
       displayDirty = true;
-      return;
     }
-    const char* code = doc["code"] | "";
-    pairingVerified = pairingActive && millis() - pairingStartedMs < 60000 &&
-                      strlen(code) == 6 && strcmp(code, pairingCode) == 0;
-    pairingActive = false; // One attempt per generated code.
-    displayDirty = true;
   }
 };
 
@@ -585,19 +668,24 @@ void setupBle() {
 constexpr int16_t MAP_LEFT = 0;
 constexpr int16_t MAP_TOP = 0;
 constexpr int16_t MAP_RIGHT = SCREEN_WIDTH - 1;
+#if NAV_WAVESHARE_146
+constexpr int16_t MAP_BOTTOM = 166;
+constexpr uint8_t ROUTE_STROKE = 7;
+constexpr uint8_t FALLBACK_ROUTE_STROKE = 4;
+#else
 constexpr int16_t MAP_BOTTOM = 94;
+constexpr uint8_t ROUTE_STROKE = 6;
+constexpr uint8_t FALLBACK_ROUTE_STROKE = 2;
+#endif
 // Zoom geometry around the rider, without enlarging the instruction strip.
+#if NAV_WAVESHARE_146
+constexpr float MAP_ZOOM = 1.90f;
+#else
 constexpr float MAP_ZOOM = 1.50f;
+#endif
 constexpr int16_t MAP_CLIP_BOTTOM = MAP_BOTTOM - 4;
 constexpr int16_t ARROW_CENTER_X = 66;
 constexpr int16_t DISTANCE_X = 132;
-
-int16_t scaleValue(int16_t value, int16_t inMin, int16_t inMax, int16_t outMin,
-                   int16_t outMax) {
-  if (inMax == inMin) return outMin;
-  return outMin + static_cast<int32_t>(value - inMin) * (outMax - outMin) /
-                      (inMax - inMin);
-}
 
 int16_t mapPreviewX(float x) {
   const float center = (MAP_LEFT + MAP_RIGHT) / 2.0f;
@@ -607,12 +695,40 @@ int16_t mapPreviewX(float x) {
 
 int16_t mapPreviewY(float y) {
   const float anchor = MAP_BOTTOM - 12;
+#if NAV_WAVESHARE_146
+  // Use the extra round-screen height for the map, but retain the rider at
+  // the bottom so the instruction strip cannot be covered by road geometry.
+  const float projected = MAP_TOP + 25 + (y - 2) * (MAP_BOTTOM - MAP_TOP - 47) / 32.0f;
+  return lroundf(anchor + (projected - anchor) * 1.90f);
+#else
   const float projected = MAP_TOP + 4 + (y - 2) * (MAP_BOTTOM - MAP_TOP - 16) / 32.0f;
   return lroundf(anchor + (projected - anchor) * MAP_ZOOM);
+#endif
 }
 
 void presentDisplay() {
+#if NAV_WAVESHARE_146
+  // Small scanline buffer avoids a second full framebuffer allocation. Native
+  // RGB565 words are passed to draw16bitRGBBitmap (not the big-endian variant).
+  static uint16_t row[PANEL_VIEW_WIDTH];
+  const uint16_t* source = display.getBuffer();
+  if (!source) return;
+  for (int y = 0; y < PANEL_VIEW_HEIGHT; ++y) {
+    const int sourceY = y * SCREEN_HEIGHT / PANEL_VIEW_HEIGHT;
+    const int panelY = PANEL_VIEW_Y + y - PANEL_SIZE / 2;
+    for (int x = 0; x < PANEL_VIEW_WIDTH; ++x) {
+      const int panelX = PANEL_VIEW_X + x - PANEL_SIZE / 2;
+      const bool inside = panelX * panelX + panelY * panelY <=
+                          PANEL_VISIBLE_RADIUS * PANEL_VISIBLE_RADIUS;
+      row[x] = inside
+                   ? source[sourceY * SCREEN_WIDTH + x * SCREEN_WIDTH / PANEL_VIEW_WIDTH]
+                   : COLOR_BG;
+    }
+    tft.draw16bitRGBBitmap(PANEL_VIEW_X, PANEL_VIEW_Y + y, row, PANEL_VIEW_WIDTH, 1);
+  }
+#else
   tft.drawRGBBitmap(0, 0, display.getBuffer(), SCREEN_WIDTH, SCREEN_HEIGHT);
+#endif
 }
 
 void drawThickLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
@@ -627,18 +743,41 @@ void drawThickLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 
 void drawSideRoadLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
   // The phone orders each branch from its route junction towards its outer
-  // endpoint. Continuous hollow rails fade outwards, beneath the white route.
+  // endpoint. Use that direction only: road-segment lengths vary wildly and
+  // must not change the length of the schematic ray on this small display.
   const float dx = x1 - x0;
   const float dy = y1 - y0;
   const float length = sqrtf(dx * dx + dy * dy);
   if (length < 1.0f) return;
   const float ux = dx / length;
   const float uy = dy / length;
-  // These are schematic junction arms, not measured road endpoints. Extend
-  // only their visual rays; leave the junction and branch direction unchanged.
-  const float visibleLength = fmaxf(42.0f, fminf(length * 1.5f, length + 24.0f));
-  x1 = lroundf(x0 + ux * visibleLength);
-  y1 = lroundf(y0 + uy * visibleLength);
+#if NAV_WAVESHARE_146
+  constexpr float visibleLength = 48.0f;
+#else
+  constexpr float visibleLength = 30.0f;
+#endif
+  const float endX = x0 + ux * visibleLength;
+  const float endY = y0 + uy * visibleLength;
+  // A clipped ray looks like a randomly short road. Omit it if its full
+  // schematic length cannot fit in the map (or the round panel's aperture).
+  constexpr float margin = 6.0f;
+  if (x0 < margin || x0 >= SCREEN_WIDTH - margin ||
+      y0 < margin || y0 >= MAP_CLIP_BOTTOM - margin ||
+      endX < margin || endX >= SCREEN_WIDTH - margin ||
+      endY < margin || endY >= MAP_CLIP_BOTTOM - margin) return;
+#if NAV_WAVESHARE_146
+  constexpr float visibleRadius = SCREEN_WIDTH / 2.0f - margin;
+  const float startCircleX = x0 - SCREEN_WIDTH / 2.0f;
+  const float startCircleY = y0 - SCREEN_HEIGHT / 2.0f;
+  const float endCircleX = endX - SCREEN_WIDTH / 2.0f;
+  const float endCircleY = endY - SCREEN_HEIGHT / 2.0f;
+  if (startCircleX * startCircleX + startCircleY * startCircleY >
+          visibleRadius * visibleRadius ||
+      endCircleX * endCircleX + endCircleY * endCircleY >
+          visibleRadius * visibleRadius) return;
+#endif
+  x1 = lroundf(endX);
+  y1 = lroundf(endY);
   constexpr float railOffset = 3.0f;
   constexpr float softWidth = 1.9f;
   // Clip before rasterizing: off-screen geometry never expands frame cost.
@@ -675,62 +814,99 @@ void drawSideRoadSegments() {
   }
 }
 
+int16_t instructionX(int16_t x) {
+#if NAV_WAVESHARE_146
+  return 66 + (x - 66) * 5 / 4;
+#else
+  return x;
+#endif
+}
+
+int16_t instructionY(int16_t y) {
+#if NAV_WAVESHARE_146
+  return 180 + (y - 93) * 5 / 4;
+#else
+  return y;
+#endif
+}
+
+void drawInstructionLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+                         uint8_t thickness = 3) {
+  drawThickLine(instructionX(x0), instructionY(y0), instructionX(x1),
+                instructionY(y1), COLOR_WHITE,
+#if NAV_WAVESHARE_146
+                thickness + 1
+#else
+                thickness
+#endif
+  );
+}
+
+void fillInstructionTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+                             int16_t x2, int16_t y2) {
+  display.fillTriangle(instructionX(x0), instructionY(y0),
+                       instructionX(x1), instructionY(y1),
+                       instructionX(x2), instructionY(y2), COLOR_WHITE);
+}
+
 void drawArrowUp() {
-  drawThickLine(ARROW_CENTER_X, 128, ARROW_CENTER_X, 98);
-  drawThickLine(ARROW_CENTER_X, 98, ARROW_CENTER_X - 15, 113);
-  drawThickLine(ARROW_CENTER_X, 98, ARROW_CENTER_X + 15, 113);
+  drawInstructionLine(ARROW_CENTER_X, 128, ARROW_CENTER_X, 98);
+  drawInstructionLine(ARROW_CENTER_X, 98, ARROW_CENTER_X - 15, 113);
+  drawInstructionLine(ARROW_CENTER_X, 98, ARROW_CENTER_X + 15, 113);
 }
 
 void drawArrowLeft() {
-  drawThickLine(82, 128, 82, 116);
-  drawThickLine(82, 116, 74, 106);
-  drawThickLine(74, 106, 42, 106);
-  drawThickLine(42, 106, 60, 93);
-  drawThickLine(42, 106, 60, 119);
+  drawInstructionLine(82, 128, 82, 116);
+  drawInstructionLine(82, 116, 74, 106);
+  drawInstructionLine(74, 106, 42, 106);
+  drawInstructionLine(42, 106, 60, 93);
+  drawInstructionLine(42, 106, 60, 119);
 }
 
 void drawArrowRight() {
-  drawThickLine(48, 128, 48, 116);
-  drawThickLine(48, 116, 56, 106);
-  drawThickLine(56, 106, 88, 106);
-  drawThickLine(88, 106, 70, 93);
-  drawThickLine(88, 106, 70, 119);
+  drawInstructionLine(48, 128, 48, 116);
+  drawInstructionLine(48, 116, 56, 106);
+  drawInstructionLine(56, 106, 88, 106);
+  drawInstructionLine(88, 106, 70, 93);
+  drawInstructionLine(88, 106, 70, 119);
 }
 
 void drawBearLeft() {
-  drawThickLine(66, 128, 66, 118, COLOR_WHITE, 4);
-  drawThickLine(66, 118, 62, 112, COLOR_WHITE, 4);
-  drawThickLine(62, 112, 50, 100, COLOR_WHITE, 4);
-  display.fillTriangle(43, 96, 61, 99, 46, 114, COLOR_WHITE);
+  drawInstructionLine(66, 128, 66, 118, 4);
+  drawInstructionLine(66, 118, 62, 112, 4);
+  drawInstructionLine(62, 112, 50, 100, 4);
+  fillInstructionTriangle(43, 96, 61, 99, 46, 114);
 }
 
 void drawBearRight() {
-  drawThickLine(66, 128, 66, 118, COLOR_WHITE, 4);
-  drawThickLine(66, 118, 70, 112, COLOR_WHITE, 4);
-  drawThickLine(70, 112, 82, 100, COLOR_WHITE, 4);
-  display.fillTriangle(89, 96, 71, 99, 86, 114, COLOR_WHITE);
+  drawInstructionLine(66, 128, 66, 118, 4);
+  drawInstructionLine(66, 118, 70, 112, 4);
+  drawInstructionLine(70, 112, 82, 100, 4);
+  fillInstructionTriangle(89, 96, 71, 99, 86, 114);
 }
 
 void drawUTurn() {
-  drawThickLine(82, 128, 82, 100);
-  drawThickLine(82, 100, 44, 100);
-  drawThickLine(44, 100, 44, 120);
-  drawThickLine(44, 120, 31, 107);
-  drawThickLine(44, 120, 57, 107);
+  drawInstructionLine(82, 128, 82, 100);
+  drawInstructionLine(82, 100, 44, 100);
+  drawInstructionLine(44, 100, 44, 120);
+  drawInstructionLine(44, 120, 31, 107);
+  drawInstructionLine(44, 120, 57, 107);
 }
 
 void drawStop() {
-  display.fillRoundRect(42, 98, 48, 30, 4, COLOR_WHITE);
+  display.fillRoundRect(instructionX(42), instructionY(98),
+                        instructionX(90) - instructionX(42),
+                        instructionY(128) - instructionY(98), 5, COLOR_WHITE);
 }
 
 void drawArrived() {
-  drawThickLine(34, 114, 56, 130);
-  drawThickLine(56, 130, 94, 94);
+  drawInstructionLine(34, 114, 56, 130);
+  drawInstructionLine(56, 130, 94, 94);
 }
 
 void drawUnknown() {
   display.setTextSize(2);
-  display.setCursor(22, 105);
+  display.setCursor(instructionX(22), instructionY(105));
   display.println("?");
 }
 
@@ -775,55 +951,64 @@ void drawFallbackMapRoute(Direction direction) {
 
   switch (direction) {
     case Direction::Left:
-      drawThickLine(centerX, bottom, centerX, 55, COLOR_ROUTE, 2);
-      drawThickLine(centerX, 55, centerX - 18, 42, COLOR_ROUTE, 2);
-      drawThickLine(centerX - 18, 42, left, 42, COLOR_ROUTE, 2);
+      drawThickLine(centerX, bottom, centerX, 55, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawThickLine(centerX, 55, centerX - 18, 42, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawThickLine(centerX - 18, 42, left, 42, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::Right:
-      drawThickLine(centerX, bottom, centerX, 55, COLOR_ROUTE, 2);
-      drawThickLine(centerX, 55, centerX + 18, 42, COLOR_ROUTE, 2);
-      drawThickLine(centerX + 18, 42, right, 42, COLOR_ROUTE, 2);
+      drawThickLine(centerX, bottom, centerX, 55, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawThickLine(centerX, 55, centerX + 18, 42, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawThickLine(centerX + 18, 42, right, 42, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::BearLeft:
-      drawThickLine(centerX, bottom, centerX, 58, COLOR_ROUTE, 2);
-      drawThickLine(centerX, 58, centerX - 44, top, COLOR_ROUTE, 2);
+      drawThickLine(centerX, bottom, centerX, 58, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawThickLine(centerX, 58, centerX - 44, top, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::BearRight:
-      drawThickLine(centerX, bottom, centerX, 58, COLOR_ROUTE, 2);
-      drawThickLine(centerX, 58, centerX + 44, top, COLOR_ROUTE, 2);
+      drawThickLine(centerX, bottom, centerX, 58, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawThickLine(centerX, 58, centerX + 44, top, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::UTurn:
-      drawThickLine(centerX, bottom, centerX, 36, COLOR_ROUTE, 2);
-      drawThickLine(centerX, 36, left + 28, 36, COLOR_ROUTE, 2);
-      drawThickLine(left + 28, 36, left + 28, 68, COLOR_ROUTE, 2);
+      drawThickLine(centerX, bottom, centerX, 36, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawThickLine(centerX, 36, left + 28, 36, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawThickLine(left + 28, 36, left + 28, 68, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
       break;
     default:
-      drawThickLine(centerX, bottom, centerX, top, COLOR_ROUTE, 2);
+      drawThickLine(centerX, bottom, centerX, top, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
       break;
   }
 }
 
-void drawMiniRouteMap() {
+void drawMiniRouteMap(bool showRider) {
   drawSideRoadSegments();
 
   if (mapMotion.routes >= 2) {
     for (uint8_t i = 0; i + 1 < mapMotion.routes; i++) {
       const float* p = mapMotion.current + i * 2;
       drawThickLine(mapPreviewX(p[0]), mapPreviewY(p[1]),
-                    mapPreviewX(p[2]), mapPreviewY(p[3]), COLOR_ROUTE, 6);
+                    mapPreviewX(p[2]), mapPreviewY(p[3]), COLOR_ROUTE, ROUTE_STROKE);
     }
   } else {
     drawFallbackMapRoute(nav.direction);
   }
 
-  const int16_t markerX = (MAP_LEFT + MAP_RIGHT) / 2;
-  const int16_t markerY = MAP_BOTTOM - 12;
-  // Paint the complete black silhouette last over the route, then inset the
-  // white pointer on every side (including the tip and bottom edge).
-  display.fillTriangle(markerX, markerY - 15, markerX - 13, markerY + 10,
-                       markerX + 13, markerY + 10, COLOR_BG);
-  display.fillTriangle(markerX, markerY - 8, markerX - 7, markerY + 4,
-                       markerX + 7, markerY + 4, COLOR_WHITE);
+  if (showRider) {
+    const int16_t markerX = (MAP_LEFT + MAP_RIGHT) / 2;
+    const int16_t markerY = MAP_BOTTOM - 12;
+    // Only live guidance may show a rider marker. A cached snapshot no longer
+    // establishes the bike's current position relative to this road shape.
+#if NAV_WAVESHARE_146
+    display.fillTriangle(markerX, markerY - 21, markerX - 18, markerY + 14,
+                         markerX + 18, markerY + 14, COLOR_BG);
+    display.fillTriangle(markerX, markerY - 12, markerX - 10, markerY + 6,
+                         markerX + 10, markerY + 6, COLOR_WHITE);
+#else
+    display.fillTriangle(markerX, markerY - 15, markerX - 13, markerY + 10,
+                         markerX + 13, markerY + 10, COLOR_BG);
+    display.fillTriangle(markerX, markerY - 8, markerX - 7, markerY + 4,
+                         markerX + 7, markerY + 4, COLOR_WHITE);
+#endif
+  }
 
   // Legacy preview coordinates can extend below the map. Keep them out of
   // the instruction strip without drawing a visible frame or separator.
@@ -833,30 +1018,56 @@ void drawMiniRouteMap() {
 
 void drawDistance(int distanceMeters, bool blinkState) {
   display.setTextColor(COLOR_WHITE);
+#if NAV_WAVESHARE_146
+  // The circle narrows at the bottom. Right-align the large number inside a
+  // fixed safe column and place the small unit above its lower edge.
+  display.setTextSize(4);
   if (nav.direction == Direction::Arrived) {
-    display.setTextSize(3);
-    display.setCursor(DISTANCE_X, 104);
+    display.setCursor(120, 176);
+    display.print("ARR");
+    return;
+  }
+  if (distanceMeters <= 30) {
+    if (blinkState) {
+      display.setCursor(120, 176);
+      display.print("NOW");
+    }
+    return;
+  }
+  if (distanceMeters < 1000) {
+    const int16_t digits = distanceMeters < 100 ? 2 : 3;
+    display.setCursor(192 - digits * 24, 176);
+    display.print(distanceMeters);
+    display.setTextSize(2);
+    display.setCursor(196, 183);
+    display.print("m");
+  } else {
+    display.setCursor(120, 176);
+    display.print(distanceMeters / 1000.0, 1);
+    display.setTextSize(2);
+    display.setCursor(194, 183);
+    display.print("km");
+  }
+#else
+  display.setTextSize(3);
+  display.setCursor(DISTANCE_X, 104);
+  if (nav.direction == Direction::Arrived) {
     display.println("ARR");
     return;
   }
 
   if (distanceMeters <= 30) {
     if (blinkState) {
-      display.setTextSize(3);
-      display.setCursor(DISTANCE_X, 104);
       display.println("NOW");
     }
   } else if (distanceMeters < 1000) {
-    display.setTextSize(3);
-    display.setCursor(DISTANCE_X, 104);
     display.print(distanceMeters);
     display.println("m");
   } else {
-    display.setTextSize(3);
-    display.setCursor(DISTANCE_X, 104);
     display.print(distanceMeters / 1000.0, 1);
     display.println("k");
   }
+#endif
 }
 
 void drawBottomError() {
@@ -868,8 +1079,57 @@ void drawBottomError() {
   display.print(lastError);
 }
 
+#if NAV_WAVESHARE_146
+uint16_t roundTextHeight(const char* value, uint8_t size) {
+  int16_t x, y;
+  uint16_t width, height;
+  display.setTextSize(size);
+  display.getTextBounds(value, 0, 0, &x, &y, &width, &height);
+  return height;
+}
+
+void drawRoundCenteredText(const char* value, uint8_t size, int16_t top) {
+  int16_t x, y;
+  uint16_t width, height;
+  display.setTextSize(size);
+  display.getTextBounds(value, 0, 0, &x, &y, &width, &height);
+  display.setCursor((SCREEN_WIDTH - width) / 2 - x, top - y);
+  display.print(value);
+}
+
+void drawRoundCenteredStatus(const char* primary, uint8_t primarySize,
+                             const char* secondary = nullptr,
+                             uint8_t secondarySize = 1) {
+  const int16_t primaryHeight = roundTextHeight(primary, primarySize);
+  const int16_t secondaryHeight = secondary == nullptr
+                                      ? 0
+                                      : roundTextHeight(secondary, secondarySize);
+  const int16_t gap = secondary == nullptr ? 0 : 18;
+  const int16_t top = (SCREEN_HEIGHT - primaryHeight - gap - secondaryHeight) / 2;
+  drawRoundCenteredText(primary, primarySize, top);
+  if (secondary != nullptr)
+    drawRoundCenteredText(secondary, secondarySize, top + primaryHeight + gap);
+}
+#endif
+
 void drawStandbyClock() {
   display.setTextColor(COLOR_WHITE);
+#if NAV_WAVESHARE_146
+  if (clockSynced) {
+    char clockText[6];
+    const time_t now = time(nullptr);
+    struct tm localClock;
+    gmtime_r(&now, &localClock);
+    snprintf(clockText, sizeof(clockText), "%02d:%02d", localClock.tm_hour,
+             localClock.tm_min);
+    drawRoundCenteredStatus(clockText, 7,
+                            bleConnected ? "ready to go" : nullptr, 2);
+  } else {
+    drawRoundCenteredStatus("MOTO NAV", 3,
+                            bleConnected ? "ready to go" : "CONNECT PHONE",
+                            bleConnected ? 2 : 1);
+  }
+#else
   if (clockSynced) {
     char text[6];
     const time_t now = time(nullptr);
@@ -898,9 +1158,25 @@ void drawStandbyClock() {
     display.setCursor(54, 99);
     display.print("ready to go");
   }
+#endif
 }
 
 void drawStandby() {
+  if (hadBleConnection) {
+    // A dropped BLE link must never look like the normal clock/ready screen.
+    // onDisconnect has already removed the last maneuver and map geometry.
+#if NAV_WAVESHARE_146
+    drawRoundCenteredStatus("CONNECTION LOST", 2, "RECONNECT PHONE", 1);
+#else
+    display.setTextSize(2);
+    display.setCursor(24, 36);
+    display.print("CONNECTION LOST");
+    display.setTextSize(1);
+    display.setCursor(53, 77);
+    display.print("RECONNECT PHONE");
+#endif
+    return;
+  }
   drawStandbyClock();
 }
 
@@ -915,16 +1191,24 @@ void renderDisplay(bool blinkState) {
   display.fillScreen(COLOR_BG);
   display.setTextColor(COLOR_WHITE);
 
-  if (pairingActive) {
+  portENTER_CRITICAL(&stateMux);
+  const bool showPairing = pairingActive;
+  portEXIT_CRITICAL(&stateMux);
+  if (showPairing) {
+#if NAV_WAVESHARE_146
+    drawRoundCenteredText(DEVICE_NAME, 1, 60);
+    drawRoundCenteredStatus("PRESS BOOT", 2, "TO PAIR", 1);
+#else
     display.setTextSize(1);
     display.setCursor(12, 12);
     display.print(DEVICE_NAME);
-    display.setTextSize(4);
-    display.setCursor(48, 48);
-    display.print(pairingCode);
+    display.setTextSize(2);
+    display.setCursor(54, 51);
+    display.print("PRESS BOOT");
     display.setTextSize(1);
-    display.setCursor(30, 108);
-    display.print("ENTER CODE ON PHONE");
+    display.setCursor(67, 108);
+    display.print("TO PAIR");
+#endif
     presentDisplay();
     return;
   }
@@ -941,12 +1225,77 @@ void renderDisplay(bool blinkState) {
     return;
   }
 
-  if (rerouting || nav.direction == Direction::Stop) {
-    // STOP/0 is also used by older apps while recalculating. It is not a
-    // turn at zero metres: never render a fallback road, stop block or NOW.
+  if (rerouting) {
+    // The phone may send the last reliable route shape while it searches for
+    // a replacement. It is context, not a live rider position or turn cue.
+    if (mapMotion.routes >= 2) {
+      drawMiniRouteMap(false);
+#if NAV_WAVESHARE_146
+      drawRoundCenteredText(livePacketTimedOut ? "WAITING PHONE" : "CACHED ROUTE",
+                            1, 177);
+      drawRoundCenteredText("UPDATING...", 1, 200);
+#else
+      display.setTextSize(1);
+      display.setCursor(livePacketTimedOut ? 71 : 76, 104);
+      display.print(livePacketTimedOut ? "WAITING PHONE" : "CACHED ROUTE");
+      display.setCursor(83, 118);
+      display.print("UPDATING...");
+#endif
+    } else {
+#if NAV_WAVESHARE_146
+      drawRoundCenteredText("UPDATING...", 1,
+                            (SCREEN_HEIGHT - roundTextHeight("UPDATING...", 1)) / 2);
+#else
+      display.setTextSize(1);
+      display.setCursor(84, 62);
+      display.print("UPDATING...");
+#endif
+    }
+    presentDisplay();
+    return;
+  }
+
+  if (nav.direction == Direction::Stop) {
+    // Explicit STOP means there is no safe guidance to show.
+#if NAV_WAVESHARE_146
+    const char* message = "NO GUIDANCE";
+    drawRoundCenteredText(message, 1,
+                          (SCREEN_HEIGHT - roundTextHeight(message, 1)) / 2);
+#else
     display.setTextSize(1);
     display.setCursor(84, 62);
-    display.print(rerouting ? "UPDATING..." : "NO GUIDANCE");
+    display.print("NO GUIDANCE");
+#endif
+    presentDisplay();
+    return;
+  }
+
+  // The app stops sending after ARRIVED, so that final screen never goes stale.
+  if (livePacketTimedOut && nav.direction != Direction::Arrived) {
+    // The phone has gone quiet while still connected (app frozen, killed or
+    // GPS stalled). While stopped, the app's heartbeat keeps packets coming
+    // only when it has a fresh fix. Keep the maneuver as context, but never
+    // present it as live: no rider marker, no countdown, an explicit label.
+    drawMiniRouteMap(false);
+    drawDirection(nav.direction);
+    display.setTextColor(COLOR_WHITE);
+#if NAV_WAVESHARE_146
+    // Same right-hand column as the distance, clear of the arrow and inside
+    // the round aperture.
+    display.setTextSize(2);
+    display.setCursor(112, 178);
+    display.print("NO UPDATE");
+    display.setTextSize(1);
+    display.setCursor(120, 204);
+    display.print("CHECK PHONE");
+#else
+    display.setTextSize(2);
+    display.setCursor(DISTANCE_X, 100);
+    display.print("NO UPD");
+    display.setTextSize(1);
+    display.setCursor(DISTANCE_X, 122);
+    display.print("CHECK PHONE");
+#endif
     presentDisplay();
     return;
   }
@@ -992,10 +1341,9 @@ void updateLiveTimeout() {
     displayDirty = true;
   }
 
-  // Do not clear the last direction just because the phone did not send a new
-  // packet for a few seconds. The app intentionally throttles BLE writes when
-  // the rider is not moving much. Only an explicit STOP packet should replace
-  // the current navigation instruction.
+  // Keep the last direction: only an explicit STOP packet replaces it.
+  // renderDisplay() marks it as stale instead. The app re-sends every ~2 s
+  // while stopped, backed by a fresh fix, so a timeout means a real problem.
   setLastError("");
 }
 
@@ -1015,7 +1363,59 @@ void updateDisplayPower() {
   }
 }
 
+#if NAV_WAVESHARE_146
+bool readExpanderRegister(uint8_t reg, uint8_t& value) {
+  Wire.beginTransmission(IO_EXPANDER_ADDRESS);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(IO_EXPANDER_ADDRESS, uint8_t(1)) != 1) return false;
+  value = Wire.read();
+  return true;
+}
+
+bool writeExpanderRegister(uint8_t reg, uint8_t value) {
+  Wire.beginTransmission(IO_EXPANDER_ADDRESS);
+  Wire.write(reg);
+  Wire.write(value);
+  return Wire.endTransmission() == 0;
+}
+
+bool resetRoundPanel() {
+  // Preserve every unrelated expander pin (touch reset, SD CS, etc.).
+  uint8_t output, config;
+  if (!readExpanderRegister(0x01, output) ||
+      !readExpanderRegister(0x03, config)) return false;
+  if (!writeExpanderRegister(0x01, output & ~LCD_RESET_MASK) ||
+      !writeExpanderRegister(0x03, config & ~LCD_RESET_MASK)) return false;
+  delay(50);
+  if (!writeExpanderRegister(0x01, output | LCD_RESET_MASK)) return false;
+  delay(120);
+  return true;
+}
+#endif
+
 bool initDisplay() {
+  if (!display.getBuffer()) {
+    Serial.println("[TFT] Canvas allocation failed");
+    return false;
+  }
+#if NAV_WAVESHARE_146
+  Serial.println("[TFT] init Waveshare 1.46 SPD2010 QSPI...");
+  pinMode(TFT_BACKLIGHT_PIN, OUTPUT);
+  analogWrite(TFT_BACKLIGHT_PIN, 0);
+  if (!Wire.begin(BOARD_I2C_SDA_PIN, BOARD_I2C_SCL_PIN, 400000) ||
+      !resetRoundPanel()) {
+    Serial.println("[TFT] TCA9554 reset failed (address 0x20)");
+    return false;
+  }
+  if (!tft.begin(40000000)) {
+    Serial.println("[TFT] QSPI initialization failed");
+    return false;
+  }
+  tft.fillScreen(COLOR_BG);
+  analogWrite(TFT_BACKLIGHT_PIN, BACKLIGHT_NORMAL);
+  Serial.println("[TFT] SPD2010 412x412 ready");
+#else
   Serial.println("[TFT] init ST7789...");
   pinMode(TFT_BACKLIGHT_PIN, OUTPUT);
   analogWrite(TFT_BACKLIGHT_PIN, BACKLIGHT_NORMAL);
@@ -1025,6 +1425,7 @@ bool initDisplay() {
   tft.setRotation(TFT_ROTATION);
   tft.fillScreen(COLOR_BG);
   Serial.println("[TFT] ST7789 ready");
+#endif
   return true;
 }
 
@@ -1033,6 +1434,7 @@ bool initDisplay() {
 // ======================================================
 
 void setup() {
+  pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
   const uint64_t chipId = ESP.getEfuseMac();
   snprintf(deviceIdentity, sizeof(deviceIdentity), "%04X%08lX",
            static_cast<unsigned int>((chipId >> 32) & 0xffff),
@@ -1063,32 +1465,84 @@ void setup() {
   Serial.println("[BOOT] Ready");
 }
 
-void loop() {
+void updatePairing() {
+  bool changed = false;
+  bool confirmed = false;
+  // The BLE task can re-arm pairing at any moment; keep this check atomic.
+  portENTER_CRITICAL(&stateMux);
   if (pairingActive && millis() - pairingStartedMs >= 60000) {
     pairingActive = false;
+    changed = true;
+  }
+  if (pairingActive) {
+    if (digitalRead(BOOT_BUTTON_PIN) == HIGH) {
+      pairingButtonReleased = true;
+      bootLowSinceMs = 0;
+    } else if (pairingButtonReleased) {
+      if (bootLowSinceMs == 0) bootLowSinceMs = millis();
+      if (millis() - bootLowSinceMs >= 80) {
+        pairingVerified = true;
+        pairingActive = false;
+        pairingButtonReleased = false;
+        changed = confirmed = true;
+      }
+    }
+  }
+  portEXIT_CRITICAL(&stateMux);
+  if (changed) displayDirty = true;
+  if (confirmed) Serial.println("[BLE] Pairing confirmed with BOOT");
+}
+
+// Applies everything the BLE task published since the previous iteration.
+void applyBleMailbox() {
+  static uint32_t seenDisconnects = 0;
+  BleMailbox snapshot;
+  portENTER_CRITICAL(&stateMux);
+  snapshot = mailbox;
+  mailbox.navReady = false;
+  mailbox.errorReady = false;
+  mailbox.wake = false;
+  portEXIT_CRITICAL(&stateMux);
+
+  if (snapshot.disconnects != seenDisconnects) {
+    // Counted, so a drop and reconnect between two iterations still clears
+    // the last maneuver and map geometry.
+    seenDisconnects = snapshot.disconnects;
+    hasReceivedNavPacket = false;
+    lastLivePacketMs = 0;
+    livePacketTimedOut = false;
+    nav = {Direction::Stop, 0};
+    rerouting = false;
     displayDirty = true;
   }
-  float nextMap[20];
-  uint8_t routes, roads, direction;
-  portENTER_CRITICAL(&mapMux);
-  const bool hasMap = pendingMapReady;
-  if (hasMap) {
-    memcpy(nextMap, pendingMap, sizeof(nextMap));
-    routes = pendingRoutes;
-    roads = pendingRoads;
-    direction = pendingDirection;
-    pendingMapReady = false;
+  if (snapshot.connected) hadBleConnection = true;
+  bleConnected = snapshot.connected;
+  clockSynced = snapshot.clockSynced;
+  if (snapshot.errorReady) setLastError(snapshot.error);
+  if (snapshot.navReady) {
+    nav = snapshot.nav;
+    rerouting = snapshot.rerouting;
+    lastLivePacketMs = millis();
+    livePacketTimedOut = false;
+    hasReceivedNavPacket = true;
+    displayDirty = true;
   }
-  portEXIT_CRITICAL(&mapMux);
-  if (isStandby() || isWaitingForNavigation() || rerouting ||
-      nav.direction == Direction::Stop) {
+  if (snapshot.wake) wakeDisplay();
+
+  if (isStandby() || isWaitingForNavigation() ||
+      (nav.direction == Direction::Stop && !rerouting)) {
     mapMotion.valid = false;
     mapMotion.active = false;
   }
-  if (hasMap) {
-    mapMotion.accept(nextMap, routes, roads, direction, millis());
-    displayDirty = true;
+  if (snapshot.navReady) {
+    mapMotion.accept(snapshot.map, snapshot.routes, snapshot.roads,
+                     static_cast<uint8_t>(snapshot.nav.direction), millis());
   }
+}
+
+void loop() {
+  updatePairing();
+  applyBleMailbox();
   if (mapMotion.tick(millis())) displayDirty = true;
   static time_t lastClockMinute = -1;
   const time_t clockMinute = time(nullptr) / 60;

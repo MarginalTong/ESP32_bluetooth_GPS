@@ -86,12 +86,41 @@ void main() {
             accuracy: accuracy,
             timestamp: DateTime.now());
     expect(engine.isOffRoute(fix(0, 2)), isFalse);
-    expect(engine.isOffRoute(fix(180, 2)), isTrue);
+    expect(engine.isOffRoute(fix(180, 3)), isTrue);
     expect(engine.reverseTravel, isTrue);
+    for (final speed in [0.67, 1.05, 1.67, 2.49, double.nan, double.infinity]) {
+      expect(engine.isOffRoute(fix(180, speed)), isFalse);
+      expect(engine.lastCourseDeltaDegrees, isNull);
+      expect(engine.lastRouteDistanceMeters, closeTo(0, .01));
+    }
     expect(engine.isOffRoute(fix(180, 0)), isFalse);
     expect(engine.isOffRoute(fix(0, 2, longitude: 0.0003)), isTrue);
     expect(
         engine.isOffRoute(fix(0, 2, longitude: 0.0003, accuracy: 20)), isFalse);
+  });
+  test('route tolerance changes smoothly around 10 m GPS accuracy', () {
+    final engine = NavigationEngine(const [
+      RouteStep(
+          direction: DeviceDirection.up,
+          start: LatLng(0, 0),
+          end: LatLng(0.01, 0),
+          distanceMeters: 1110),
+    ]);
+    NavigationFix fix(double accuracy, double longitude) =>
+        NavigationFix(0.001, longitude,
+            heading: -1,
+            speed: 0,
+            accuracy: accuracy,
+            timestamp: DateTime.now());
+
+    // About 30 m from the line: both sides of the old 10 m accuracy cliff
+    // should make the same decision.
+    expect(engine.isOffRoute(fix(9.9, 0.00027)), isFalse);
+    final below = engine.lastOffRouteThresholdMeters!;
+    expect(engine.isOffRoute(fix(10.1, 0.00027)), isFalse);
+    final above = engine.lastOffRouteThresholdMeters!;
+    expect(above - below, closeTo(0.2, 0.01));
+    expect(engine.isOffRoute(fix(9.5, 0.0005)), isTrue);
   });
   // Three maneuver points roughly in a line, ~111 m apart (0.001 deg lat).
   const p0 = LatLng(0.000, 0.0); // origin / start of step 0
@@ -239,6 +268,21 @@ void main() {
     expect(roads[1], inInclusiveRange(2, 34));
     expect(roads[2], inInclusiveRange(18, 110));
     expect(roads[3], inInclusiveRange(2, 34));
+  });
+
+  test('side-road direction does not depend on the real road length', () {
+    List<int> preview(double halfWidth) => NavigationEngine(
+          route(),
+          sideRoads: [
+            RoadSegment(
+              start: LatLng(0.0005, -halfWidth),
+              end: LatLng(0.0005, halfWidth),
+            ),
+          ],
+        ).update(p0).sideRoadPreviewPoints;
+
+    expect(preview(0.00012), isNotEmpty);
+    expect(preview(0.00012), preview(0.0004));
   });
 
   test('parallel nearby roads are not emitted as junctions', () {

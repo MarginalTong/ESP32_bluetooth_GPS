@@ -15,13 +15,11 @@ class ConnectionCard extends StatelessWidget {
     final text = AppText.of(context);
     final connected = ble.state == BleConnectionState.connected;
     final busy = ble.state == BleConnectionState.scanning ||
-        ble.state == BleConnectionState.connecting;
+        ble.state == BleConnectionState.connecting ||
+        ble.state == BleConnectionState.awaitingBoot;
     final colors = Theme.of(context).colorScheme;
 
     return GlassPanel(
-      // Native-map trial rendered black on device. Keep this card on the
-      // readable fallback until platform-view sampling is verified.
-      experimentalLiquid: false,
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: busy
@@ -66,12 +64,14 @@ class ConnectionCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 1),
                     Text(
-                      ble.lastError ?? _label(context, ble.state),
+                      busy
+                          ? _label(context, ble.state)
+                          : ble.lastError ?? _label(context, ble.state),
                       textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: ble.lastError == null
+                            color: busy || ble.lastError == null
                                 ? colors.onSurfaceVariant
                                 : colors.error,
                           ),
@@ -102,6 +102,7 @@ class ConnectionCard extends StatelessWidget {
       BleConnectionState.idle => text.connectDevice,
       BleConnectionState.scanning => text.searchingDevice,
       BleConnectionState.connecting => text.connecting,
+      BleConnectionState.awaitingBoot => text.pressBoot,
       BleConnectionState.connected => text.deviceConnected,
       BleConnectionState.disconnected => text.connectDevice,
     };

@@ -33,8 +33,8 @@ class AppText {
       isEnglish ? 'Keep binding for the next connection.' : '保留绑定，下次仍连接这块屏幕。';
   String get replaceDevice => isEnglish ? 'Change display' : '更换屏幕';
   String get replaceHint => isEnglish
-      ? 'Forget this display, then scan and verify another.'
-      : '清除本机绑定，重新扫描并验证其他屏幕。';
+      ? 'Forget this display, then confirm another with its BOOT button.'
+      : '清除本机绑定，再按新屏幕的 BOOT 键确认。';
   String get forgetDevice => isEnglish ? 'Forget device' : '忘记设备';
   String get forgetHint => isEnglish
       ? 'Clear local binding without connecting another display.'
@@ -43,9 +43,11 @@ class AppText {
       ? 'Binding is saved on this phone only. Forgetting does not revoke access on other phones.'
       : '绑定仅保存在本机；忘记设备不会撤销其他手机的连接权限。';
   String get selectDisplay => isEnglish ? 'Select your display' : '选择你的导航屏';
-  String get verifyDisplay => isEnglish ? 'Verify display' : '确认屏幕';
-  String get screenCode =>
-      isEnglish ? 'Enter the 6-digit code on the display' : '输入屏幕上的六位验证码';
+  String get pressBoot =>
+      isEnglish ? 'Press BOOT on the display' : '请按屏幕上的 BOOT 按钮';
+  String get bootHint => isEnglish
+      ? 'Press BOOT once on the display you selected. No code needed.'
+      : '在你选中的屏幕上按一次 BOOT，无需输入验证码。';
   String get deviceActionFailed =>
       isEnglish ? 'Device operation failed. Please try again.' : '设备操作失败，请重试。';
 

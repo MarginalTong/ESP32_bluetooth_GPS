@@ -41,6 +41,17 @@ void main() {
       );
     });
 
+    test('temporary cached map has no stale turn or distance', () {
+      const s = NavState(
+        direction: DeviceDirection.stop,
+        distanceMeters: 0,
+        rerouting: true,
+        routePreviewPoints: [64, 34, 64, 20],
+      );
+      expect(s.toWire(),
+          '{"dir":"STOP","dist":0,"p":[64,34,64,20],"rerouting":true}');
+    });
+
     test('toJson keys are dir/dist', () {
       const s = NavState(direction: DeviceDirection.up, distanceMeters: 500);
       expect(s.toJson(), {'dir': 'UP', 'dist': 500});

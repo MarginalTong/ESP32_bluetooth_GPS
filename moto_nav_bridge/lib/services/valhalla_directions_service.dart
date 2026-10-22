@@ -10,7 +10,7 @@ import '../models/device_direction.dart';
 import '../models/lat_lng.dart';
 import '../models/route_candidate.dart';
 import '../models/route_step.dart';
-import 'directions_service.dart';
+import 'directions_exception.dart';
 import 'navigation_ports.dart';
 
 /// Direction-aware route planning against an explicitly configured Valhalla server.
@@ -21,11 +21,13 @@ class ValhallaDirectionsService implements RouteProvider {
     http.Client? client,
     String? routeUrl,
     Duration timeout = const Duration(seconds: 8),
+    this.routePreferences,
   })  : _client = client ?? http.Client(),
         _routeUrl = routeUrl ?? ApiConfig.valhallaRouteUrl,
         _timeout = timeout;
 
   final http.Client _client;
+  final Map<String, Object> Function()? routePreferences;
   final String _routeUrl;
   final Duration _timeout;
   final Set<Completer<void>> _pending = {};
@@ -84,6 +86,8 @@ class ValhallaDirectionsService implements RouteProvider {
             // Preserve the existing Apple automobile transport contract. Motorcycle
             // costing is a separate product choice, not an incidental provider swap.
             'costing': 'auto',
+            if (routePreferences != null)
+              'costing_options': {'auto': routePreferences!()},
             'units': 'kilometers',
             'format': 'json',
             'directions_type': 'maneuvers',
