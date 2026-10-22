@@ -1,12 +1,15 @@
 """Private Gemini intent gateway. Optional explicit audio upload; no navigation execution."""
-import hmac
+import argparse
 import base64
+import hashlib
 import io
 import wave
 import json
 import os
 import re
+import secrets
 import sqlite3
+import sys
 import threading
 import time
 import urllib.request
@@ -267,26 +270,138 @@ def draft_reply(value, key, model):
         raise ValueError('unsafe_reply')
     return {'reply': reply}
 
+USER_NAME = re.compile(r'[A-Za-z0-9._-]{1,64}')
+LEGACY_USER = 'legacy'
+
 class Budget:
-    """Persistent global request cap. Failed calls also consume budget; no retries."""
-    def __init__(self, path, daily=100, per_minute=6):
+    """Per-user tokens and request caps, persisted in sqlite.
+
+    Each user has a random bearer token; only its SHA-256 is stored. A call
+    must fit both the user's limits and the global limits, which bound the
+    total Gemini bill however many users exist. Failed calls also consume
+    budget; there are no retries.
+    """
+    def __init__(self, path, global_daily=1000, global_per_minute=30):
         # One connection shared by the request threads; the lock makes the
         # count-then-insert below atomic so concurrent calls cannot overspend.
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.lock = threading.Lock()
-        self.db.execute('CREATE TABLE IF NOT EXISTS calls (at REAL)')
-        self.daily, self.per_minute = daily, per_minute
+        self.global_daily, self.global_per_minute = global_daily, global_per_minute
+        with self.lock, self.db:
+            self.db.execute('CREATE TABLE IF NOT EXISTS calls (at REAL)')
+            # Databases from the shared-token version have no user column;
+            # their calls still count towards the global limits.
+            columns = {row[1] for row in self.db.execute('PRAGMA table_info(calls)')}
+            if 'user_id' not in columns:
+                self.db.execute('ALTER TABLE calls ADD COLUMN user_id INTEGER')
+            self.db.execute('CREATE INDEX IF NOT EXISTS calls_user_at ON calls (user_id, at)')
+            self.db.execute('''CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL,
+                token_hash TEXT UNIQUE NOT NULL,
+                daily INTEGER NOT NULL,
+                per_minute INTEGER NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created REAL NOT NULL)''')
 
-    def take(self, now=None):
+    @staticmethod
+    def hash_token(token):
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    @staticmethod
+    def _check_limits(daily, per_minute):
+        if not (isinstance(daily, int) and isinstance(per_minute, int)
+                and 0 < daily <= 100000 and 0 < per_minute <= 1000):
+            raise ValueError('invalid_limits')
+
+    def add_user(self, name, daily=100, per_minute=6, token=None):
+        """Creates a user and returns its token. The token is not stored."""
+        if not USER_NAME.fullmatch(name):
+            raise ValueError('invalid_name')
+        self._check_limits(daily, per_minute)
+        token = token or secrets.token_urlsafe(32)
+        if len(token) < 32:
+            raise ValueError('weak_token')
+        with self.lock, self.db:
+            self.db.execute(
+                'INSERT INTO users (name, token_hash, daily, per_minute, created) VALUES (?, ?, ?, ?, ?)',
+                (name, self.hash_token(token), daily, per_minute, time.time()))
+        return token
+
+    def rotate_token(self, name):
+        """Issues a new token for an existing user; the old one stops working."""
+        token = secrets.token_urlsafe(32)
+        with self.lock, self.db:
+            changed = self.db.execute('UPDATE users SET token_hash = ?, enabled = 1 WHERE name = ?',
+                                      (self.hash_token(token), name)).rowcount
+        if not changed:
+            raise KeyError(name)
+        return token
+
+    def set_enabled(self, name, enabled):
+        with self.lock, self.db:
+            if not self.db.execute('UPDATE users SET enabled = ? WHERE name = ?',
+                                   (1 if enabled else 0, name)).rowcount:
+                raise KeyError(name)
+
+    def set_limits(self, name, daily, per_minute):
+        self._check_limits(daily, per_minute)
+        with self.lock, self.db:
+            if not self.db.execute('UPDATE users SET daily = ?, per_minute = ? WHERE name = ?',
+                                   (daily, per_minute, name)).rowcount:
+                raise KeyError(name)
+
+    def sync_legacy(self, token, daily=100, per_minute=6):
+        """Keeps the old shared VOICE_TEST_TOKEN working as user 'legacy'
+        while installed apps move to personal tokens; disabled when unset."""
+        with self.lock, self.db:
+            if not token:
+                self.db.execute('UPDATE users SET enabled = 0 WHERE name = ?', (LEGACY_USER,))
+                return
+            self.db.execute(
+                '''INSERT INTO users (name, token_hash, daily, per_minute, created) VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(name) DO UPDATE SET token_hash = excluded.token_hash, enabled = 1''',
+                (LEGACY_USER, self.hash_token(token), daily, per_minute, time.time()))
+
+    def users(self, now=None):
+        now = time.time() if now is None else now
+        with self.lock:
+            return self.db.execute(
+                '''SELECT u.name, u.daily, u.per_minute, u.enabled,
+                          (SELECT count(*) FROM calls c WHERE c.user_id = u.id AND c.at >= ?)
+                   FROM users u ORDER BY u.name''', (now - 86400,)).fetchall()
+
+    def authenticate(self, header):
+        """Returns the enabled user id for an 'Authorization: Bearer' header, or None."""
+        if not isinstance(header, str) or not header.startswith('Bearer '):
+            return None
+        token = header[len('Bearer '):]
+        if not 32 <= len(token) <= 256:
+            return None
+        with self.lock:
+            row = self.db.execute('SELECT id FROM users WHERE token_hash = ? AND enabled = 1',
+                                  (self.hash_token(token),)).fetchone()
+        return row[0] if row else None
+
+    def take(self, user_id, now=None):
+        """Records one call. Returns None if allowed, else the error code."""
         now = time.time() if now is None else now
         with self.lock, self.db:
             self.db.execute('DELETE FROM calls WHERE at < ?', (now - 86400,))
-            daily = self.db.execute('SELECT count(*) FROM calls').fetchone()[0]
-            minute = self.db.execute('SELECT count(*) FROM calls WHERE at > ?', (now - 60,)).fetchone()[0]
-            if daily >= self.daily or minute >= self.per_minute:
-                return False
-            self.db.execute('INSERT INTO calls VALUES (?)', (now,))
-        return True
+            limits = self.db.execute('SELECT daily, per_minute FROM users WHERE id = ? AND enabled = 1',
+                                     (user_id,)).fetchone()
+            if limits is None:
+                return 'unauthorized'
+            count = lambda where, *args: self.db.execute(
+                'SELECT count(*) FROM calls WHERE ' + where, args).fetchone()[0]
+            if (count('1') >= self.global_daily or
+                    count('at > ?', now - 60) >= self.global_per_minute):
+                return 'service_limit_reached'
+            if (count('user_id = ?', user_id) >= limits[0] or
+                    count('user_id = ? AND at > ?', user_id, now - 60) >= limits[1]):
+                return 'user_limit_reached'
+            self.db.execute('INSERT INTO calls (at, user_id) VALUES (?, ?)', (now, user_id))
+        return None
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
@@ -312,8 +427,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.do_reply()
         return self.reply(404, {'error': 'not_found'})
 
+    def take_budget(self, user):
+        """Replies and returns False when the call is not allowed."""
+        error = self.server.budget.take(user)
+        if error is None:
+            return True
+        self.reply(401 if error == 'unauthorized' else 429, {'error': error})
+        return False
+
     def do_reply(self):
-        if not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + self.server.token):
+        user = self.server.budget.authenticate(self.headers.get('Authorization', ''))
+        if user is None:
             return self.reply(401, {'error': 'unauthorized'})
         try:
             length = int(self.headers.get('Content-Length', '0'))
@@ -322,8 +446,8 @@ class Handler(BaseHTTPRequestHandler):
             value = validate_reply_request(json.loads(self.rfile.read(length)))
         except (ValueError, TypeError, KeyError):
             return self.reply(400, {'error': 'invalid_reply'})
-        if not self.server.budget.take():
-            return self.reply(429, {'error': 'test_limit_reached'})
+        if not self.take_budget(user):
+            return
         try:
             result = draft_reply(value, self.server.key, self.server.model)
         except Exception:
@@ -331,7 +455,8 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, result)
 
     def do_audio(self):
-        if not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + self.server.token):
+        user = self.server.budget.authenticate(self.headers.get('Authorization', ''))
+        if user is None:
             return self.reply(401, {'error': 'unauthorized'})
         if not self.server.audio_enabled:
             return self.reply(503, {'error': 'audio_not_enabled'})
@@ -342,28 +467,77 @@ class Handler(BaseHTTPRequestHandler):
             value = validate_audio_request(json.loads(self.rfile.read(length)))
         except (ValueError, TypeError, KeyError, wave.Error, EOFError):
             return self.reply(400, {'error': 'invalid_audio'})
-        if not self.server.budget.take():
-            return self.reply(429, {'error': 'test_limit_reached'})
+        if not self.take_budget(user):
+            return
         try:
             result = converse_audio(value, self.server.key, self.server.model)
         except Exception:
             return self.reply(502, {'error': 'provider_unavailable'})
         self.reply(200, result)
 
+def open_budget():
+    return Budget(os.environ.get('VOICE_BUDGET_DB', 'voice_budget.sqlite'),
+                  global_daily=int(os.environ.get('VOICE_GLOBAL_DAILY', '1000')),
+                  global_per_minute=int(os.environ.get('VOICE_GLOBAL_PER_MINUTE', '30')))
+
+def manage_users(argv, budget=None, out=print):
+    """Admin commands, run on the server with the service's environment:
+    users add NAME [--daily N] [--per-minute N] | users list |
+    users rotate NAME | users disable NAME | users enable NAME |
+    users limits NAME --daily N --per-minute N
+    Tokens are printed once and never stored; give each rider their own."""
+    parser = argparse.ArgumentParser(prog='server.py users')
+    commands = parser.add_subparsers(dest='command', required=True)
+    add = commands.add_parser('add')
+    add.add_argument('name')
+    add.add_argument('--daily', type=int, default=100)
+    add.add_argument('--per-minute', type=int, default=6)
+    commands.add_parser('list')
+    for name in ('rotate', 'disable', 'enable'):
+        commands.add_parser(name).add_argument('name')
+    limits = commands.add_parser('limits')
+    limits.add_argument('name')
+    limits.add_argument('--daily', type=int, required=True)
+    limits.add_argument('--per-minute', type=int, required=True)
+    args = parser.parse_args(argv)
+    budget = budget or open_budget()
+    try:
+        if args.command == 'add':
+            out(budget.add_user(args.name, args.daily, args.per_minute))
+        elif args.command == 'rotate':
+            out(budget.rotate_token(args.name))
+        elif args.command in ('disable', 'enable'):
+            budget.set_enabled(args.name, args.command == 'enable')
+        elif args.command == 'limits':
+            budget.set_limits(args.name, args.daily, args.per_minute)
+        else:
+            for name, daily, per_minute, enabled, used in budget.users():
+                out(f'{name}\t{"enabled" if enabled else "disabled"}\t{used}/{daily} today\t{per_minute}/min')
+    except KeyError:
+        raise SystemExit(f'No such user: {args.name}')
+    except sqlite3.IntegrityError:
+        raise SystemExit(f'User already exists: {args.name}')
+    except ValueError as error:
+        raise SystemExit(f'Rejected: {error}')
+
 def main():
+    if sys.argv[1:2] == ['users']:
+        return manage_users(sys.argv[2:])
     key = os.environ.get('GEMINI_API_KEY', '')
-    token = os.environ.get('VOICE_TEST_TOKEN', '')
     model = os.environ.get('GEMINI_MODEL', '')
-    if not key or len(token) < 32 or not re.fullmatch(r'[a-zA-Z0-9._-]+', model):
-        raise SystemExit('Set GEMINI_API_KEY, GEMINI_MODEL and a random VOICE_TEST_TOKEN (32+ characters).')
+    legacy = os.environ.get('VOICE_TEST_TOKEN', '')
+    if not key or not re.fullmatch(r'[a-zA-Z0-9._-]+', model) or (legacy and len(legacy) < 32):
+        raise SystemExit('Set GEMINI_API_KEY and GEMINI_MODEL. VOICE_TEST_TOKEN is optional (32+ characters).')
+    budget = open_budget()
+    budget.sync_legacy(legacy)
     # A Gemini call can take 20 s; one thread per request keeps other riders
     # from queueing behind it (nginx gives up after 35 s). The Budget still
     # caps total upstream calls.
     server = ThreadingHTTPServer(('127.0.0.1', int(os.environ.get('PORT', '8091'))), Handler)
     server.daemon_threads = True
-    server.key, server.token, server.model = key, token, model
+    server.key, server.model = key, model
     server.audio_enabled = os.environ.get('VOICE_AUDIO_ENABLED') == 'true'
-    server.budget = Budget(os.environ.get('VOICE_BUDGET_DB', 'voice_budget.sqlite'))
+    server.budget = budget
     server.serve_forever()
 
 if __name__ == '__main__':
