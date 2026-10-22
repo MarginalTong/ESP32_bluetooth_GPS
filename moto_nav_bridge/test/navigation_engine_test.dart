@@ -299,6 +299,126 @@ void main() {
     expect(engine.update(p0).sideRoadPreviewPoints, isEmpty);
   });
 
+  group('distance to the turn follows the road', () {
+    // A hairpin: ~300 m north, ~30 m east, ~300 m back south. The turn at
+    // its end is only ~30 m from the start in a straight line.
+    const d = 0.0001; // ~11 m
+    final hairpin = [
+      for (var i = 0; i <= 27; i++) LatLng(i * d, 0),
+      const LatLng(27 * d, 0.00027),
+      for (var i = 27; i >= 0; i--) LatLng(i * d, 0.00027),
+    ];
+    final turn = hairpin.last;
+    const after = LatLng(0, 0.0012);
+    List<RouteStep> hairpinRoute() => [
+          RouteStep(
+            direction: DeviceDirection.up,
+            start: hairpin.first,
+            end: turn,
+            distanceMeters: 630,
+            geometry: hairpin,
+          ),
+          RouteStep(
+            direction: DeviceDirection.left,
+            start: turn,
+            end: after,
+            distanceMeters: 104,
+          ),
+        ];
+
+    test('a hairpin announces road distance, not the straight line', () {
+      final engine = NavigationEngine(hairpinRoute());
+      // ~100 m up the outbound leg: ~200 + 30 + 300 m of road remain,
+      // although the turn is only ~104 m away in a straight line.
+      final state = engine.update(const LatLng(9 * d, 0));
+      expect(state.direction, DeviceDirection.left);
+      expect(state.distanceMeters, inInclusiveRange(510, 550));
+    });
+
+    test('GPS drift towards the return leg does not jump ahead', () {
+      final engine = NavigationEngine(hairpinRoute());
+      engine.update(const LatLng(9 * d, 0));
+      // 20 m east of the outbound leg, 10 m from the return leg. Matching the
+      // nearest leg would announce ~100 m; progress only moves forward.
+      final state = engine.update(const LatLng(9 * d, 0.00018));
+      expect(state.distanceMeters, greaterThan(450));
+    });
+
+    test('a route joined part-way along re-finds the rider', () {
+      // Seeded at the route start (as selectRoute does), then the first real
+      // fix is far beyond the forward search window.
+      final shape = [for (var i = 0; i <= 200; i++) LatLng(i * d, 0)];
+      final engine = NavigationEngine([
+        RouteStep(
+          direction: DeviceDirection.up,
+          start: shape.first,
+          end: shape.last,
+          distanceMeters: 2224,
+          geometry: shape,
+        ),
+        const RouteStep(
+          direction: DeviceDirection.right,
+          start: LatLng(200 * d, 0),
+          end: LatLng(200 * d, 0.001),
+          distanceMeters: 111,
+        ),
+      ]);
+      engine.update(shape.first);
+      final state = engine.update(shape[140]); // ~1.56 km in, ~667 m to go
+      expect(state.distanceMeters, inInclusiveRange(650, 685));
+    });
+  });
+
+  group('side roads on a long, densely sampled route', () {
+    // 4 km north along longitude 0, one vertex every ~2.2 m.
+    const step = 0.00002;
+    final shape = [for (var i = 0; i <= 2000; i++) LatLng(i * step, 0)];
+    List<RouteStep> longRoute() => [
+          RouteStep(
+            direction: DeviceDirection.up,
+            start: shape.first,
+            end: shape[1000],
+            distanceMeters: 2224,
+            geometry: shape.sublist(0, 1001),
+          ),
+          RouteStep(
+            direction: DeviceDirection.left,
+            start: shape[1000],
+            end: shape.last,
+            distanceMeters: 2224,
+            geometry: shape.sublist(1000),
+          ),
+        ];
+    RoadSegment crossing(double latitude) => RoadSegment(
+          start: LatLng(latitude, -0.0004),
+          end: LatLng(latitude, 0.0004),
+        );
+    const rider = LatLng(0.0003, 0); // ~33 m along the route
+
+    test('roads far down the trip do not change the preview', () {
+      final near = crossing(0.0012); // ~100 m ahead of the rider
+      final far = [for (var i = 0; i < 200; i++) crossing(0.006 + i * 0.00015)];
+      final withFar = NavigationEngine(longRoute(), sideRoads: [near, ...far])
+          .update(rider)
+          .sideRoadPreviewPoints;
+      final nearOnly = NavigationEngine(longRoute(), sideRoads: [near])
+          .update(rider)
+          .sideRoadPreviewPoints;
+      expect(nearOnly, isNotEmpty);
+      expect(withFar, nearOnly);
+    });
+
+    test('a junction just behind the rider is still drawn', () {
+      // ~15 m behind, several vertices back: inside the 20 m the preview
+      // keeps behind the rider, outside the segment the rider is on.
+      final roads = NavigationEngine(longRoute(),
+              sideRoads: [crossing(0.0003 - 0.000135)])
+          .update(rider)
+          .sideRoadPreviewPoints;
+      expect(roads, isNotEmpty);
+    });
+  });
+
   test('roads disconnected from the selected route are not emitted', () {
     final engine = NavigationEngine(
       route(),

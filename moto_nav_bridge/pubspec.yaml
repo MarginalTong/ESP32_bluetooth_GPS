@@ -18,6 +18,8 @@ dependencies:
   geolocator: ^12.0.0
   # Routing API calls; AbortableRequest cancels timed-out Valhalla requests.
   http: ^1.5.0
+  # HMAC-SHA256 for authenticated writes to the display (PacketSigner).
+  crypto: ^3.0.7
   vector_tile: ^4.0.0
   # Simple state management for the UI layer.
   provider: ^6.1.2

@@ -54,6 +54,12 @@ class NavigationEngine {
   static const double sideRoadMinimumBranchMeters = 8.0;
   static const double sideRoadMinimumCrossingSin = 0.30;
   static const double _sideRoadDirectionPreviewUnits = 10.0;
+  // Along-route distance: how far ahead of the last matched segment to look,
+  // and how poor a match must be before searching the whole step again.
+  static const double _progressSearchAheadMeters = 300.0;
+  static const double _progressReseedMeters = 50.0;
+  // Junctions up to 20 m behind the rider are still drawn; keep margin.
+  static const double _sideRoadWindowBehindMeters = 40.0;
   static const int _previewLeft = 18;
   static const int _previewTop = 2;
   static const int _previewRight = 110;
@@ -133,13 +139,18 @@ class NavigationEngine {
     }
 
     final target = _steps[_index].end;
-    final dist = position.distanceTo(target).round();
+    final straight = position.distanceTo(target);
+    // Announce the distance the rider will actually travel. On a bend or
+    // hairpin the straight line to the turn is far shorter than the road.
+    // Never report less than the straight line, e.g. when beside the road.
+    final dist = math.max(straight, _remainingStepMeters(position)).round();
 
     // Otherwise show the maneuver performed at the current step's end, which is
     // the next step's mapped direction. On the final leg, keep showing a
     // forward instruction until the rider is actually at the destination.
+    // Arrival is a proximity test, so it keeps the straight-line distance.
     DeviceDirection dir = (_index >= n - 1)
-        ? (dist <= arrivalThresholdMeters
+        ? (straight.round() <= arrivalThresholdMeters
             ? DeviceDirection.arrived
             : DeviceDirection.up)
         : _steps[_index + 1].direction;
@@ -232,6 +243,55 @@ class NavigationEngine {
   double? _distanceToStepEnd(RouteStep step, LatLng? from) =>
       from?.distanceTo(step.end);
 
+  int _progressStep = -1;
+  int _progressSegment = 0;
+  List<double> _stepSuffixMeters = const [];
+
+  /// Road distance from the rider's projection onto the current step to the
+  /// step's end. Progress only moves forward and is searched within a short
+  /// window ahead, so a hairpin's return leg, which can be closer in a
+  /// straight line, is never matched. A poor window match (a route switched
+  /// mid-trip, or the rider beside the road) falls back to the whole step.
+  double _remainingStepMeters(LatLng position) {
+    final points = _geometryForStep(_steps[_index]);
+    if (_progressStep != _index) {
+      _progressStep = _index;
+      _progressSegment = 0;
+      // suffix[i] = road length from points[i] to the step's end.
+      final suffix = List<double>.filled(points.length, 0);
+      for (var i = points.length - 2; i >= 0; i--) {
+        suffix[i] = suffix[i + 1] + points[i].distanceTo(points[i + 1]);
+      }
+      _stepSuffixMeters = suffix;
+    }
+
+    _SegmentProjection? best;
+    var bestIndex = _progressSegment;
+    var scanned = 0.0;
+    for (var i = _progressSegment; i < points.length - 1; i++) {
+      final projection = _projectToSegment(position, points[i], points[i + 1]);
+      if (best == null || projection.distanceMeters < best.distanceMeters) {
+        best = projection;
+        bestIndex = i;
+      }
+      scanned += _stepSuffixMeters[i] - _stepSuffixMeters[i + 1];
+      if (scanned > _progressSearchAheadMeters) break;
+    }
+    if (best == null || best.distanceMeters > _progressReseedMeters) {
+      final whole = _closestSegment(position, points);
+      if (whole != null &&
+          (best == null || whole.distanceMeters < best.distanceMeters)) {
+        bestIndex = whole.segmentIndex;
+        best = _SegmentProjection(
+            projected: whole.projected, distanceMeters: whole.distanceMeters);
+      }
+    }
+    if (best == null) return 0;
+    _progressSegment = bestIndex;
+    return best.projected.distanceTo(points[bestIndex + 1]) +
+        _stepSuffixMeters[bestIndex + 1];
+  }
+
   static double _distanceToSegmentMeters(LatLng p, LatLng a, LatLng b) {
     const latScale = 111320.0;
     final lngScale = latScale * math.cos(_toRad((a.latitude + b.latitude) / 2));
@@ -282,7 +342,7 @@ class NavigationEngine {
 
     final candidates = <_SideRoadCandidate>[];
     for (final road in _sideRoads) {
-      final connection = _roadConnection(road, preview.remaining);
+      final connection = _roadConnection(road, preview.nearby);
       if (connection == null ||
           connection.distanceMeters > sideRoadConnectionToleranceMeters) {
         continue;
@@ -430,6 +490,7 @@ class NavigationEngine {
     final route = <LatLng>[closest.projected];
     var travelled = 0.0;
     var cursor = closest.projected;
+    var lastSegment = remaining.length - 2;
 
     for (var i = closest.segmentIndex; i < remaining.length - 1; i++) {
       final target = remaining[i + 1];
@@ -439,6 +500,7 @@ class NavigationEngine {
       if (travelled + segmentLength >= routePreviewDistanceMeters) {
         final t = (routePreviewDistanceMeters - travelled) / segmentLength;
         route.add(_interpolate(cursor, target, t));
+        lastSegment = i;
         break;
       }
 
@@ -449,6 +511,17 @@ class NavigationEngine {
 
     if (route.length < 2) return null;
 
+    // Side roads are only drawn within this window, so match them against
+    // these segments rather than the whole remaining trip: on a long route
+    // that was thousands of segment tests per road on every GPS fix.
+    var firstSegment = closest.segmentIndex;
+    var behind = remaining[firstSegment].distanceTo(closest.projected);
+    while (firstSegment > 0 && behind < _sideRoadWindowBehindMeters) {
+      firstSegment--;
+      behind += remaining[firstSegment].distanceTo(remaining[firstSegment + 1]);
+    }
+    final nearby = remaining.sublist(firstSegment, lastSegment + 2);
+
     final heading = _bearingRadians(route[0], route[1]);
     const latScale = 111320.0;
     final lngScale =
@@ -457,7 +530,7 @@ class NavigationEngine {
 
     return _PreviewFrame(
       route: route,
-      remaining: remaining,
+      nearby: nearby,
       origin: route[0],
       heading: heading,
       lngScale: lngScale,
@@ -572,7 +645,7 @@ class _SegmentProjection {
 class _PreviewFrame {
   const _PreviewFrame({
     required this.route,
-    required this.remaining,
+    required this.nearby,
     required this.origin,
     required this.heading,
     required this.lngScale,
@@ -580,7 +653,10 @@ class _PreviewFrame {
   });
 
   final List<LatLng> route;
-  final List<LatLng> remaining;
+
+  /// Remaining-route vertices spanning the preview window, plus a short
+  /// stretch behind the rider. Side roads are matched against these only.
+  final List<LatLng> nearby;
   final LatLng origin;
   final double heading;
   final double lngScale;

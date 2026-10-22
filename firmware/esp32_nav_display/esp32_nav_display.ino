@@ -19,6 +19,9 @@
 #include <BLEUtils.h>
 
 #include <ArduinoJson.h>
+#include <Preferences.h>
+#include <esp_random.h>
+#include <mbedtls/md.h>
 #include <time.h>
 #include <sys/time.h>
 #include <stdint.h>
@@ -187,6 +190,7 @@ constexpr char CHARACTERISTIC_UUID[] = "abcd1234-5678-1234-5678-abcdef123456";
 
 BLEServer* bleServer = nullptr;
 BLEAdvertising* bleAdvertising = nullptr;
+BLECharacteristic* pairingCharacteristic = nullptr;
 
 bool bleConnected = false;
 bool hadBleConnection = false;
@@ -235,6 +239,59 @@ struct ScreenSegment {
   ScreenPoint end;
 };
 
+// Placed after the enum declarations: the Arduino preprocessor inserts its
+// generated prototypes before the first function definition.
+// BEGIN PACKET AUTH - kept inline so this sketch can be copied on its own.
+// Must match the App's PacketSigner byte for byte. A navigation write is
+// "<json>|<16 hex>": the tag is the first 8 bytes of
+// HMAC-SHA256(key, sessionNonce || json). The key is issued at a BOOT-confirmed
+// pairing; the nonce is new on every connection, so recorded packets cannot be
+// replayed into a later session. The JSON's counter "n" is checked by the
+// caller after parsing.
+constexpr size_t AUTH_KEY_BYTES = 16;
+constexpr size_t AUTH_NONCE_BYTES = 8;
+constexpr size_t AUTH_TAG_BYTES = 8;
+
+// Provided by the sketch (mbedtls) or the host test (CommonCrypto).
+bool navHmacSha256(const uint8_t* key, size_t keyLength, const uint8_t* a,
+                   size_t aLength, const uint8_t* b, size_t bLength,
+                   uint8_t out[32]);
+
+inline int authHexNibble(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+// Returns the length of the authenticated JSON before '|', or -1.
+inline int verifyPacketTag(const uint8_t key[AUTH_KEY_BYTES],
+                           const uint8_t nonce[AUTH_NONCE_BYTES],
+                           const char* packet, size_t length) {
+  constexpr size_t suffix = 1 + AUTH_TAG_BYTES * 2;
+  if (packet == nullptr || length <= suffix + 1) return -1;
+  const size_t jsonLength = length - suffix;
+  if (packet[jsonLength] != '|') return -1;
+  uint8_t tag[AUTH_TAG_BYTES];
+  for (size_t i = 0; i < AUTH_TAG_BYTES; ++i) {
+    const int high = authHexNibble(packet[jsonLength + 1 + i * 2]);
+    const int low = authHexNibble(packet[jsonLength + 2 + i * 2]);
+    if (high < 0 || low < 0) return -1;
+    tag[i] = static_cast<uint8_t>(high << 4 | low);
+  }
+  uint8_t mac[32];
+  if (!navHmacSha256(key, AUTH_KEY_BYTES, nonce, AUTH_NONCE_BYTES,
+                     reinterpret_cast<const uint8_t*>(packet), jsonLength,
+                     mac)) {
+    return -1;
+  }
+  // Constant time: do not reveal how many leading tag bytes were right.
+  uint8_t difference = 0;
+  for (size_t i = 0; i < AUTH_TAG_BYTES; ++i) difference |= mac[i] ^ tag[i];
+  return difference == 0 ? static_cast<int>(jsonLength) : -1;
+}
+// END PACKET AUTH
+
 constexpr uint8_t MAP_VALUE_COUNT =
     MAX_ROUTE_PREVIEW_POINTS * 2 + MAX_SIDE_ROAD_SEGMENTS * 4;
 static_assert(MAP_VALUE_COUNT == 20, "MapMotion stores 20 map values");
@@ -255,9 +312,20 @@ struct BleMailbox {
   char error[48] = "";
   bool wake = false;
 };
-// Also guards every read and write of the pairing flags, which the BLE task
-// and loop() share.
+// Also guards every read and write of the pairing flags and packet-auth
+// key/nonce below, which the BLE task and loop() share.
 portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
+
+// Issued by a BOOT-confirmed pairing and kept in NVS; until then every
+// navigation write is rejected.
+Preferences authStore;
+uint8_t authKey[AUTH_KEY_BYTES] = {};
+bool authKeyValid = false;
+// New random value on every connection; read by the phone before signing.
+uint8_t sessionNonce[AUTH_NONCE_BYTES] = {};
+// Highest accepted counter "n" this connection. BLE task only: connect and
+// write callbacks run on the same Bluetooth host task.
+uint32_t sessionCounter = 0;
 BleMailbox mailbox;
 MapMotion mapMotion;
 
@@ -294,6 +362,9 @@ void setDisplayPower(DisplayPowerState state);
 void presentDisplay();
 void drawDirection(Direction direction);
 void drawMiniRouteMap(bool showRider = true);
+#if NAV_WAVESHARE_146
+void drawRoundCenteredText(const char* value, uint8_t size, int16_t top);
+#endif
 
 // ======================================================
 // Direction helpers
@@ -356,6 +427,53 @@ void publishBadDirectionError(const char* value) {
   publishError(message);
 }
 
+bool navHmacSha256(const uint8_t* key, size_t keyLength, const uint8_t* a,
+                   size_t aLength, const uint8_t* b, size_t bLength,
+                   uint8_t out[32]) {
+  const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  if (info == nullptr) return false;
+  mbedtls_md_context_t context;
+  mbedtls_md_init(&context);
+  const bool ok = mbedtls_md_setup(&context, info, 1) == 0 &&
+                  mbedtls_md_hmac_starts(&context, key, keyLength) == 0 &&
+                  mbedtls_md_hmac_update(&context, a, aLength) == 0 &&
+                  mbedtls_md_hmac_update(&context, b, bLength) == 0 &&
+                  mbedtls_md_hmac_finish(&context, out) == 0;
+  mbedtls_md_free(&context);
+  return ok;
+}
+
+void loadAuthKey() {
+  uint8_t stored[AUTH_KEY_BYTES];
+  bool ok = authStore.begin("navauth", true);
+  ok = ok && authStore.getBytes("k", stored, sizeof(stored)) == sizeof(stored);
+  authStore.end();
+  portENTER_CRITICAL(&stateMux);
+  if (ok) memcpy(authKey, stored, sizeof(authKey));
+  authKeyValid = ok;
+  portEXIT_CRITICAL(&stateMux);
+  memset(stored, 0, sizeof(stored));
+  Serial.println(ok ? "[AUTH] Pairing key loaded" : "[AUTH] Not paired yet");
+}
+
+// A new BOOT pairing replaces the key, so a previously paired phone stops
+// working: one owner at a time.
+bool issueAuthKey() {
+  uint8_t fresh[AUTH_KEY_BYTES];
+  esp_fill_random(fresh, sizeof(fresh));
+  bool ok = authStore.begin("navauth", false);
+  ok = ok && authStore.putBytes("k", fresh, sizeof(fresh)) == sizeof(fresh);
+  authStore.end();
+  if (ok) {
+    portENTER_CRITICAL(&stateMux);
+    memcpy(authKey, fresh, sizeof(authKey));
+    authKeyValid = true;
+    portEXIT_CRITICAL(&stateMux);
+  }
+  memset(fresh, 0, sizeof(fresh));
+  return ok;
+}
+
 bool isLiveFresh() {
   return lastLivePacketMs > 0 && millis() - lastLivePacketMs <= LIVE_PACKET_TIMEOUT_MS;
 }
@@ -401,6 +519,13 @@ void wakeDisplay() {
 // BLE
 // ======================================================
 
+// The stack keeps the last read response as the attribute value. Wipe it
+// between connections so a later client (e.g. a Read Blob at an offset)
+// cannot see a response that carried the pairing key.
+void clearPairingValue() {
+  if (pairingCharacteristic != nullptr) pairingCharacteristic->setValue("{}");
+}
+
 void startBleAdvertising() {
   if (bleAdvertising == nullptr) return;
   bleAdvertising->start();
@@ -409,7 +534,11 @@ void startBleAdvertising() {
 
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* server) override {
+    uint8_t nonce[AUTH_NONCE_BYTES];
+    esp_fill_random(nonce, sizeof(nonce));
+    sessionCounter = 0;
     portENTER_CRITICAL(&stateMux);
+    memcpy(sessionNonce, nonce, sizeof(sessionNonce));
     pairingActive = false;
     pairingVerified = false;
     mailbox.connected = true;
@@ -418,6 +547,7 @@ class ServerCallbacks : public BLEServerCallbacks {
     mailbox.wake = true;
     portEXIT_CRITICAL(&stateMux);
     displayDirty = true;
+    clearPairingValue();
     Serial.println("[BLE] Central connected");
   }
 
@@ -436,6 +566,7 @@ class ServerCallbacks : public BLEServerCallbacks {
     mailbox.wake = true;
     portEXIT_CRITICAL(&stateMux);
     displayDirty = true;
+    clearPairingValue();
     Serial.println("[BLE] Central disconnected");
 
     // Critical for iPhone reconnects. While connected, an ESP32 peripheral
@@ -458,15 +589,40 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    if (value.length() > 360) {
+    // 360 bytes of JSON plus the counter and the 17-byte signature suffix.
+    if (value.length() > 400) {
       rejectedPacketCount++;
       publishError("packet too large");
       Serial.println("[BLE] Rejected oversized packet");
       return;
     }
 
+    uint8_t key[AUTH_KEY_BYTES];
+    uint8_t nonce[AUTH_NONCE_BYTES];
+    portENTER_CRITICAL(&stateMux);
+    const bool paired = authKeyValid;
+    memcpy(key, authKey, sizeof(key));
+    memcpy(nonce, sessionNonce, sizeof(nonce));
+    portEXIT_CRITICAL(&stateMux);
+    if (!paired) {
+      rejectedPacketCount++;
+      publishError("not paired");
+      return;
+    }
+    // Anyone in range can write to this characteristic; only the phone that
+    // paired with a BOOT press can produce a valid tag for this session.
+    const int jsonLength =
+        verifyPacketTag(key, nonce, value.c_str(), value.length());
+    if (jsonLength < 0) {
+      rejectedPacketCount++;
+      publishError("bad signature");
+      Serial.println("[BLE] Rejected unauthenticated packet");
+      return;
+    }
+
     StaticJsonDocument<768> doc;
-    DeserializationError error = deserializeJson(doc, value);
+    DeserializationError error =
+        deserializeJson(doc, value.c_str(), static_cast<size_t>(jsonLength));
     if (error) {
       rejectedPacketCount++;
       publishError("bad json");
@@ -476,6 +632,14 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
       Serial.println(value);
       return;
     }
+
+    // A signed packet from earlier in this session must not be replayed.
+    if (!doc["n"].is<uint32_t>() || doc["n"].as<uint32_t>() <= sessionCounter) {
+      rejectedPacketCount++;
+      publishError("replayed packet");
+      return;
+    }
+    sessionCounter = doc["n"].as<uint32_t>();
 
     // Phone-local wall time, separate from navigation: never starts guidance
     // or refreshes the live-navigation packet timeout.
@@ -604,12 +768,35 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
 // This is deliberately separate from the navigation write characteristic.
 class PairingCallbacks : public BLECharacteristicCallbacks {
   void onRead(BLECharacteristic* characteristic) override {
+    uint8_t nonce[AUTH_NONCE_BYTES];
+    uint8_t key[AUTH_KEY_BYTES];
     portENTER_CRITICAL(&stateMux);
-    const bool verified = pairingVerified;
+    // pairingVerified is cleared on every connect/disconnect, so the key is
+    // only ever readable on the connection where BOOT was just pressed.
+    const bool verified = pairingVerified && authKeyValid;
+    memcpy(nonce, sessionNonce, sizeof(nonce));
+    memcpy(key, authKey, sizeof(key));
     portEXIT_CRITICAL(&stateMux);
-    char response[80];
-    snprintf(response, sizeof(response), "{\"id\":\"%s\",\"verified\":%s}",
-             deviceIdentity, verified ? "true" : "false");
+
+    char nonceHex[AUTH_NONCE_BYTES * 2 + 1];
+    char keyHex[AUTH_KEY_BYTES * 2 + 1];
+    for (size_t i = 0; i < AUTH_NONCE_BYTES; ++i)
+      snprintf(nonceHex + i * 2, 3, "%02x", nonce[i]);
+    for (size_t i = 0; i < AUTH_KEY_BYTES; ++i)
+      snprintf(keyHex + i * 2, 3, "%02x", key[i]);
+    memset(key, 0, sizeof(key));
+
+    char response[160];
+    if (verified) {
+      snprintf(response, sizeof(response),
+               "{\"id\":\"%s\",\"verified\":true,\"s\":\"%s\",\"k\":\"%s\"}",
+               deviceIdentity, nonceHex, keyHex);
+    } else {
+      snprintf(response, sizeof(response),
+               "{\"id\":\"%s\",\"verified\":false,\"s\":\"%s\"}",
+               deviceIdentity, nonceHex);
+    }
+    memset(keyHex, 0, sizeof(keyHex));
     characteristic->setValue(response);
   }
   void onWrite(BLECharacteristic* characteristic) override {
@@ -644,6 +831,7 @@ void setupBle() {
   BLECharacteristic* pairing = service->createCharacteristic(
       PAIRING_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
   pairing->setCallbacks(new PairingCallbacks());
+  pairingCharacteristic = pairing;
 
   BLECharacteristic* characteristic = service->createCharacteristic(
       CHARACTERISTIC_UUID,
@@ -1073,10 +1261,19 @@ void drawDistance(int distanceMeters, bool blinkState) {
 void drawBottomError() {
   if (lastError[0] == '\0') return;
 
-  display.setTextSize(1);
   display.setTextColor(COLOR_ACCENT);
+#if NAV_WAVESHARE_146
+  // The square canvas corners fall outside the round aperture: (8, 230) was
+  // never visible. Centre the message below the distance, where the circle is
+  // still ~148 px wide, and keep it to the 24 size-1 glyphs that fit there.
+  char visible[25];
+  strlcpy(visible, lastError, sizeof(visible));
+  drawRoundCenteredText(visible, 1, 218);
+#else
+  display.setTextSize(1);
   display.setCursor(8, SCREEN_HEIGHT - 10);
   display.print(lastError);
+#endif
 }
 
 #if NAV_WAVESHARE_146
@@ -1180,8 +1377,23 @@ void drawStandby() {
   drawStandbyClock();
 }
 
-void drawWaitingForNavigation() {
-  drawStandbyClock();
+void drawWaitingForNavigation(bool paired) {
+  if (paired) {
+    drawStandbyClock();
+    return;
+  }
+  // Connected, but this display ignores every navigation write until a phone
+  // pairs with a BOOT press. Do not pretend to be "ready to go".
+#if NAV_WAVESHARE_146
+  drawRoundCenteredStatus("NOT PAIRED", 2, "PAIR IN THE APP", 1);
+#else
+  display.setTextSize(2);
+  display.setCursor(60, 40);
+  display.print("NOT PAIRED");
+  display.setTextSize(1);
+  display.setCursor(75, 80);
+  display.print("PAIR IN THE APP");
+#endif
 }
 
 void renderDisplay(bool blinkState) {
@@ -1193,6 +1405,7 @@ void renderDisplay(bool blinkState) {
 
   portENTER_CRITICAL(&stateMux);
   const bool showPairing = pairingActive;
+  const bool paired = authKeyValid;
   portEXIT_CRITICAL(&stateMux);
   if (showPairing) {
 #if NAV_WAVESHARE_146
@@ -1220,7 +1433,7 @@ void renderDisplay(bool blinkState) {
   }
 
   if (isWaitingForNavigation()) {
-    drawWaitingForNavigation();
+    drawWaitingForNavigation(paired);
     presentDisplay();
     return;
   }
@@ -1461,6 +1674,7 @@ void setup() {
     nav.distanceMeters = demoRoute[0].distanceMeters;
   }
 
+  loadAuthKey();
   setupBle();
   Serial.println("[BOOT] Ready");
 }
@@ -1470,6 +1684,7 @@ void updatePairing() {
   bool confirmed = false;
   // The BLE task can re-arm pairing at any moment; keep this check atomic.
   portENTER_CRITICAL(&stateMux);
+  const uint32_t connection = mailbox.disconnects;
   if (pairingActive && millis() - pairingStartedMs >= 60000) {
     pairingActive = false;
     changed = true;
@@ -1481,7 +1696,6 @@ void updatePairing() {
     } else if (pairingButtonReleased) {
       if (bootLowSinceMs == 0) bootLowSinceMs = millis();
       if (millis() - bootLowSinceMs >= 80) {
-        pairingVerified = true;
         pairingActive = false;
         pairingButtonReleased = false;
         changed = confirmed = true;
@@ -1490,7 +1704,23 @@ void updatePairing() {
   }
   portEXIT_CRITICAL(&stateMux);
   if (changed) displayDirty = true;
-  if (confirmed) Serial.println("[BLE] Pairing confirmed with BOOT");
+  if (!confirmed) return;
+
+  // NVS write happens outside the critical section. Publish "verified" (which
+  // makes the key readable) only if the phone that started pairing is still
+  // the one connected: a drop and a new connection meanwhile must not see it.
+  if (!issueAuthKey()) {
+    setLastError("pairing key save failed");
+    Serial.println("[AUTH] Could not store pairing key");
+    return;
+  }
+  bool sameConnection;
+  portENTER_CRITICAL(&stateMux);
+  sameConnection = mailbox.disconnects == connection && mailbox.connected;
+  if (sameConnection) pairingVerified = true;
+  portEXIT_CRITICAL(&stateMux);
+  Serial.println(sameConnection ? "[BLE] Pairing confirmed with BOOT"
+                                : "[BLE] Pairing phone left before confirmation");
 }
 
 // Applies everything the BLE task published since the previous iteration.

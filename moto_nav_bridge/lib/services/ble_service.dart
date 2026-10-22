@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/ble_constants.dart';
 import '../models/nav_state.dart';
 import 'navigation_ports.dart';
+import 'packet_signer.dart';
 import 'send_throttle.dart';
 import 'display_binding.dart';
 
@@ -34,6 +35,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       // valid connection during app launch/resume.
       if (s != BluetoothAdapterState.on && s != BluetoothAdapterState.unknown) {
         _characteristic = null;
+        _signer = null;
         _throttle.reset();
         if (_state == BleConnectionState.scanning ||
             _state == BleConnectionState.connecting ||
@@ -72,6 +74,11 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   bool _disposed = false;
   String? _boundRemote;
   String? _boundIdentity;
+  Uint8List? _boundKey;
+  // Signs this connection's writes; replaced on every connection because the
+  // display issues a fresh session nonce each time.
+  PacketSigner? _signer;
+  bool _legacyBindingDropped = false;
   Future<BluetoothDevice?> Function(List<ScanResult>)? _chooseDevice;
   static const _bindingKey = 'nav_display_binding_v1';
   int _session = 0;
@@ -91,22 +98,34 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     }
     _boundRemote = null;
     _boundIdentity = null;
+    _boundKey = null;
     _lastSent = null;
     _pendingState = null;
     _setState(BleConnectionState.idle);
   }
 
   Future<void> _loadBinding() async {
-    final raw = (await SharedPreferences.getInstance()).getString(_bindingKey);
-    if (raw == null) {
+    final store = await SharedPreferences.getInstance();
+    final raw = store.getString(_bindingKey);
+    final data = raw == null ? null : jsonDecode(raw) as Map<String, dynamic>;
+    if (data != null && !data.containsKey('key')) {
+      // Saved before the display signed packets: it holds no key, so the
+      // display would ignore every write. Pair again with a BOOT press.
+      if (!await store.remove(_bindingKey)) {
+        throw StateError('Could not remove saved binding');
+      }
+      _legacyBindingDropped = true;
+    }
+    if (data == null || !data.containsKey('key')) {
       _boundRemote = null;
       _boundIdentity = null;
+      _boundKey = null;
       return;
     }
-    final binding =
-        DisplayBinding.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    final binding = DisplayBinding.fromJson(data);
     _boundRemote = binding.remote;
     _boundIdentity = binding.identity;
+    _boundKey = binding.key;
   }
 
   void _setState(BleConnectionState s, {String? error}) {
@@ -253,9 +272,11 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
 
     if (found == null) {
       _setState(BleConnectionState.idle,
-          error: _boundRemote == null
-              ? 'No display selected. Tap to scan again.'
-              : 'Bound display is offline. Other displays will not be connected.');
+          error: _legacyBindingDropped
+              ? 'Display security was updated. Connect and press BOOT to pair again.'
+              : _boundRemote == null
+                  ? 'No display selected. Tap to scan again.'
+                  : 'Bound display is offline. Other displays will not be connected.');
       return;
     }
 
@@ -317,6 +338,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
             : 'BLE disconnected (${reason.code}: ${reason.description})';
         if (kDebugMode) debugPrint('[BLE] $detail');
         _characteristic = null;
+        _signer = null;
         _throttle.reset();
         _setState(BleConnectionState.disconnected, error: detail);
         _scheduleReconnect();
@@ -342,15 +364,24 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       );
       Future<Map<String, dynamic>> status() async =>
           jsonDecode(utf8.decode(await pairing.read())) as Map<String, dynamic>;
-      final identity = (await status())['id'] as String;
+      final first = await status();
+      final identity = first['id'] as String;
+      // New every connection; without it this is pre-signing firmware.
+      final nonce =
+          PacketSigner.parseHex(first['s'], PacketSigner.nonceBytes);
+      if (nonce == null) {
+        throw Exception('Update display firmware before binding');
+      }
       if (session != _session || !_maintainConnection || _disposed) {
         return false;
       }
+      Uint8List? key;
       if (_boundRemote != null) {
-        if (!DisplayBinding(_boundRemote!, _boundIdentity!)
+        if (!DisplayBinding(_boundRemote!, _boundIdentity!, _boundKey!)
             .matches(device.remoteId.str, identity)) {
           throw Exception('Display identity mismatch');
         }
+        key = _boundKey;
       } else {
         await pairing.write(utf8.encode('{"pair":"start"}'));
         _setState(BleConnectionState.awaitingBoot);
@@ -365,28 +396,34 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
             throw Exception('Display identity changed during pairing');
           }
           if (result['verified'] == true) {
+            // Issued only on the connection where BOOT was just pressed.
+            key = PacketSigner.parseHex(result['k'], PacketSigner.keyBytes);
+            if (key == null) throw Exception('Display issued no pairing key');
             confirmed = true;
             break;
           }
         }
         if (!confirmed) throw Exception('BOOT confirmation timed out');
-        final saved = await (await SharedPreferences.getInstance()).setString(
-            _bindingKey,
-            jsonEncode({'remote': device.remoteId.str, 'identity': identity}));
+        final binding = DisplayBinding(device.remoteId.str, identity, key!);
+        final saved = await (await SharedPreferences.getInstance())
+            .setString(_bindingKey, jsonEncode(binding.toJson()));
         if (!saved) throw Exception('Could not save display binding');
-        _boundRemote = device.remoteId.str;
-        _boundIdentity = identity;
+        _boundRemote = binding.remote;
+        _boundIdentity = binding.identity;
+        _boundKey = binding.key;
+        _legacyBindingDropped = false;
       }
       if (!_maintainConnection || _disposed || !device.isConnected) {
         throw Exception('Connection cancelled');
       }
+      _signer = PacketSigner(key: key!, sessionNonce: nonce);
       // Sync before publishing connected, so navigation writes cannot overlap.
       // A clock packet is independent of the navigation state and throttle.
       final now = DateTime.now();
       final localSeconds =
           now.millisecondsSinceEpoch ~/ 1000 + now.timeZoneOffset.inSeconds;
       await _characteristic!.write(
-        utf8.encode(jsonEncode({'clock': localSeconds})),
+        utf8.encode(_signer!.sign(jsonEncode({'clock': localSeconds}))),
         withoutResponse: BleConstants.writeWithoutResponse,
       );
       _reconnectAttempt = 0;
@@ -455,6 +492,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     }
     _device = null;
     _characteristic = null;
+    _signer = null;
     _throttle.reset();
   }
 
@@ -496,8 +534,14 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       _pendingStateAt = null;
       final now = DateTime.now();
       if (!_throttle.shouldSend(state, now)) continue;
+      final signer = _signer;
+      if (signer == null) {
+        _pendingState ??= state;
+        _pendingStateAt ??= now;
+        return false;
+      }
 
-      final wire = state.toWire();
+      final wire = signer.sign(state.toWire());
       if (kDebugMode) {
         debugPrint(
           '[BLE_NAV] ${utf8.encode(wire).length} bytes, '

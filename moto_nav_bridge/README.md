@@ -30,12 +30,15 @@ over BLE.
 
 ## Device contract (from the firmware)
 
-- Device name: `ESP32_NAV`
+- Device name: `NAV-<12 hex chip identity>` (legacy boards: `ESP32_NAV`)
 - Service UUID: `12345678-1234-1234-1234-123456789abc`
 - Characteristic UUID: `abcd1234-5678-1234-5678-abcdef123456` (WRITE, with response)
-- Payload: `{"dir":"<DIR>","dist":<int>}` — kept small (firmware buffer is 200 bytes)
-- No notify/read channel → no application-level ACK. First write flips the
-  firmware into LIVE mode.
+- Payload: signed JSON, `{"dir":"<DIR>","dist":<int>,...,"n":<counter>}|<16 hex>`,
+  built by [lib/services/packet_signer.dart](lib/services/packet_signer.dart).
+  The key comes from the BOOT-confirmed pairing and is stored in the display
+  binding; the session nonce is read from the pairing characteristic on every
+  connection. See `firmware/README.md` for the full contract.
+- No notify channel → no application-level ACK.
 
 These live in [lib/config/ble_constants.dart](lib/config/ble_constants.dart).
 
