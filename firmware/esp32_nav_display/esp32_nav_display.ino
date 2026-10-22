@@ -290,7 +290,66 @@ inline int verifyPacketTag(const uint8_t key[AUTH_KEY_BYTES],
   for (size_t i = 0; i < AUTH_TAG_BYTES; ++i) difference |= mac[i] ^ tag[i];
   return difference == 0 ? static_cast<int>(jsonLength) : -1;
 }
+
+// Key rotation that a dropped link cannot break. A BOOT pairing issues a new
+// key, but the phone may disconnect before it stores it. So the last proven
+// key stays valid until the new key is used on a later, non-pairing
+// connection, which proves the phone kept it. Pure state: the sketch persists
+// it to NVS and guards it with stateMux.
+enum class AuthKeyMatch : uint8_t { None, Current, Previous };
+
+struct KeyRing {
+  uint8_t current[AUTH_KEY_BYTES] = {};
+  uint8_t previous[AUTH_KEY_BYTES] = {};
+  bool hasCurrent = false;
+  bool currentProven = false;
+  bool hasPrevious = false;
+
+  void rotate(const uint8_t fresh[AUTH_KEY_BYTES]) {
+    // Keep the newest key a phone is known to hold. An unproven current key
+    // only replaces `previous` when there is nothing better to keep.
+    if (hasCurrent && (currentProven || !hasPrevious)) {
+      memcpy(previous, current, AUTH_KEY_BYTES);
+      hasPrevious = true;
+    }
+    memcpy(current, fresh, AUTH_KEY_BYTES);
+    hasCurrent = true;
+    currentProven = false;
+  }
+
+  AuthKeyMatch match(const uint8_t nonce[AUTH_NONCE_BYTES], const char* packet,
+                     size_t length, int* jsonLength) const {
+    if (hasCurrent) {
+      *jsonLength = verifyPacketTag(current, nonce, packet, length);
+      if (*jsonLength >= 0) return AuthKeyMatch::Current;
+    }
+    if (hasPrevious) {
+      *jsonLength = verifyPacketTag(previous, nonce, packet, length);
+      if (*jsonLength >= 0) return AuthKeyMatch::Previous;
+    }
+    *jsonLength = -1;
+    return AuthKeyMatch::None;
+  }
+
+  // Record an accepted write. Returns true when the ring changed and must be
+  // persisted: the current key was used outside the connection that issued
+  // it, so the previous key can be retired.
+  bool noteUsed(AuthKeyMatch which, bool pairingConnection) {
+    if (which != AuthKeyMatch::Current || pairingConnection || currentProven) {
+      return false;
+    }
+    currentProven = true;
+    if (hasPrevious) {
+      memset(previous, 0, AUTH_KEY_BYTES);
+      hasPrevious = false;
+    }
+    return true;
+  }
+};
 // END PACKET AUTH
+
+// Explicit: the generated prototype would precede the KeyRing declaration.
+bool persistKeyRing(const KeyRing& ring);
 
 constexpr uint8_t MAP_VALUE_COUNT =
     MAX_ROUTE_PREVIEW_POINTS * 2 + MAX_SIDE_ROAD_SEGMENTS * 4;
@@ -311,16 +370,20 @@ struct BleMailbox {
   bool errorReady = false;
   char error[48] = "";
   bool wake = false;
+  // keyRing changed in the BLE task; loop() writes it to NVS.
+  bool persistKeys = false;
 };
 // Also guards every read and write of the pairing flags and packet-auth
 // key/nonce below, which the BLE task and loop() share.
 portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
 
-// Issued by a BOOT-confirmed pairing and kept in NVS; until then every
-// navigation write is rejected.
+// Issued by BOOT-confirmed pairings and kept in NVS; until the first one every
+// navigation write is rejected. Persisted only from loop().
 Preferences authStore;
-uint8_t authKey[AUTH_KEY_BYTES] = {};
-bool authKeyValid = false;
+KeyRing keyRing;
+// True on the connection where BOOT issued the current key: its own use there
+// does not prove the phone stored it.
+bool pairingConnection = false;
 // New random value on every connection; read by the phone before signing.
 uint8_t sessionNonce[AUTH_NONCE_BYTES] = {};
 // Highest accepted counter "n" this connection. BLE task only: connect and
@@ -443,35 +506,60 @@ bool navHmacSha256(const uint8_t* key, size_t keyLength, const uint8_t* a,
   return ok;
 }
 
+// NVS layout (namespace "navauth"): "k" current key, "kp" whether the current
+// key is proven, "p" the previous key while the current one is unproven.
 void loadAuthKey() {
-  uint8_t stored[AUTH_KEY_BYTES];
-  bool ok = authStore.begin("navauth", true);
-  ok = ok && authStore.getBytes("k", stored, sizeof(stored)) == sizeof(stored);
+  KeyRing loaded;
+  if (authStore.begin("navauth", true)) {
+    loaded.hasCurrent = authStore.getBytes("k", loaded.current,
+                                           AUTH_KEY_BYTES) == AUTH_KEY_BYTES;
+    // Keys stored before rotation existed are proven: their phone has them.
+    loaded.currentProven = authStore.getBool("kp", true);
+    loaded.hasPrevious = authStore.getBytes("p", loaded.previous,
+                                            AUTH_KEY_BYTES) == AUTH_KEY_BYTES;
+  }
   authStore.end();
   portENTER_CRITICAL(&stateMux);
-  if (ok) memcpy(authKey, stored, sizeof(authKey));
-  authKeyValid = ok;
+  keyRing = loaded;
   portEXIT_CRITICAL(&stateMux);
-  memset(stored, 0, sizeof(stored));
-  Serial.println(ok ? "[AUTH] Pairing key loaded" : "[AUTH] Not paired yet");
+  Serial.println(loaded.hasCurrent ? "[AUTH] Pairing key loaded"
+                                   : "[AUTH] Not paired yet");
 }
 
-// A new BOOT pairing replaces the key, so a previously paired phone stops
-// working: one owner at a time.
+// loop() only. Writes every field so a partial earlier write cannot linger.
+bool persistKeyRing(const KeyRing& ring) {
+  if (!authStore.begin("navauth", false)) return false;
+  bool ok = !ring.hasCurrent ||
+            authStore.putBytes("k", ring.current, AUTH_KEY_BYTES) == AUTH_KEY_BYTES;
+  ok = ok && authStore.putBool("kp", ring.currentProven) > 0;
+  if (ring.hasPrevious) {
+    ok = ok && authStore.putBytes("p", ring.previous, AUTH_KEY_BYTES) ==
+                   AUTH_KEY_BYTES;
+  } else if (authStore.isKey("p")) {
+    ok = ok && authStore.remove("p");
+  }
+  authStore.end();
+  return ok;
+}
+
+// Rotate to a fresh key on a BOOT pairing. Persisted before it is exposed: a
+// power cut right after the phone saves it must not lose it. The previously
+// proven key keeps working until the new one is proven (see KeyRing).
 bool issueAuthKey() {
   uint8_t fresh[AUTH_KEY_BYTES];
   esp_fill_random(fresh, sizeof(fresh));
-  bool ok = authStore.begin("navauth", false);
-  ok = ok && authStore.putBytes("k", fresh, sizeof(fresh)) == sizeof(fresh);
-  authStore.end();
-  if (ok) {
-    portENTER_CRITICAL(&stateMux);
-    memcpy(authKey, fresh, sizeof(authKey));
-    authKeyValid = true;
-    portEXIT_CRITICAL(&stateMux);
-  }
+  KeyRing next;
+  portENTER_CRITICAL(&stateMux);
+  next = keyRing;
+  portEXIT_CRITICAL(&stateMux);
+  next.rotate(fresh);
   memset(fresh, 0, sizeof(fresh));
-  return ok;
+  if (!persistKeyRing(next)) return false;
+  portENTER_CRITICAL(&stateMux);
+  keyRing = next;
+  portEXIT_CRITICAL(&stateMux);
+  memset(&next, 0, sizeof(next));
+  return true;
 }
 
 bool isLiveFresh() {
@@ -541,6 +629,7 @@ class ServerCallbacks : public BLEServerCallbacks {
     memcpy(sessionNonce, nonce, sizeof(sessionNonce));
     pairingActive = false;
     pairingVerified = false;
+    pairingConnection = false;
     mailbox.connected = true;
     mailbox.error[0] = '\0';
     mailbox.errorReady = true;
@@ -597,23 +686,26 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    uint8_t key[AUTH_KEY_BYTES];
+    KeyRing ring;
     uint8_t nonce[AUTH_NONCE_BYTES];
     portENTER_CRITICAL(&stateMux);
-    const bool paired = authKeyValid;
-    memcpy(key, authKey, sizeof(key));
+    ring = keyRing;
     memcpy(nonce, sessionNonce, sizeof(nonce));
     portEXIT_CRITICAL(&stateMux);
-    if (!paired) {
+    if (!ring.hasCurrent) {
       rejectedPacketCount++;
       publishError("not paired");
       return;
     }
-    // Anyone in range can write to this characteristic; only the phone that
+    // Anyone in range can write to this characteristic; only a phone that
     // paired with a BOOT press can produce a valid tag for this session.
-    const int jsonLength =
-        verifyPacketTag(key, nonce, value.c_str(), value.length());
-    if (jsonLength < 0) {
+    int jsonLength = -1;
+    const AuthKeyMatch keyUsed =
+        ring.match(nonce, value.c_str(), value.length(), &jsonLength);
+    uint8_t matchedCurrent[AUTH_KEY_BYTES];
+    memcpy(matchedCurrent, ring.current, sizeof(matchedCurrent));
+    memset(&ring, 0, sizeof(ring));
+    if (keyUsed == AuthKeyMatch::None) {
       rejectedPacketCount++;
       publishError("bad signature");
       Serial.println("[BLE] Rejected unauthenticated packet");
@@ -637,9 +729,21 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     if (!doc["n"].is<uint32_t>() || doc["n"].as<uint32_t>() <= sessionCounter) {
       rejectedPacketCount++;
       publishError("replayed packet");
+      memset(matchedCurrent, 0, sizeof(matchedCurrent));
       return;
     }
     sessionCounter = doc["n"].as<uint32_t>();
+
+    // A fully accepted write with the current key on an ordinary connection
+    // proves the phone stored it, retiring the previous key. Skip it if a
+    // BOOT rotation replaced the current key since it was matched.
+    portENTER_CRITICAL(&stateMux);
+    if (memcmp(keyRing.current, matchedCurrent, AUTH_KEY_BYTES) == 0 &&
+        keyRing.noteUsed(keyUsed, pairingConnection)) {
+      mailbox.persistKeys = true;
+    }
+    portEXIT_CRITICAL(&stateMux);
+    memset(matchedCurrent, 0, sizeof(matchedCurrent));
 
     // Phone-local wall time, separate from navigation: never starts guidance
     // or refreshes the live-navigation packet timeout.
@@ -775,9 +879,9 @@ class PairingCallbacks : public BLECharacteristicCallbacks {
     portENTER_CRITICAL(&stateMux);
     // pairingVerified is cleared on every connect/disconnect, so the key is
     // only ever readable on the connection where BOOT was just pressed.
-    const bool verified = pairingVerified && authKeyValid;
+    const bool verified = pairingVerified && keyRing.hasCurrent;
     memcpy(nonce, sessionNonce, sizeof(nonce));
-    memcpy(key, authKey, sizeof(key));
+    memcpy(key, keyRing.current, sizeof(key));
     portEXIT_CRITICAL(&stateMux);
 
     char nonceHex[AUTH_NONCE_BYTES * 2 + 1];
@@ -1407,7 +1511,7 @@ void renderDisplay(bool blinkState) {
 
   portENTER_CRITICAL(&stateMux);
   const bool showPairing = pairingActive;
-  const bool paired = authKeyValid;
+  const bool paired = keyRing.hasCurrent;
   portEXIT_CRITICAL(&stateMux);
   if (showPairing) {
 #if NAV_WAVESHARE_146
@@ -1708,9 +1812,18 @@ void updatePairing() {
   if (changed) displayDirty = true;
   if (!confirmed) return;
 
-  // NVS write happens outside the critical section. Publish "verified" (which
-  // makes the key readable) only if the phone that started pairing is still
-  // the one connected: a drop and a new connection meanwhile must not see it.
+  // The NVS write happens outside the critical section. Publish "verified"
+  // (which makes the new key readable) only if the phone that started pairing
+  // is still connected. If it left, the rotation is harmless: the previously
+  // proven key keeps working until the new one is proven (see KeyRing).
+  bool stillConnected;
+  portENTER_CRITICAL(&stateMux);
+  stillConnected = mailbox.disconnects == connection && mailbox.connected;
+  portEXIT_CRITICAL(&stateMux);
+  if (!stillConnected) {
+    Serial.println("[BLE] Pairing phone left before confirmation");
+    return;
+  }
   if (!issueAuthKey()) {
     setLastError("pairing key save failed");
     Serial.println("[AUTH] Could not store pairing key");
@@ -1719,7 +1832,10 @@ void updatePairing() {
   bool sameConnection;
   portENTER_CRITICAL(&stateMux);
   sameConnection = mailbox.disconnects == connection && mailbox.connected;
-  if (sameConnection) pairingVerified = true;
+  if (sameConnection) {
+    pairingVerified = true;
+    pairingConnection = true;
+  }
   portEXIT_CRITICAL(&stateMux);
   Serial.println(sameConnection ? "[BLE] Pairing confirmed with BOOT"
                                 : "[BLE] Pairing phone left before confirmation");
@@ -1734,7 +1850,24 @@ void applyBleMailbox() {
   mailbox.navReady = false;
   mailbox.errorReady = false;
   mailbox.wake = false;
+  mailbox.persistKeys = false;
+  KeyRing ringToPersist;
+  if (snapshot.persistKeys) ringToPersist = keyRing;
   portEXIT_CRITICAL(&stateMux);
+
+  if (snapshot.persistKeys) {
+    // A failed write only delays retiring the previous key: the RAM ring is
+    // already correct and both keys stay accepted after a reboot.
+    if (persistKeyRing(ringToPersist)) {
+      Serial.println("[AUTH] New pairing key proven; previous key retired");
+    } else {
+      Serial.println("[AUTH] Could not persist proven key; will retry");
+      portENTER_CRITICAL(&stateMux);
+      mailbox.persistKeys = true;
+      portEXIT_CRITICAL(&stateMux);
+    }
+    memset(&ringToPersist, 0, sizeof(ringToPersist));
+  }
 
   if (snapshot.disconnects != seenDisconnects) {
     // Counted, so a drop and reconnect between two iterations still clears
