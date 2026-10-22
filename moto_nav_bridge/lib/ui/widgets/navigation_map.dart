@@ -113,15 +113,22 @@ class _NavigationMapState extends State<NavigationMap> {
       child: SizedBox(
         height: widget.height,
         child: switch (defaultTargetPlatform) {
-          TargetPlatform.iOS => UiKitView(
-              key: ValueKey(_viewKey),
-              viewType: NavigationMap._viewType,
-              creationParams: _creationParams,
-              creationParamsCodec: const StandardMessageCodec(),
-              // Let MapKit's pan, pinch and rotation recognizers own gestures
-              // that begin on the map. An eager Flutter recognizer can keep
-              // winning subsequent touch sequences in a platform view.
-              gestureRecognizers: const {},
+          // The Listener only observes; it never joins the gesture arena.
+          // With the native `native_touch_began` marker it shows where a
+          // frozen pan stops: in Flutter or inside MapKit.
+          TargetPlatform.iOS => Listener(
+              onPointerDown: (_) =>
+                  widget.onDiagnostic?.call('flutter_pointer_down'),
+              child: UiKitView(
+                key: ValueKey(_viewKey),
+                viewType: NavigationMap._viewType,
+                creationParams: _creationParams,
+                creationParamsCodec: const StandardMessageCodec(),
+                // Let MapKit's pan, pinch and rotation recognizers own gestures
+                // that begin on the map. An eager Flutter recognizer can keep
+                // winning subsequent touch sequences in a platform view.
+                gestureRecognizers: const {},
+              ),
             ),
           _ => Container(
               color: colorScheme.surfaceContainer,

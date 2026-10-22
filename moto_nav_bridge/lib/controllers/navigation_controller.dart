@@ -382,6 +382,16 @@ class NavigationController extends ChangeNotifier {
           'route_preview_stopped',
           'fit_skipped_active_gesture',
           'fit_requested',
+          // Touch path for a frozen pan: Flutter saw the touch; on its first
+          // move Flutter's gate had released, blocked or not yet decided it
+          // (or could not be found); MapKit's own pan actually began.
+          'flutter_pointer_down',
+          'native_touch_began',
+          'flutter_gate_released',
+          'flutter_gate_blocked',
+          'flutter_gate_pending',
+          'flutter_gate_missing',
+          'native_pan_began',
         }.contains(event) ||
         RegExp(r'^update_ms=\d{1,9}$').hasMatch(event)) {
       _log('map $event');
