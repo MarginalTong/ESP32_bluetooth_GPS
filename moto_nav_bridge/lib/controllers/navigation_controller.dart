@@ -393,7 +393,10 @@ class NavigationController extends ChangeNotifier {
           'flutter_gate_missing',
           'native_pan_began',
         }.contains(event) ||
-        RegExp(r'^update_ms=\d{1,9}$').hasMatch(event)) {
+        RegExp(r'^update_ms=\d{1,9}$').hasMatch(event) ||
+        // Native hit test for a touch Flutter saw: view class names and
+        // frames only, built by the app's own map view.
+        RegExp(r'^hit_test [A-Za-z0-9_ .,:;()=<>/-]{1,400}$').hasMatch(event)) {
       _log('map $event');
     }
   }

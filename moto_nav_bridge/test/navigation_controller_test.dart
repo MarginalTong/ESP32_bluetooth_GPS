@@ -58,6 +58,16 @@ void main() {
 
   const newDestination = LatLng(.003, 0);
 
+  test('map hit-test diagnostics keep view names and frames only', () {
+    const probe = 'hit_test at=(120,300) view=UIVisualEffectView inMap=false '
+        'above=FlutterTouchInterceptingView(0,0,390,844);'
+        'UIVisualEffectView(16,570,358,200)';
+    controller.recordMapDiagnostic(probe);
+    controller.recordMapDiagnostic('hit_test {"lat": -33.86, "token": "x"}');
+    expect(controller.diagnostics, contains('map $probe'));
+    expect(controller.diagnostics, isNot(contains('token')));
+  });
+
   test('map diagnostics retain camera and preview events, not arbitrary data',
       () {
     controller.recordMapDiagnostic('fit_requested');

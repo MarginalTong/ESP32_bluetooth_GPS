@@ -964,6 +964,12 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       attributionButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 36),
     ])
     controlChannel.setMethodCallHandler { [weak self] call, result in
+      if call.method == "probeHit", let args = call.arguments as? [String: Any],
+         let x = args["x"] as? Double, let y = args["y"] as? Double {
+        self?.reportHitTest(at: CGPoint(x: x, y: y))
+        result(nil)
+        return
+      }
       guard call.method == "updateMap",
             let args = call.arguments as? [String: Any] else {
         result(FlutterMethodNotImplemented)
@@ -1352,6 +1358,27 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       animated: false
     )
     hasCenteredOnUser = true
+  }
+
+  /// Diagnostics: which native view UIKit delivers a touch at `point` (in map
+  /// coordinates) to. If it is not inside the map, the map cannot pan. Also
+  /// lists the views the engine stacks above the map's touch-intercepting
+  /// view (e.g. UIVisualEffectViews it adds for Flutter BackdropFilters).
+  private func reportHitTest(at point: CGPoint) {
+    guard let window = mapView.window else { return }
+    let hit = window.hitTest(mapView.convert(point, to: nil), with: nil)
+    let inMap = hit.map { $0.isDescendant(of: mapView) } ?? false
+    func frame(_ view: UIView) -> String {
+      let f = view.frame
+      return "(\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height)))"
+    }
+    // mapView -> touch-intercepting view -> clipping view (holds overlays).
+    let stack = mapView.superview?.superview?.subviews.map { view in
+      "\(type(of: view))\(frame(view))\(view.isUserInteractionEnabled ? "" : "/off")"
+    }.joined(separator: ";") ?? "none"
+    let name = hit.map { String(describing: type(of: $0)) } ?? "nil"
+    let message = "hit_test at=(\(Int(point.x)),\(Int(point.y))) view=\(name) inMap=\(inMap) above=\(stack)"
+    eventChannel.invokeMethod("mapDiagnostic", arguments: ["event": String(message.prefix(400))])
   }
 
   // Log when MapKit's own pan really begins. MapKit owns these recognizers;

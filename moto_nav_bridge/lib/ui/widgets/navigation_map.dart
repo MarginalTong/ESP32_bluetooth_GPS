@@ -117,8 +117,15 @@ class _NavigationMapState extends State<NavigationMap> {
           // With the native `native_touch_began` marker it shows where a
           // frozen pan stops: in Flutter or inside MapKit.
           TargetPlatform.iOS => Listener(
-              onPointerDown: (_) =>
-                  widget.onDiagnostic?.call('flutter_pointer_down'),
+              onPointerDown: (event) {
+                widget.onDiagnostic?.call('flutter_pointer_down');
+                // Ask UIKit which native view is on top at this point. If
+                // it is not part of the map, the map cannot get the touch.
+                NavigationMap._control.invokeMethod<void>('probeHit', {
+                  'x': event.localPosition.dx,
+                  'y': event.localPosition.dy,
+                }).catchError((Object _) {});
+              },
               child: UiKitView(
                 key: ValueKey(_viewKey),
                 viewType: NavigationMap._viewType,
