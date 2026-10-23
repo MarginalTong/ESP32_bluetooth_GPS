@@ -383,7 +383,11 @@ class NavigationController extends ChangeNotifier {
           'fit_skipped_active_gesture',
           'fit_requested',
         }.contains(event) ||
-        RegExp(r'^update_ms=\d{1,9}$').hasMatch(event)) {
+        RegExp(r'^update_ms=\d{1,9}$').hasMatch(event) ||
+        // The map reset gesture recognizers UIKit left stuck.
+        RegExp(r'^recognizers_reset reason=(sequence_end|missed_touch) '
+                r'count=\d{1,3} states=[0-9/,]{1,300}$')
+            .hasMatch(event)) {
       _log('map $event');
     }
   }

@@ -4,6 +4,7 @@ import UIKit
 import AVFoundation
 import Security
 import Speech
+import UIKit.UIGestureRecognizerSubclass
 
 // Foreground-only, on-device wake listening. Never falls back to the cloud.
 private final class NavigationWakeListener {
@@ -775,6 +776,42 @@ private final class MovementLocationView: MKAnnotationView {
   }
 }
 
+/// Watches touch sequences on the map without taking part in them: it never
+/// recognizes and never delays or cancels touches. It reports when every
+/// finger of a sequence has lifted, so stuck recognizers can be reset, and
+/// when the map last saw a sequence begin.
+private final class MapTouchSequenceObserver: UIGestureRecognizer {
+  /// Called once every finger of a touch sequence has lifted or cancelled.
+  var onSequenceEnded: (() -> Void)?
+  /// When the native map last saw a touch sequence begin.
+  private(set) var lastSequenceBegan: CFTimeInterval = 0
+
+  override init(target: Any?, action: Selector?) {
+    super.init(target: target, action: action)
+    cancelsTouchesInView = false
+    delaysTouchesBegan = false
+    delaysTouchesEnded = false
+  }
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    if numberOfTouches == touches.count {
+      lastSequenceBegan = CACurrentMediaTime()
+    }
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    if numberOfTouches == touches.count {
+      state = .failed
+      onSequenceEnded?()
+    }
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+    state = .failed
+    onSequenceEnded?()
+  }
+}
+
 private final class RoutePreviewAnnotation: MKPointAnnotation {}
 
 private final class RoutePreviewTriangleView: MKAnnotationView {
@@ -835,6 +872,7 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
   private var hasCenteredOnUser = false
   private var hasFittedCurrentRoute = false
   private weak var selectionLongPress: UILongPressGestureRecognizer?
+  private weak var touchObserver: MapTouchSequenceObserver?
   private var destinationCoordinate: CLLocationCoordinate2D?
   private var selectedPointAnnotation: MKPointAnnotation?
   private var mapPointSelectionEnabled = false
@@ -884,6 +922,14 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     longPress.cancelsTouchesInView = false
     selectionLongPress = longPress
     mapView.addGestureRecognizer(longPress)
+    let observer = MapTouchSequenceObserver(target: nil, action: nil)
+    // Same timing as the engine's own fix for its forwarding recognizer:
+    // check on the next main-queue turn, after UIKit's normal reset.
+    observer.onSequenceEnded = { [weak self] in
+      DispatchQueue.main.async { self?.resetStuckRecognizers(reason: "sequence_end") }
+    }
+    touchObserver = observer
+    mapView.addGestureRecognizer(observer)
     // This credits third-party route geometry, not the Apple basemap. Keep it
     // away from MapKit's own attribution and open its licence only on a tap.
     attributionButton.translatesAutoresizingMaskIntoConstraints = false
@@ -905,6 +951,11 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       attributionButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 36),
     ])
     controlChannel.setMethodCallHandler { [weak self] call, result in
+      if call.method == "pointerDown" {
+        self?.recoverIfTouchMissed()
+        result(nil)
+        return
+      }
       guard call.method == "updateMap",
             let args = call.arguments as? [String: Any] else {
         result(FlutterMethodNotImplemented)
@@ -1293,6 +1344,47 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       animated: false
     )
     hasCenteredOnUser = true
+  }
+
+  /// UIKit can leave a gesture recognizer stuck in a final state after a touch
+  /// sequence, notably a two-finger one; a stuck recognizer then ignores every
+  /// later touch. The engine resets its own forwarding recognizer for this
+  /// before iOS 26 (flutter/flutter#179907) but not MapKit's, so the map pans
+  /// once and freezes. Reset any enabled recognizer in the map that has not
+  /// returned to .possible. Disabling then re-enabling is the public way to
+  /// reset one; recognizers that are deliberately disabled stay disabled.
+  private func resetStuckRecognizers(reason: String) {
+    var stuck: [UIGestureRecognizer] = []
+    func collect(_ view: UIView) {
+      stuck += (view.gestureRecognizers ?? []).filter {
+        $0.isEnabled && $0.state != .possible
+      }
+      view.subviews.forEach(collect)
+    }
+    collect(mapView)
+    guard !stuck.isEmpty else { return }
+    let states = stuck.map { "\($0.state.rawValue)/\($0.numberOfTouches)" }
+      .joined(separator: ",")
+    for recognizer in stuck {
+      recognizer.isEnabled = false
+      recognizer.isEnabled = true
+    }
+    eventChannel.invokeMethod("mapDiagnostic", arguments: [
+      "event": "recognizers_reset reason=\(reason) count=\(stuck.count) states=\(states)",
+    ])
+  }
+
+  /// Fallback when the sequence-end check was missed: Flutter saw a touch on
+  /// the map but the native map did not (no sequence began just now). That
+  /// touch is lost, but the next one works again.
+  private func recoverIfTouchMissed() {
+    guard let observer = touchObserver,
+          CACurrentMediaTime() - observer.lastSequenceBegan > 0.3 else { return }
+    // A healthy observer tracking an ongoing gesture (e.g. a second finger
+    // added to a pan) is in .possible with touches: never reset a live one.
+    let tracking = observer.state == .possible && observer.numberOfTouches > 0
+    guard !tracking else { return }
+    resetStuckRecognizers(reason: "missed_touch")
   }
 
   @objc private func handleMapTap(_ gesture: UITapGestureRecognizer) {
