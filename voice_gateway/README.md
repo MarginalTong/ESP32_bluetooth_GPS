@@ -25,7 +25,37 @@ route and a recent usable location; the App never fabricates travel time.
 The obsolete preset-text `/v1/intent-test` endpoint has been removed and now returns 404.
 Run tests with `python3 -m unittest discover -s voice_gateway` from the repository root.
 
-Keep `GEMINI_API_KEY`, `GEMINI_MODEL`, `VOICE_TEST_TOKEN` and
-`VOICE_AUDIO_ENABLED=true` in the server environment. The token variable retains
-its name for compatibility with existing installations; it is not production
-per-user authentication. Credentials are not committed or embedded in the app.
+Keep `GEMINI_API_KEY`, `GEMINI_MODEL` and `VOICE_AUDIO_ENABLED=true` in the
+server environment. Credentials are not committed or embedded in the app.
+
+## Users and quotas
+
+Every rider gets a personal bearer token. The gateway stores only its SHA-256,
+and each call must fit both that user's limits and the global limits
+(`VOICE_GLOBAL_DAILY`, default 1000; `VOICE_GLOBAL_PER_MINUTE`, default 30),
+which bound the total Gemini bill. A leaked token can only spend its own
+quota, and can be rotated or disabled on its own.
+
+Manage users on the VPS with the service's environment and working directory
+(so `VOICE_BUDGET_DB` points at the live database):
+
+```sh
+cd ~/voice_gateway && set -a && . ./.env && set +a
+python3 server.py users add alice --daily 100 --per-minute 6   # prints the token once
+python3 server.py users list
+python3 server.py users rotate alice      # new token; the old one stops working
+python3 server.py users disable alice     # or: enable
+python3 server.py users limits alice --daily 200 --per-minute 10
+```
+
+Give each rider their token through a private channel; they save it in the
+app's voice settings (stored in the iPhone Keychain). Changes take effect
+immediately, without restarting the service. Over-limit calls return 429
+`user_limit_reached` or `service_limit_reached`; unknown or disabled tokens
+return 401.
+
+**Migrating from the shared token.** If `VOICE_TEST_TOKEN` is still set, it
+keeps working as user `legacy` (100/day, 6/min) so installed apps do not break.
+Once every rider has a personal token, remove `VOICE_TEST_TOKEN` from `.env`
+and restart: the `legacy` user is disabled. Calls recorded before the upgrade
+still count towards the global limits.

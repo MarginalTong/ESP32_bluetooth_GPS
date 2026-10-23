@@ -929,6 +929,10 @@ void setupBle() {
   // Stability first: use positive TX power so the phone can rediscover the
   // device reliably after power switch cycles and app backgrounding.
   BLEDevice::setPower(ESP_PWR_LVL_P3);
+  // Accept a large MTU so a signed packet (~170 bytes) arrives in one write.
+  // The local default is 23, which would force Android into slower queued
+  // long writes. iOS negotiates its own (typically 185).
+  BLEDevice::setMTU(517);
 
   bleServer = BLEDevice::createServer();
   bleServer->setCallbacks(new ServerCallbacks());
