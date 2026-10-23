@@ -396,7 +396,11 @@ class NavigationController extends ChangeNotifier {
         RegExp(r'^update_ms=\d{1,9}$').hasMatch(event) ||
         // Native hit test for a touch Flutter saw: view class names and
         // frames only, built by the app's own map view.
-        RegExp(r'^hit_test [A-Za-z0-9_ .,:;()=<>/-]{1,400}$').hasMatch(event)) {
+        RegExp(r'^hit_test [A-Za-z0-9_ .,:;()=<>/-]{1,400}$').hasMatch(event) ||
+        // The map reset gesture recognizers UIKit left stuck.
+        RegExp(r'^recognizers_reset reason=(sequence_end|missed_touch) '
+                r'count=\d{1,3} states=[0-9/,]{1,300}$')
+            .hasMatch(event)) {
       _log('map $event');
     }
   }

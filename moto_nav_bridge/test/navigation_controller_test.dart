@@ -68,6 +68,16 @@ void main() {
     expect(controller.diagnostics, isNot(contains('token')));
   });
 
+  test('stuck-recognizer resets are logged in their fixed format only', () {
+    controller.recordMapDiagnostic(
+        'recognizers_reset reason=sequence_end count=2 states=5/0,3/1');
+    controller.recordMapDiagnostic(
+        'recognizers_reset reason=whatever count=2 states=5/0');
+    expect(controller.diagnostics,
+        contains('map recognizers_reset reason=sequence_end count=2'));
+    expect(controller.diagnostics, isNot(contains('whatever')));
+  });
+
   test('map diagnostics retain camera and preview events, not arbitrary data',
       () {
     controller.recordMapDiagnostic('fit_requested');
