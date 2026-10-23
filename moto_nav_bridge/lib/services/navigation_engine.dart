@@ -44,9 +44,14 @@ class NavigationEngine {
   /// multi-lane roads, and simplified route geometry.
   static const double offRouteThresholdMeters = 60.0;
   // Shared route/side-road scale: show 200 m ahead without changing the BLE
-  // coordinate contract or the firmware's map and pointer layout.
+  // coordinate frame or the firmware's map and pointer layout.
   static const double routePreviewDistanceMeters = 200.0;
-  static const int routePreviewMaxPoints = 6;
+  // Always this many points, evenly spaced along the road (about 10 m apart),
+  // so the display can glide each point to its next position.
+  static const int routePreviewMaxPoints = 20;
+  // Preview coordinates are sent in tenths of a mini-map unit (one unit is
+  // about 6 m): whole units made the route visibly step on the display.
+  static const int previewResolution = 10;
   // Two well-chosen junction arms reproduce the cluster-style view and keep
   // the complete JSON below conservative iOS BLE write limits.
   static const int sideRoadPreviewMaxSegments = 2;
@@ -318,22 +323,40 @@ class NavigationEngine {
   List<int> _routePreviewPoints(_PreviewFrame? preview) {
     if (preview == null) return const [];
 
-    final screen = <({int x, int y})>[];
-    for (final point in preview.route) {
-      final pointOnScreen = preview.screenPoint(point);
-      if (screen.isEmpty ||
-          screen.last.x != pointOnScreen.x ||
-          screen.last.y != pointOnScreen.y) {
-        screen.add(pointOnScreen);
-      }
+    // Resample at equal distances along the road, in metres, so each point
+    // keeps a fixed distance ahead of the rider from one fix to the next.
+    final metric = [for (final point in preview.route) preview.metric(point)];
+    final along = <double>[0];
+    for (var i = 1; i < metric.length; i++) {
+      final dForward = metric[i].forward - metric[i - 1].forward;
+      final dLateral = metric[i].lateral - metric[i - 1].lateral;
+      along.add(along.last +
+          math.sqrt(dForward * dForward + dLateral * dLateral));
     }
+    final total = along.last;
+    if (total <= 0) return const [];
 
-    final sampled = _sampleScreenPoints(screen, routePreviewMaxPoints);
-    if (sampled.length < 2) return const [];
-
-    return [
-      for (final point in sampled) ...[point.x, point.y],
-    ];
+    final output = <int>[];
+    var segment = 1;
+    for (var i = 0; i < routePreviewMaxPoints; i++) {
+      final target = total * i / (routePreviewMaxPoints - 1);
+      while (segment < metric.length - 1 && along[segment] < target) {
+        segment++;
+      }
+      final a = metric[segment - 1];
+      final b = metric[segment];
+      final span = along[segment] - along[segment - 1];
+      final t =
+          span > 0 ? ((target - along[segment - 1]) / span).clamp(0.0, 1.0) : 0.0;
+      final point = preview.screenPointAt(
+        forward: a.forward + (b.forward - a.forward) * t,
+        lateral: a.lateral + (b.lateral - a.lateral) * t,
+      );
+      output
+        ..add(point.x)
+        ..add(point.y);
+    }
+    return output;
   }
 
   List<int> _sideRoadPreviewPoints(_PreviewFrame? preview) {
@@ -382,21 +405,18 @@ class NavigationEngine {
         // edge: that used to distort the ray and vary its apparent length.
         final branchLength = math.sqrt(branchVector.dx * branchVector.dx +
             branchVector.dy * branchVector.dy);
+        const reach = _sideRoadDirectionPreviewUnits * previewResolution;
         final b = (
-          x: (a.x +
-                  branchVector.dx /
-                      branchLength *
-                      _sideRoadDirectionPreviewUnits)
+          x: (a.x + branchVector.dx / branchLength * reach)
               .round()
-              .clamp(0, 127),
-          y: (a.y -
-                  branchVector.dy /
-                      branchLength *
-                      _sideRoadDirectionPreviewUnits)
+              .clamp(0, 127 * previewResolution),
+          y: (a.y - branchVector.dy / branchLength * reach)
               .round()
-              .clamp(0, 63),
+              .clamp(0, 63 * previewResolution),
         );
-        if ((a.x - b.x).abs() + (a.y - b.y).abs() < 5) continue;
+        if ((a.x - b.x).abs() + (a.y - b.y).abs() < 5 * previewResolution) {
+          continue;
+        }
         candidates.add(_SideRoadCandidate(
           a: a,
           b: b,
@@ -606,17 +626,6 @@ class NavigationEngine {
     return math.atan2(y, x);
   }
 
-  static List<({int x, int y})> _sampleScreenPoints(
-    List<({int x, int y})> points,
-    int maxPoints,
-  ) {
-    if (points.length <= maxPoints) return points;
-    return [
-      for (var i = 0; i < maxPoints; i++)
-        points[((points.length - 1) * i / (maxPoints - 1)).round()],
-    ];
-  }
-
   static double _toRad(double deg) => deg * math.pi / 180.0;
 }
 
@@ -679,15 +688,26 @@ class _PreviewFrame {
     return (dx: b.lateral - a.lateral, dy: b.forward - a.forward);
   }
 
+  /// Mini-map coordinates in tenths of a unit (see `previewResolution`).
   ({int x, int y}) screenPoint(LatLng point) {
     final m = metric(point);
+    return screenPointAt(forward: m.forward, lateral: m.lateral);
+  }
+
+  ({int x, int y}) screenPointAt({
+    required double forward,
+    required double lateral,
+  }) {
+    const resolution = NavigationEngine.previewResolution;
     return (
-      x: (NavigationEngine._previewCenterX + m.lateral * scale)
+      x: ((NavigationEngine._previewCenterX + lateral * scale) * resolution)
           .round()
-          .clamp(NavigationEngine._previewLeft, NavigationEngine._previewRight),
-      y: (NavigationEngine._previewBottom - m.forward * scale)
+          .clamp(NavigationEngine._previewLeft * resolution,
+              NavigationEngine._previewRight * resolution),
+      y: ((NavigationEngine._previewBottom - forward * scale) * resolution)
           .round()
-          .clamp(NavigationEngine._previewTop, NavigationEngine._previewBottom),
+          .clamp(NavigationEngine._previewTop * resolution,
+              NavigationEngine._previewBottom * resolution),
     );
   }
 }

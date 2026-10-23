@@ -3,7 +3,7 @@ import 'device_direction.dart';
 /// The navigation payload sent to the ESP32 over BLE.
 ///
 /// Serializes to compact JSON such as
-/// `{"dir":"LEFT","dist":200,"p":[...],"r":[...]}`; `PacketSigner` then adds
+/// `{"dir":"LEFT","dist":200,"P":[...],"R":[...]}`; `PacketSigner` then adds
 /// the counter and signature before it is written. The firmware reads `dist`
 /// as an `int`, so [distanceMeters] is emitted without a fractional part.
 class NavState {
@@ -23,7 +23,8 @@ class NavState {
   /// Distance to the next maneuver, in whole meters. Never negative.
   final int distanceMeters;
 
-  /// Flattened OLED mini-map points: `[x0,y0,x1,y1,...]`.
+  /// Flattened mini-map points: `[x0,y0,x1,y1,...]`, in tenths of a unit of
+  /// the 128x64 mini-map (sent as `P`; older firmware read whole units as `p`).
   ///
   /// These are screen coordinates for the ESP32 display, not latitude/longitude.
   /// Keep this small so the BLE payload stays reliable.
@@ -32,7 +33,7 @@ class NavState {
   /// Flattened mini-map side-road segments: `[x0,y0,x1,y1,...]`.
   ///
   /// Each group of four integers is one nearby real road segment to draw
-  /// behind the main route.
+  /// behind the main route, in the same units as [routePreviewPoints].
   final List<int> sideRoadPreviewPoints;
 
   /// A safe idle/paused state (matches the firmware's STOP icon).
@@ -43,8 +44,8 @@ class NavState {
         'dir': direction.wire,
         'dist': distanceMeters,
         if (rerouting) 'rerouting': true,
-        if (routePreviewPoints.isNotEmpty) 'p': routePreviewPoints,
-        if (sideRoadPreviewPoints.isNotEmpty) 'r': sideRoadPreviewPoints,
+        if (routePreviewPoints.isNotEmpty) 'P': routePreviewPoints,
+        if (sideRoadPreviewPoints.isNotEmpty) 'R': sideRoadPreviewPoints,
       };
 
   /// The unsigned JSON body of a navigation write (see `PacketSigner`).
@@ -57,11 +58,11 @@ class NavState {
       '{"dir":"${direction.wire}","dist":$distanceMeters',
     );
     if (points.isNotEmpty) {
-      buffer.write(',"p":[${points.join(',')}]');
+      buffer.write(',"P":[${points.join(',')}]');
     }
     if (rerouting) buffer.write(',"rerouting":true');
     if (roads.isNotEmpty) {
-      buffer.write(',"r":[${roads.join(',')}]');
+      buffer.write(',"R":[${roads.join(',')}]');
     }
     buffer.write('}');
     return buffer.toString();

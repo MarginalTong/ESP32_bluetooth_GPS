@@ -27,52 +27,77 @@
 #include <stdint.h>
 #include <math.h>
 #include <esp_system.h>
+#include <esp_heap_caps.h>
 
 // BEGIN MAP MOTION - kept inline so this sketch can be copied on its own.
 // Display-only interpolation. Never used for maneuver or distance decisions.
+// Each packet starts a linear glide from where the map is drawn now to the
+// new geometry, lasting about one packet interval, so ~1 Hz updates read as
+// continuous motion instead of a short hop followed by a pause.
 struct MapMotion {
-  static constexpr uint32_t durationMs = 180;
-  float current[20] = {};
-  float start[20] = {};
-  float target[20] = {};
-  uint8_t routes = 0, roads = 0, direction = 0;
-  uint32_t started = 0;
+  // 20 route points, then 2 side-road segments (x0, y0, x1, y1 each).
+  static constexpr uint8_t kRouteValues = 40;
+  static constexpr uint8_t kValues = kRouteValues + 8;
+  static constexpr uint32_t kMinDurationMs = 120;
+  static constexpr uint32_t kMaxDurationMs = 1100;
+  // Longer gaps are pauses (phone stopped sending), not the packet rate.
+  static constexpr uint32_t kMaxIntervalMs = 3000;
+  // Larger moves, in route-source units, are route changes: no glide.
+  static constexpr float kSnapDistance = 24.0f;
+  float current[kValues] = {};
+  float start[kValues] = {};
+  float target[kValues] = {};
+  uint8_t routes = 0, roads = 0;
+  uint32_t started = 0, durationMs = 0, lastPacket = 0;
+  float packetIntervalMs = 1000.0f;
   bool valid = false, active = false;
 
   bool tick(uint32_t now) {
     if (!active) return false;
     const uint32_t elapsed = now - started;
     const float t = elapsed >= durationMs ? 1.0f : float(elapsed) / durationMs;
-    const float eased = t * t * (3.0f - 2.0f * t);
-    for (int i = 0; i < 20; ++i)
-      current[i] = start[i] + (target[i] - start[i]) * eased;
+    for (int i = 0; i < kValues; ++i)
+      current[i] = start[i] + (target[i] - start[i]) * t;
     active = elapsed < durationMs;
     return true;
   }
 
-  void accept(const float* points, uint8_t routeCount, uint8_t roadCount,
-              uint8_t newDirection, uint32_t now) {
+  bool jumped(const float* values, int from, int to) const {
+    for (int i = from; i < to; ++i)
+      if (fabsf(values[i] - current[i]) > kSnapDistance) return true;
+    return false;
+  }
+
+  void accept(const float* values, uint8_t routeCount, uint8_t roadCount,
+              uint32_t now) {
     tick(now);
-    bool snap = !valid || routes != routeCount || roads != roadCount ||
-                direction != newDirection;
-    bool changed = snap;
-    for (int i = 0; i < 20; ++i) {
-      changed = changed || points[i] != target[i];
-      // Large geometry jumps are route changes, not motion to animate.
-      snap = snap || fabsf(points[i] - current[i]) > 24.0f;
-    }
+    if (valid && now - lastPacket <= kMaxIntervalMs)
+      packetIntervalMs += (float(now - lastPacket) - packetIntervalMs) * 0.3f;
+    lastPacket = now;
+    // The route and the side roads snap independently, so a side road
+    // appearing does not make the route jump.
+    const bool snapRoute =
+        !valid || routes != routeCount || jumped(values, 0, kRouteValues);
+    const bool snapRoads =
+        !valid || roads != roadCount || jumped(values, kRouteValues, kValues);
+    bool changed = snapRoute || snapRoads;
+    for (int i = 0; i < kValues; ++i) changed = changed || values[i] != target[i];
     if (!changed) return;
     routes = routeCount;
     roads = roadCount;
-    direction = newDirection;
-    for (int i = 0; i < 20; ++i) {
-      start[i] = snap ? points[i] : current[i];
-      target[i] = points[i];
-      if (snap) current[i] = points[i];
+    for (int i = 0; i < kValues; ++i) {
+      const bool snap = i < kRouteValues ? snapRoute : snapRoads;
+      start[i] = snap ? values[i] : current[i];
+      target[i] = values[i];
+      if (snap) current[i] = values[i];
     }
+    const float interval = packetIntervalMs < kMinDurationMs ? kMinDurationMs
+                           : packetIntervalMs > kMaxDurationMs ? kMaxDurationMs
+                                                               : packetIntervalMs;
+    durationMs = uint32_t(interval);
     started = now;
     valid = true;
-    active = !snap;
+    active = !(snapRoute && snapRoads);
   }
 };
 // END MAP MOTION
@@ -90,8 +115,9 @@ constexpr int16_t SCREEN_HEIGHT = 240;
 constexpr int16_t SCREEN_HEIGHT = 135;
 #endif
 
-// The phone still sends route-preview points in the old 128x64 coordinate
-// system, so keep that contract and scale those points into the large TFT map.
+// Route-preview points use the old 128x64 coordinate system, scaled into the
+// large TFT map. Current apps send them in tenths ("P"/"R"); older ones send
+// whole units ("p"/"r").
 constexpr int16_t ROUTE_SOURCE_WIDTH = 128;
 constexpr int16_t ROUTE_SOURCE_HEIGHT = 64;
 
@@ -165,7 +191,7 @@ constexpr uint32_t DISPLAY_OFF_AFTER_IDLE_MS = 60000;
 constexpr uint32_t DISPLAY_REFRESH_MS = 33;
 
 constexpr int MAX_DISTANCE_M = 9999;
-constexpr uint8_t MAX_ROUTE_PREVIEW_POINTS = 6;
+constexpr uint8_t MAX_ROUTE_PREVIEW_POINTS = 20;
 // Two junction arms match the reference cluster view and keep the compact JSON
 // safely below conservative iOS BLE write-without-response payload sizes.
 constexpr uint8_t MAX_SIDE_ROAD_SEGMENTS = 2;
@@ -228,16 +254,6 @@ struct NavState {
 NavState nav = {Direction::Stop, 0};
 bool rerouting = false;
 bool clockSynced = false;
-
-struct ScreenPoint {
-  int16_t x;
-  int16_t y;
-};
-
-struct ScreenSegment {
-  ScreenPoint start;
-  ScreenPoint end;
-};
 
 // Placed after the enum declarations: the Arduino preprocessor inserts its
 // generated prototypes before the first function definition.
@@ -348,12 +364,197 @@ struct KeyRing {
 };
 // END PACKET AUTH
 
+// BEGIN ROUTE RENDER - kept inline so this sketch can be copied on its own.
+// Anti-aliased map drawing at the panel's native resolution. The map is
+// monochrome, so it is an 8-bit gray layer: 0 is black, 255 white. Strokes
+// use per-pixel distance coverage, which also gives round caps and joins.
+// Written as members so the Arduino preprocessor generates no prototypes.
+struct GrayLayer {
+  uint8_t* pixels = nullptr;
+  int16_t width = 0, height = 0;
+  // Rows at and below this are never drawn (the instruction strip).
+  int16_t clipBottom = 0;
+
+  static float clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
+
+  static float segmentDistance(float px, float py, float ax, float ay, float bx,
+                               float by) {
+    const float dx = bx - ax, dy = by - ay;
+    const float lengthSquared = dx * dx + dy * dy;
+    const float t = lengthSquared > 0.0f
+                        ? clamp01(((px - ax) * dx + (py - ay) * dy) / lengthSquared)
+                        : 0.0f;
+    const float ex = px - (ax + t * dx), ey = py - (ay + t * dy);
+    return sqrtf(ex * ex + ey * ey);
+  }
+
+  void clear() {
+    if (pixels != nullptr) memset(pixels, 0, size_t(width) * height);
+  }
+
+  // Pixel rows/columns a shape spanning [lo, hi] may touch, clipped.
+  void bounds(float lo, float hi, int16_t limit, int16_t& first, int16_t& last) const {
+    first = lo < 0.0f ? 0 : int16_t(floorf(lo));
+    last = hi >= limit ? int16_t(limit - 1) : int16_t(ceilf(hi));
+  }
+
+  // Lighten blend: keeps the brighter value, so the overlapping ends of a
+  // polyline's segments never double their anti-aliased edges.
+  void strokeSegment(float ax, float ay, float bx, float by, float halfWidth,
+                     uint8_t level) {
+    if (pixels == nullptr) return;
+    const float reach = halfWidth + 1.0f;
+    int16_t x0, x1, y0, y1;
+    bounds(fminf(ax, bx) - reach, fmaxf(ax, bx) + reach, width, x0, x1);
+    bounds(fminf(ay, by) - reach, fmaxf(ay, by) + reach, clipBottom, y0, y1);
+    for (int16_t y = y0; y <= y1; ++y) {
+      uint8_t* row = pixels + size_t(y) * width;
+      for (int16_t x = x0; x <= x1; ++x) {
+        const float coverage = clamp01(
+            halfWidth + 0.5f - segmentDistance(x + 0.5f, y + 0.5f, ax, ay, bx, by));
+        if (coverage <= 0.0f) continue;
+        const uint8_t value = uint8_t(level * coverage + 0.5f);
+        if (value > row[x]) row[x] = value;
+      }
+    }
+  }
+
+  // `xy` holds `count` points as x0,y0,x1,y1,...
+  void strokePolyline(const float* xy, uint8_t count, float halfWidth, uint8_t level) {
+    for (uint8_t i = 0; i + 1 < count; ++i)
+      strokeSegment(xy[i * 2], xy[i * 2 + 1], xy[i * 2 + 2], xy[i * 2 + 3],
+                    halfWidth, level);
+  }
+
+  // A junction arm drawn as two soft parallel rails (a road outline) that
+  // stay bright for the first 45% and then fade out towards the far end.
+  void strokeFadingRails(float x0, float y0, float ux, float uy, float length,
+                         float railOffset, float softWidth, uint8_t peak) {
+    if (pixels == nullptr) return;
+    const float x1 = x0 + ux * length, y1 = y0 + uy * length;
+    const float reach = railOffset + softWidth + 1.0f;
+    int16_t left, right, top, bottom;
+    bounds(fminf(x0, x1) - reach, fmaxf(x0, x1) + reach, width, left, right);
+    bounds(fminf(y0, y1) - reach, fmaxf(y0, y1) + reach, clipBottom, top, bottom);
+    for (int16_t y = top; y <= bottom; ++y) {
+      uint8_t* row = pixels + size_t(y) * width;
+      for (int16_t x = left; x <= right; ++x) {
+        const float px = x + 0.5f - x0, py = y + 0.5f - y0;
+        const float along = px * ux + py * uy;
+        if (along < 0.0f || along >= length) continue;
+        const float edge = fabsf(fabsf(px * uy - py * ux) - railOffset);
+        if (edge >= softWidth) continue;
+        const float t = fmaxf(0.0f, (along / length - 0.45f) / 0.55f);
+        const float fade = 1.0f - t * t * (3.0f - 2.0f * t);
+        const uint8_t value = uint8_t(peak * fade * (1.0f - edge / softWidth) + 0.5f);
+        if (value > row[x]) row[x] = value;
+      }
+    }
+  }
+
+  // Anti-aliased filled triangle, blended over what is there (so it can also
+  // cut a black outline into the route).
+  void fillTriangle(float ax, float ay, float bx, float by, float cx, float cy,
+                    uint8_t level) {
+    if (pixels == nullptr) return;
+    // Counter-clockwise in screen space, so the inside is on each edge's left.
+    if ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax) < 0.0f) {
+      float tx = bx, ty = by;
+      bx = cx; by = cy; cx = tx; cy = ty;
+    }
+    const float ex[3] = {ax, bx, cx}, ey[3] = {ay, by, cy};
+    float nx[3], ny[3], offset[3];
+    for (int i = 0; i < 3; ++i) {
+      const int j = (i + 1) % 3;
+      const float dx = ex[j] - ex[i], dy = ey[j] - ey[i];
+      const float length = sqrtf(dx * dx + dy * dy);
+      if (length <= 0.0f) return;
+      nx[i] = -dy / length;  // inward normal
+      ny[i] = dx / length;
+      offset[i] = -(nx[i] * ex[i] + ny[i] * ey[i]);
+    }
+    int16_t x0, x1, y0, y1;
+    bounds(fminf(ax, fminf(bx, cx)) - 1.0f, fmaxf(ax, fmaxf(bx, cx)) + 1.0f, width, x0, x1);
+    bounds(fminf(ay, fminf(by, cy)) - 1.0f, fmaxf(ay, fmaxf(by, cy)) + 1.0f, clipBottom, y0, y1);
+    for (int16_t y = y0; y <= y1; ++y) {
+      uint8_t* row = pixels + size_t(y) * width;
+      for (int16_t x = x0; x <= x1; ++x) {
+        const float px = x + 0.5f, py = y + 0.5f;
+        float inside = 1e9f;
+        for (int i = 0; i < 3; ++i)
+          inside = fminf(inside, nx[i] * px + ny[i] * py + offset[i]);
+        const float coverage = clamp01(inside + 0.5f);
+        if (coverage <= 0.0f) continue;
+        row[x] = uint8_t(row[x] + (level - row[x]) * coverage + 0.5f);
+      }
+    }
+  }
+};
+
+// Builds one full panel frame: UI from the low-resolution canvas (nearest
+// sample) on top of the native-resolution gray map layer, black outside the
+// round aperture. Lookup tables are computed once.
+struct PanelComposer {
+  static constexpr int16_t kMaxSize = 512;
+  int16_t width = 0, height = 0, canvasWidth = 0;
+  uint16_t sourceX[kMaxSize] = {}, sourceY[kMaxSize] = {};
+  int16_t spanStart[kMaxSize] = {}, spanEnd[kMaxSize] = {};
+  uint16_t gray565[256] = {};
+
+  // `centerX/Y` and `radius` describe the visible circle in view pixels.
+  void init(int16_t viewWidth, int16_t viewHeight, int16_t canvasW, int16_t canvasH,
+            float centerX, float centerY, float radius) {
+    width = viewWidth;
+    height = viewHeight;
+    canvasWidth = canvasW;
+    for (int16_t x = 0; x < width; ++x) sourceX[x] = uint16_t(x * canvasW / width);
+    for (int16_t y = 0; y < height; ++y) {
+      sourceY[y] = uint16_t(y * canvasH / height);
+      const float dy = y + 0.5f - centerY;
+      const float half = radius * radius - dy * dy;
+      if (half <= 0.0f) {
+        spanStart[y] = 0;
+        spanEnd[y] = 0;
+        continue;
+      }
+      const float reach = sqrtf(half);
+      spanStart[y] = int16_t(fmaxf(0.0f, ceilf(centerX - reach - 0.5f)));
+      spanEnd[y] = int16_t(fminf(float(width), floorf(centerX + reach - 0.5f) + 1.0f));
+    }
+    for (int g = 0; g < 256; ++g)
+      gray565[g] = uint16_t(((g >> 3) << 11) | ((g >> 2) << 5) | (g >> 3));
+  }
+
+  // Writes view rows [firstRow, firstRow + rowCount) to `out`. `layer` may be
+  // null (no map on this screen).
+  void compose(const uint16_t* canvas, const GrayLayer* layer, uint16_t* out,
+               int16_t firstRow, int16_t rowCount) const {
+    for (int16_t y = firstRow; y < firstRow + rowCount && y < height; ++y) {
+      uint16_t* row = out + size_t(y - firstRow) * width;
+      const int16_t start = spanStart[y], end = spanEnd[y];
+      for (int16_t x = 0; x < start; ++x) row[x] = 0;
+      for (int16_t x = end; x < width; ++x) row[x] = 0;
+      const uint16_t* canvasRow = canvas + size_t(sourceY[y]) * canvasWidth;
+      const uint8_t* mapRow =
+          layer != nullptr && layer->pixels != nullptr ? layer->pixels + size_t(y) * width
+                                                       : nullptr;
+      for (int16_t x = start; x < end; ++x) {
+        const uint16_t ui = canvasRow[sourceX[x]];
+        row[x] = ui != 0 || mapRow == nullptr ? ui : gray565[mapRow[x]];
+      }
+    }
+  }
+};
+// END ROUTE RENDER
+
 // Explicit: the generated prototype would precede the KeyRing declaration.
 bool persistKeyRing(const KeyRing& ring);
 
 constexpr uint8_t MAP_VALUE_COUNT =
     MAX_ROUTE_PREVIEW_POINTS * 2 + MAX_SIDE_ROAD_SEGMENTS * 4;
-static_assert(MAP_VALUE_COUNT == 20, "MapMotion stores 20 map values");
+static_assert(MAP_VALUE_COUNT == MapMotion::kValues &&
+                  MAX_ROUTE_PREVIEW_POINTS * 2 == MapMotion::kRouteValues,
+              "MapMotion's layout matches the packet limits");
 
 // BLE callbacks run on the Bluetooth stack's FreeRTOS task. They only publish
 // into this mailbox under stateMux; loop() takes a snapshot each iteration and
@@ -391,6 +592,14 @@ uint8_t sessionNonce[AUTH_NONCE_BYTES] = {};
 uint32_t sessionCounter = 0;
 BleMailbox mailbox;
 MapMotion mapMotion;
+#if NAV_WAVESHARE_146
+// Native-resolution map, in PSRAM. Without it the map is drawn into the
+// 240x240 canvas and upscaled like the rest of the UI.
+GrayLayer mapLayer;
+PanelComposer panelComposer;
+// Set when the current frame drew into mapLayer; cleared once presented.
+bool mapLayerDrawn = false;
+#endif
 
 uint32_t lastLivePacketMs = 0;
 bool hasReceivedNavPacket = false;
@@ -666,6 +875,35 @@ class ServerCallbacks : public BLEServerCallbacks {
   }
 };
 
+// Reads up to `maxItems` groups of `stride` route-source coordinates (x, y,
+// ...) into `out`, preferring the tenths key over the legacy whole-unit one.
+// Stops at the first malformed group; returns the number of groups read.
+uint8_t readMapValues(JsonDocument& doc, const char* fineKey, const char* coarseKey,
+                      float* out, uint8_t maxItems, uint8_t stride) {
+  JsonArray values = doc[fineKey].as<JsonArray>();
+  float scale = 0.1f;
+  if (values.isNull()) {
+    values = doc[coarseKey].as<JsonArray>();
+    scale = 1.0f;
+  }
+  if (values.isNull()) return 0;
+  uint8_t count = 0;
+  while (count < maxItems && size_t(count + 1) * stride <= values.size()) {
+    const size_t base = size_t(count) * stride;
+    bool wellFormed = true;
+    for (uint8_t i = 0; i < stride; ++i)
+      wellFormed = wellFormed && values[base + i].is<int>();
+    if (!wellFormed) break;
+    for (uint8_t i = 0; i < stride; ++i) {
+      const float limit = (i % 2 == 0 ? ROUTE_SOURCE_WIDTH : ROUTE_SOURCE_HEIGHT) - 1;
+      const float value = values[base + i].as<int>() * scale;
+      out[base + i] = value < 0.0f ? 0.0f : (value > limit ? limit : value);
+    }
+    ++count;
+  }
+  return count;
+}
+
 class NavWriteCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* characteristic) override {
     const auto rawValue = characteristic->getValue();
@@ -786,66 +1024,17 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     distance = constrain(distance, 0, MAX_DISTANCE_M);
 
     const bool reroutingPacket = doc["rerouting"] | false;
-    ScreenPoint routePreviewPoints[MAX_ROUTE_PREVIEW_POINTS];
-    uint8_t routePreviewPointCount = 0;
-    ScreenSegment sideRoadSegments[MAX_SIDE_ROAD_SEGMENTS];
-    uint8_t sideRoadSegmentCount = 0;
-    JsonArray points = doc["p"].as<JsonArray>();
-    if (!points.isNull()) {
-      const size_t maxValues = MAX_ROUTE_PREVIEW_POINTS * 2;
-      const size_t valueCount =
-          points.size() > maxValues ? maxValues : points.size();
-      for (size_t i = 0; i + 1 < valueCount; i += 2) {
-        if (!points[i].is<int>() || !points[i + 1].is<int>()) break;
-        routePreviewPoints[routePreviewPointCount] = {
-            static_cast<int16_t>(
-                constrain(points[i].as<int>(), 0, ROUTE_SOURCE_WIDTH - 1)),
-            static_cast<int16_t>(
-                constrain(points[i + 1].as<int>(), 0, ROUTE_SOURCE_HEIGHT - 1)),
-        };
-        routePreviewPointCount++;
-      }
-    }
-
-    JsonArray roads = doc["r"].as<JsonArray>();
-    if (!roads.isNull()) {
-      const size_t maxValues = MAX_SIDE_ROAD_SEGMENTS * 4;
-      const size_t valueCount =
-          roads.size() > maxValues ? maxValues : roads.size();
-      for (size_t i = 0; i + 3 < valueCount; i += 4) {
-        if (!roads[i].is<int>() || !roads[i + 1].is<int>() ||
-            !roads[i + 2].is<int>() || !roads[i + 3].is<int>()) {
-          break;
-        }
-        sideRoadSegments[sideRoadSegmentCount] = {
-            {static_cast<int16_t>(
-                 constrain(roads[i].as<int>(), 0, ROUTE_SOURCE_WIDTH - 1)),
-             static_cast<int16_t>(
-                 constrain(roads[i + 1].as<int>(), 0, ROUTE_SOURCE_HEIGHT - 1))},
-            {static_cast<int16_t>(
-                 constrain(roads[i + 2].as<int>(), 0, ROUTE_SOURCE_WIDTH - 1)),
-             static_cast<int16_t>(
-                 constrain(roads[i + 3].as<int>(), 0, ROUTE_SOURCE_HEIGHT - 1))},
-        };
-        sideRoadSegmentCount++;
-      }
-    }
+    float mapValues[MAP_VALUE_COUNT] = {};
+    const uint8_t routePreviewPointCount = readMapValues(
+        doc, "P", "p", mapValues, MAX_ROUTE_PREVIEW_POINTS, 2);
+    const uint8_t sideRoadSegmentCount =
+        readMapValues(doc, "R", "r", mapValues + MapMotion::kRouteValues,
+                      MAX_SIDE_ROAD_SEGMENTS, 4);
 
     // Publish the whole packet at once so loop() never sees a new direction
     // with the previous distance, flags or geometry.
-    constexpr uint8_t roadOffset = MAX_ROUTE_PREVIEW_POINTS * 2;
     portENTER_CRITICAL(&stateMux);
-    memset(mailbox.map, 0, sizeof(mailbox.map));
-    for (uint8_t i = 0; i < routePreviewPointCount; ++i) {
-      mailbox.map[i * 2] = routePreviewPoints[i].x;
-      mailbox.map[i * 2 + 1] = routePreviewPoints[i].y;
-    }
-    for (uint8_t i = 0; i < sideRoadSegmentCount; ++i) {
-      mailbox.map[roadOffset + i * 4] = sideRoadSegments[i].start.x;
-      mailbox.map[roadOffset + 1 + i * 4] = sideRoadSegments[i].start.y;
-      mailbox.map[roadOffset + 2 + i * 4] = sideRoadSegments[i].end.x;
-      mailbox.map[roadOffset + 3 + i * 4] = sideRoadSegments[i].end.y;
-    }
+    memcpy(mailbox.map, mapValues, sizeof(mailbox.map));
     mailbox.nav = {direction, distance};
     mailbox.rerouting = reroutingPacket;
     mailbox.routes = routePreviewPointCount;
@@ -985,45 +1174,55 @@ constexpr int16_t MAP_CLIP_BOTTOM = MAP_BOTTOM - 4;
 constexpr int16_t ARROW_CENTER_X = 66;
 constexpr int16_t DISTANCE_X = 132;
 
-int16_t mapPreviewX(float x) {
+// Route-source coordinates to canvas pixels, unrounded.
+float mapPreviewX(float x) {
   const float center = (MAP_LEFT + MAP_RIGHT) / 2.0f;
   const float projected = MAP_LEFT + 6 + (x - 18) * (MAP_RIGHT - MAP_LEFT - 12) / 92.0f;
-  return lroundf(center + (projected - center) * MAP_ZOOM);
+  return center + (projected - center) * MAP_ZOOM;
 }
 
-int16_t mapPreviewY(float y) {
+float mapPreviewY(float y) {
   const float anchor = MAP_BOTTOM - 12;
 #if NAV_WAVESHARE_146
   // Use the extra round-screen height for the map, but retain the rider at
   // the bottom so the instruction strip cannot be covered by road geometry.
   const float projected = MAP_TOP + 25 + (y - 2) * (MAP_BOTTOM - MAP_TOP - 47) / 32.0f;
-  return lroundf(anchor + (projected - anchor) * 1.90f);
+  return anchor + (projected - anchor) * 1.90f;
 #else
   const float projected = MAP_TOP + 4 + (y - 2) * (MAP_BOTTOM - MAP_TOP - 16) / 32.0f;
-  return lroundf(anchor + (projected - anchor) * MAP_ZOOM);
+  return anchor + (projected - anchor) * MAP_ZOOM;
 #endif
 }
 
+#if NAV_WAVESHARE_146
+constexpr float MAP_LAYER_SCALE = float(PANEL_VIEW_WIDTH) / SCREEN_WIDTH;
+
+bool useMapLayer() { return mapLayer.pixels != nullptr; }
+
+// Canvas pixel coordinate to the center of the matching map-layer area, so
+// the layer lines up with the upscaled canvas UI.
+float layerCoord(float canvasValue) { return (canvasValue + 0.5f) * MAP_LAYER_SCALE; }
+#else
+bool useMapLayer() { return false; }
+#endif
+
 void presentDisplay() {
 #if NAV_WAVESHARE_146
-  // Small scanline buffer avoids a second full framebuffer allocation. Native
-  // RGB565 words are passed to draw16bitRGBBitmap (not the big-endian variant).
-  static uint16_t row[PANEL_VIEW_WIDTH];
+  // Composed and sent in bands, so no full panel framebuffer is needed: the
+  // canvas UI upscaled, over the native-resolution map. Native RGB565 words
+  // are passed to draw16bitRGBBitmap (not the big-endian variant).
+  constexpr int16_t bandRows = 16;
+  static uint16_t band[PANEL_VIEW_WIDTH * bandRows];
   const uint16_t* source = display.getBuffer();
   if (!source) return;
-  for (int y = 0; y < PANEL_VIEW_HEIGHT; ++y) {
-    const int sourceY = y * SCREEN_HEIGHT / PANEL_VIEW_HEIGHT;
-    const int panelY = PANEL_VIEW_Y + y - PANEL_SIZE / 2;
-    for (int x = 0; x < PANEL_VIEW_WIDTH; ++x) {
-      const int panelX = PANEL_VIEW_X + x - PANEL_SIZE / 2;
-      const bool inside = panelX * panelX + panelY * panelY <=
-                          PANEL_VISIBLE_RADIUS * PANEL_VISIBLE_RADIUS;
-      row[x] = inside
-                   ? source[sourceY * SCREEN_WIDTH + x * SCREEN_WIDTH / PANEL_VIEW_WIDTH]
-                   : COLOR_BG;
-    }
-    tft.draw16bitRGBBitmap(PANEL_VIEW_X, PANEL_VIEW_Y + y, row, PANEL_VIEW_WIDTH, 1);
+  const GrayLayer* layer = mapLayerDrawn ? &mapLayer : nullptr;
+  for (int16_t y = 0; y < PANEL_VIEW_HEIGHT; y += bandRows) {
+    const int16_t rows =
+        PANEL_VIEW_HEIGHT - y < bandRows ? int16_t(PANEL_VIEW_HEIGHT - y) : bandRows;
+    panelComposer.compose(source, layer, band, y, rows);
+    tft.draw16bitRGBBitmap(PANEL_VIEW_X, PANEL_VIEW_Y + y, band, PANEL_VIEW_WIDTH, rows);
   }
+  mapLayerDrawn = false;
 #else
   tft.drawRGBBitmap(0, 0, display.getBuffer(), SCREEN_WIDTH, SCREEN_HEIGHT);
 #endif
@@ -1039,7 +1238,20 @@ void drawThickLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
   }
 }
 
-void drawSideRoadLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
+// A map stroke `thickness` canvas pixels wide, anti-aliased on the map layer.
+void drawMapLine(float x0, float y0, float x1, float y1, uint8_t thickness) {
+#if NAV_WAVESHARE_146
+  if (useMapLayer()) {
+    mapLayer.strokeSegment(layerCoord(x0), layerCoord(y0), layerCoord(x1),
+                           layerCoord(y1), thickness * MAP_LAYER_SCALE / 2.0f, 255);
+    return;
+  }
+#endif
+  drawThickLine(lroundf(x0), lroundf(y0), lroundf(x1), lroundf(y1), COLOR_ROUTE,
+                thickness);
+}
+
+void drawSideRoadLine(float x0, float y0, float x1, float y1) {
   // The phone orders each branch from its route junction towards its outer
   // endpoint. Use that direction only: road-segment lengths vary wildly and
   // must not change the length of the schematic ray on this small display.
@@ -1074,20 +1286,29 @@ void drawSideRoadLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
       endCircleX * endCircleX + endCircleY * endCircleY >
           visibleRadius * visibleRadius) return;
 #endif
-  x1 = lroundf(endX);
-  y1 = lroundf(endY);
   constexpr float railOffset = 3.0f;
   constexpr float softWidth = 1.9f;
+#if NAV_WAVESHARE_146
+  if (useMapLayer()) {
+    mapLayer.strokeFadingRails(layerCoord(x0), layerCoord(y0), ux, uy,
+                               visibleLength * MAP_LAYER_SCALE,
+                               railOffset * MAP_LAYER_SCALE,
+                               softWidth * MAP_LAYER_SCALE, 245);
+    return;
+  }
+#endif
+  const int16_t startX = lroundf(x0), startY = lroundf(y0);
+  const int16_t stopX = lroundf(endX), stopY = lroundf(endY);
   // Clip before rasterizing: off-screen geometry never expands frame cost.
-  const int16_t left = max(0, min(x0, x1) - 5);
-  const int16_t right = min(int(SCREEN_WIDTH - 1), max(x0, x1) + 5);
-  const int16_t top = max(0, min(y0, y1) - 5);
-  const int16_t bottom = min(int(MAP_CLIP_BOTTOM - 1), max(y0, y1) + 5);
+  const int16_t left = max(0, min(startX, stopX) - 5);
+  const int16_t right = min(int(SCREEN_WIDTH - 1), max(startX, stopX) + 5);
+  const int16_t top = max(0, min(startY, stopY) - 5);
+  const int16_t bottom = min(int(MAP_CLIP_BOTTOM - 1), max(startY, stopY) + 5);
   uint16_t* pixels = display.getBuffer();
   for (int16_t y = top; y <= bottom; ++y) {
     for (int16_t x = left; x <= right; ++x) {
-      const float px = x - x0;
-      const float py = y - y0;
+      const float px = x - startX;
+      const float py = y - startY;
       const float along = px * ux + py * uy;
       if (along < 0.0f || along >= visibleLength) continue;
       const float edgeDistance = fabsf(fabsf(px * uy - py * ux) - railOffset);
@@ -1106,7 +1327,7 @@ void drawSideRoadLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
 
 void drawSideRoadSegments() {
   for (uint8_t i = 0; i < mapMotion.roads; i++) {
-    const float* p = mapMotion.current + 12 + i * 4;
+    const float* p = mapMotion.current + MapMotion::kRouteValues + i * 4;
     drawSideRoadLine(mapPreviewX(p[0]), mapPreviewY(p[1]),
                      mapPreviewX(p[2]), mapPreviewY(p[3]));
   }
@@ -1249,42 +1470,48 @@ void drawFallbackMapRoute(Direction direction) {
 
   switch (direction) {
     case Direction::Left:
-      drawThickLine(centerX, bottom, centerX, 55, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
-      drawThickLine(centerX, 55, centerX - 18, 42, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
-      drawThickLine(centerX - 18, 42, left, 42, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, bottom, centerX, 55, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, 55, centerX - 18, 42, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX - 18, 42, left, 42, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::Right:
-      drawThickLine(centerX, bottom, centerX, 55, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
-      drawThickLine(centerX, 55, centerX + 18, 42, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
-      drawThickLine(centerX + 18, 42, right, 42, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, bottom, centerX, 55, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, 55, centerX + 18, 42, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX + 18, 42, right, 42, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::BearLeft:
-      drawThickLine(centerX, bottom, centerX, 58, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
-      drawThickLine(centerX, 58, centerX - 44, top, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, bottom, centerX, 58, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, 58, centerX - 44, top, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::BearRight:
-      drawThickLine(centerX, bottom, centerX, 58, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
-      drawThickLine(centerX, 58, centerX + 44, top, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, bottom, centerX, 58, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, 58, centerX + 44, top, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::UTurn:
-      drawThickLine(centerX, bottom, centerX, 36, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
-      drawThickLine(centerX, 36, left + 28, 36, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
-      drawThickLine(left + 28, 36, left + 28, 68, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, bottom, centerX, 36, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, 36, left + 28, 36, FALLBACK_ROUTE_STROKE);
+      drawMapLine(left + 28, 36, left + 28, 68, FALLBACK_ROUTE_STROKE);
       break;
     default:
-      drawThickLine(centerX, bottom, centerX, top, COLOR_ROUTE, FALLBACK_ROUTE_STROKE);
+      drawMapLine(centerX, bottom, centerX, top, FALLBACK_ROUTE_STROKE);
       break;
   }
 }
 
 void drawMiniRouteMap(bool showRider) {
+#if NAV_WAVESHARE_146
+  if (useMapLayer()) {
+    mapLayer.clear();
+    mapLayerDrawn = true;
+  }
+#endif
   drawSideRoadSegments();
 
   if (mapMotion.routes >= 2) {
     for (uint8_t i = 0; i + 1 < mapMotion.routes; i++) {
       const float* p = mapMotion.current + i * 2;
-      drawThickLine(mapPreviewX(p[0]), mapPreviewY(p[1]),
-                    mapPreviewX(p[2]), mapPreviewY(p[3]), COLOR_ROUTE, ROUTE_STROKE);
+      drawMapLine(mapPreviewX(p[0]), mapPreviewY(p[1]),
+                  mapPreviewX(p[2]), mapPreviewY(p[3]), ROUTE_STROKE);
     }
   } else {
     drawFallbackMapRoute(nav.direction);
@@ -1296,10 +1523,19 @@ void drawMiniRouteMap(bool showRider) {
     // Only live guidance may show a rider marker. A cached snapshot no longer
     // establishes the bike's current position relative to this road shape.
 #if NAV_WAVESHARE_146
-    display.fillTriangle(markerX, markerY - 21, markerX - 18, markerY + 14,
-                         markerX + 18, markerY + 14, COLOR_BG);
-    display.fillTriangle(markerX, markerY - 12, markerX - 10, markerY + 6,
-                         markerX + 10, markerY + 6, COLOR_WHITE);
+    if (useMapLayer()) {
+      const float x = layerCoord(markerX), y = layerCoord(markerY);
+      constexpr float s = MAP_LAYER_SCALE;
+      mapLayer.fillTriangle(x, y - 21 * s, x - 18 * s, y + 14 * s, x + 18 * s,
+                            y + 14 * s, 0);
+      mapLayer.fillTriangle(x, y - 12 * s, x - 10 * s, y + 6 * s, x + 10 * s,
+                            y + 6 * s, 255);
+    } else {
+      display.fillTriangle(markerX, markerY - 21, markerX - 18, markerY + 14,
+                           markerX + 18, markerY + 14, COLOR_BG);
+      display.fillTriangle(markerX, markerY - 12, markerX - 10, markerY + 6,
+                           markerX + 10, markerY + 6, COLOR_WHITE);
+    }
 #else
     display.fillTriangle(markerX, markerY - 15, markerX - 13, markerY + 10,
                          markerX + 13, markerY + 10, COLOR_BG);
@@ -1737,6 +1973,19 @@ bool initDisplay() {
   }
   tft.fillScreen(COLOR_BG);
   analogWrite(TFT_BACKLIGHT_PIN, BACKLIGHT_NORMAL);
+  panelComposer.init(PANEL_VIEW_WIDTH, PANEL_VIEW_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT,
+                     PANEL_SIZE / 2.0f - PANEL_VIEW_X, PANEL_SIZE / 2.0f - PANEL_VIEW_Y,
+                     PANEL_VISIBLE_RADIUS);
+  mapLayer.pixels = static_cast<uint8_t*>(heap_caps_malloc(
+      size_t(PANEL_VIEW_WIDTH) * PANEL_VIEW_HEIGHT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (mapLayer.pixels != nullptr) {
+    mapLayer.width = PANEL_VIEW_WIDTH;
+    mapLayer.height = PANEL_VIEW_HEIGHT;
+    mapLayer.clipBottom = int16_t(MAP_CLIP_BOTTOM * MAP_LAYER_SCALE);
+    mapLayer.clear();
+  } else {
+    Serial.println("[TFT] No PSRAM for the map layer; using the low-resolution map");
+  }
   Serial.println("[TFT] SPD2010 412x412 ready");
 #else
   Serial.println("[TFT] init ST7789...");
@@ -1904,8 +2153,7 @@ void applyBleMailbox() {
     mapMotion.active = false;
   }
   if (snapshot.navReady) {
-    mapMotion.accept(snapshot.map, snapshot.routes, snapshot.roads,
-                     static_cast<uint8_t>(snapshot.nav.direction), millis());
+    mapMotion.accept(snapshot.map, snapshot.routes, snapshot.roads, millis());
   }
 }
 
