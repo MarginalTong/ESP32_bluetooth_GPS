@@ -382,21 +382,8 @@ class NavigationController extends ChangeNotifier {
           'route_preview_stopped',
           'fit_skipped_active_gesture',
           'fit_requested',
-          // Touch path for a frozen pan: Flutter saw the touch; on its first
-          // move Flutter's gate had released, blocked or not yet decided it
-          // (or could not be found); MapKit's own pan actually began.
-          'flutter_pointer_down',
-          'native_touch_began',
-          'flutter_gate_released',
-          'flutter_gate_blocked',
-          'flutter_gate_pending',
-          'flutter_gate_missing',
-          'native_pan_began',
         }.contains(event) ||
         RegExp(r'^update_ms=\d{1,9}$').hasMatch(event) ||
-        // Native hit test for a touch Flutter saw: view class names and
-        // frames only, built by the app's own map view.
-        RegExp(r'^hit_test [A-Za-z0-9_ .,:;()=<>/-]{1,400}$').hasMatch(event) ||
         // The map reset gesture recognizers UIKit left stuck.
         RegExp(r'^recognizers_reset reason=(sequence_end|missed_touch) '
                 r'count=\d{1,3} states=[0-9/,]{1,300}$')

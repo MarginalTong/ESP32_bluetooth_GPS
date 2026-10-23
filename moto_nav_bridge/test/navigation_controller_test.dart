@@ -58,14 +58,17 @@ void main() {
 
   const newDestination = LatLng(.003, 0);
 
-  test('map hit-test diagnostics keep view names and frames only', () {
-    const probe = 'hit_test at=(120,300) view=UIVisualEffectView inMap=false '
-        'above=FlutterTouchInterceptingView(0,0,390,844);'
-        'UIVisualEffectView(16,570,358,200)';
-    controller.recordMapDiagnostic(probe);
-    controller.recordMapDiagnostic('hit_test {"lat": -33.86, "token": "x"}');
-    expect(controller.diagnostics, contains('map $probe'));
-    expect(controller.diagnostics, isNot(contains('token')));
+  test('touch-path investigation events are no longer logged', () {
+    for (final event in [
+      'flutter_pointer_down',
+      'native_touch_began',
+      'flutter_gate_blocked',
+      'native_pan_began',
+      'hit_test at=(120,300) view=MKAnnotationContainerView inMap=true',
+    ]) {
+      controller.recordMapDiagnostic(event);
+    }
+    expect(controller.diagnostics, isEmpty);
   });
 
   test('stuck-recognizer resets are logged in their fixed format only', () {

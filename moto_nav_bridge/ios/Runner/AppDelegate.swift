@@ -776,19 +776,15 @@ private final class MovementLocationView: MKAnnotationView {
   }
 }
 
-/// Diagnostics for "the map pans once, then freezes". Never recognizes and
-/// never delays or cancels touches, so it cannot change gesture handling.
-/// Recognizers see touches even while Flutter is blocking the map, so on the
-/// first move it reads Flutter's delaying recognizer on the touch-intercepting
-/// superview: failed = Flutter released the touch to MapKit, ended = Flutter
-/// blocked it, possible = not decided yet.
-private final class MapTouchProbe: UIGestureRecognizer {
-  var report: ((String) -> Void)?
+/// Watches touch sequences on the map without taking part in them: it never
+/// recognizes and never delays or cancels touches. It reports when every
+/// finger of a sequence has lifted, so stuck recognizers can be reset, and
+/// when the map last saw a sequence begin.
+private final class MapTouchSequenceObserver: UIGestureRecognizer {
   /// Called once every finger of a touch sequence has lifted or cancelled.
   var onSequenceEnded: (() -> Void)?
   /// When the native map last saw a touch sequence begin.
   private(set) var lastSequenceBegan: CFTimeInterval = 0
-  private var reportedGate = false
 
   override init(target: Any?, action: Selector?) {
     super.init(target: target, action: action)
@@ -799,25 +795,7 @@ private final class MapTouchProbe: UIGestureRecognizer {
 
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
     if numberOfTouches == touches.count {
-      reportedGate = false
       lastSequenceBegan = CACurrentMediaTime()
-      report?("native_touch_began")
-    }
-  }
-
-  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
-    guard !reportedGate else { return }
-    reportedGate = true
-    // FlutterDelayingGestureRecognizer is private to the Flutter engine;
-    // it is found by name only to label this diagnostic.
-    let gate = view?.superview?.gestureRecognizers?.first {
-      NSStringFromClass(type(of: $0)).contains("DelayingGestureRecognizer")
-    }
-    switch gate?.state {
-    case .failed?: report?("flutter_gate_released")
-    case .ended?, .recognized?: report?("flutter_gate_blocked")
-    case .possible?: report?("flutter_gate_pending")
-    default: report?("flutter_gate_missing")
     }
   }
 
@@ -894,7 +872,7 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
   private var hasCenteredOnUser = false
   private var hasFittedCurrentRoute = false
   private weak var selectionLongPress: UILongPressGestureRecognizer?
-  private weak var touchProbe: MapTouchProbe?
+  private weak var touchObserver: MapTouchSequenceObserver?
   private var destinationCoordinate: CLLocationCoordinate2D?
   private var selectedPointAnnotation: MKPointAnnotation?
   private var mapPointSelectionEnabled = false
@@ -944,21 +922,14 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     longPress.cancelsTouchesInView = false
     selectionLongPress = longPress
     mapView.addGestureRecognizer(longPress)
-    let probe = MapTouchProbe(target: nil, action: nil)
-    probe.report = { [weak self] event in
-      guard let self else { return }
-      // MapKit may create its pan recognizers lazily once on screen, so
-      // attach on the first touch rather than at init.
-      if event == "native_touch_began" { self.observeMapPans() }
-      self.eventChannel.invokeMethod("mapDiagnostic", arguments: ["event": event])
-    }
+    let observer = MapTouchSequenceObserver(target: nil, action: nil)
     // Same timing as the engine's own fix for its forwarding recognizer:
     // check on the next main-queue turn, after UIKit's normal reset.
-    probe.onSequenceEnded = { [weak self] in
+    observer.onSequenceEnded = { [weak self] in
       DispatchQueue.main.async { self?.resetStuckRecognizers(reason: "sequence_end") }
     }
-    touchProbe = probe
-    mapView.addGestureRecognizer(probe)
+    touchObserver = observer
+    mapView.addGestureRecognizer(observer)
     // This credits third-party route geometry, not the Apple basemap. Keep it
     // away from MapKit's own attribution and open its licence only on a tap.
     attributionButton.translatesAutoresizingMaskIntoConstraints = false
@@ -980,9 +951,7 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       attributionButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 36),
     ])
     controlChannel.setMethodCallHandler { [weak self] call, result in
-      if call.method == "probeHit", let args = call.arguments as? [String: Any],
-         let x = args["x"] as? Double, let y = args["y"] as? Double {
-        self?.reportHitTest(at: CGPoint(x: x, y: y))
+      if call.method == "pointerDown" {
         self?.recoverIfTouchMissed()
         result(nil)
         return
@@ -1409,74 +1378,13 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
   /// the map but the native map did not (no sequence began just now). That
   /// touch is lost, but the next one works again.
   private func recoverIfTouchMissed() {
-    guard let probe = touchProbe,
-          CACurrentMediaTime() - probe.lastSequenceBegan > 0.3 else { return }
-    // A healthy probe tracking an ongoing gesture (e.g. a second finger added
-    // to a pan) is in .possible with touches: never reset a live gesture.
-    let tracking = probe.state == .possible && probe.numberOfTouches > 0
+    guard let observer = touchObserver,
+          CACurrentMediaTime() - observer.lastSequenceBegan > 0.3 else { return }
+    // A healthy observer tracking an ongoing gesture (e.g. a second finger
+    // added to a pan) is in .possible with touches: never reset a live one.
+    let tracking = observer.state == .possible && observer.numberOfTouches > 0
     guard !tracking else { return }
     resetStuckRecognizers(reason: "missed_touch")
-  }
-
-  /// Diagnostics: which native view UIKit delivers a touch at `point` (in map
-  /// coordinates) to. If it is not inside the map, the map cannot pan. Also
-  /// lists the views the engine stacks above the map's touch-intercepting
-  /// view (e.g. UIVisualEffectViews it adds for Flutter BackdropFilters).
-  private func reportHitTest(at point: CGPoint) {
-    guard let window = mapView.window else { return }
-    let hit = window.hitTest(mapView.convert(point, to: nil), with: nil)
-    let inMap = hit.map { $0.isDescendant(of: mapView) } ?? false
-    func frame(_ view: UIView) -> String {
-      let f = view.frame
-      return "(\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height)))"
-    }
-    // mapView -> touch-intercepting view -> clipping view (holds overlays).
-    let stack = mapView.superview?.superview?.subviews.map { view in
-      "\(type(of: view))\(frame(view))\(view.isUserInteractionEnabled ? "" : "/off")"
-    }.joined(separator: ";") ?? "none"
-    let name = hit.map { String(describing: type(of: $0)) } ?? "nil"
-    // Recognizer states (0 possible, 1 began, 2 changed, 3 ended, 4 cancelled,
-    // 5 failed). A touch has just begun, so a recognizer still in 3/4/5 that
-    // did not get it was never reset: UIKit still counts an earlier touch as
-    // active, and that recognizer ignores every new touch.
-    func state(_ recognizer: UIGestureRecognizer?) -> String {
-      recognizer.map { "\($0.state.rawValue)/\($0.numberOfTouches)" } ?? "-"
-    }
-    func named(_ part: String, on view: UIView?) -> UIGestureRecognizer? {
-      view?.gestureRecognizers?.first { NSStringFromClass(type(of: $0)).contains(part) }
-    }
-    var pans: [UIGestureRecognizer] = []
-    func collectPans(_ view: UIView) {
-      pans += (view.gestureRecognizers ?? []).filter { $0 is UIPanGestureRecognizer }
-      view.subviews.forEach(collectPans)
-    }
-    collectPans(mapView)
-    let probe = mapView.gestureRecognizers?.first { $0 is MapTouchProbe }
-    let states = "probe=\(state(probe)) pans=\(pans.map { state($0) }.joined(separator: ","))" +
-      " gate=\(state(named("DelayingGestureRecognizer", on: mapView.superview)))" +
-      " forward=\(state(named("ForwardingGestureRecognizer", on: mapView.superview)))"
-    let message = "hit_test at=(\(Int(point.x)),\(Int(point.y))) view=\(name) inMap=\(inMap) \(states) above=\(stack)"
-    eventChannel.invokeMethod("mapDiagnostic", arguments: ["event": String(message.prefix(400))])
-  }
-
-  // Log when MapKit's own pan really begins. MapKit owns these recognizers;
-  // adding a target only observes them. Each is attached once.
-  private var observedPans = Set<ObjectIdentifier>()
-
-  private func observeMapPans(in view: UIView? = nil) {
-    let view = view ?? mapView
-    for recognizer in view.gestureRecognizers ?? [] where recognizer is UIPanGestureRecognizer {
-      if observedPans.insert(ObjectIdentifier(recognizer)).inserted {
-        recognizer.addTarget(self, action: #selector(mapPanChanged(_:)))
-      }
-    }
-    view.subviews.forEach { observeMapPans(in: $0) }
-  }
-
-  @objc private func mapPanChanged(_ gesture: UIPanGestureRecognizer) {
-    if gesture.state == .began {
-      eventChannel.invokeMethod("mapDiagnostic", arguments: ["event": "native_pan_began"])
-    }
   }
 
   @objc private func handleMapTap(_ gesture: UITapGestureRecognizer) {

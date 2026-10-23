@@ -114,18 +114,13 @@ class _NavigationMapState extends State<NavigationMap> {
         height: widget.height,
         child: switch (defaultTargetPlatform) {
           // The Listener only observes; it never joins the gesture arena.
-          // With the native `native_touch_began` marker it shows where a
-          // frozen pan stops: in Flutter or inside MapKit.
+          // Flutter always sees a touch on the map, so it tells the native
+          // map, which resets recognizers UIKit left stuck if that touch
+          // never reached them (see resetStuckRecognizers in AppDelegate).
           TargetPlatform.iOS => Listener(
-              onPointerDown: (event) {
-                widget.onDiagnostic?.call('flutter_pointer_down');
-                // Ask UIKit which native view is on top at this point. If
-                // it is not part of the map, the map cannot get the touch.
-                NavigationMap._control.invokeMethod<void>('probeHit', {
-                  'x': event.localPosition.dx,
-                  'y': event.localPosition.dy,
-                }).catchError((Object _) {});
-              },
+              onPointerDown: (_) => NavigationMap._control
+                  .invokeMethod<void>('pointerDown')
+                  .catchError((Object _) {}),
               child: UiKitView(
                 key: ValueKey(_viewKey),
                 viewType: NavigationMap._viewType,
