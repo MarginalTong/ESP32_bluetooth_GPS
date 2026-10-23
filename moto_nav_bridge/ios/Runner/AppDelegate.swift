@@ -1377,7 +1377,27 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       "\(type(of: view))\(frame(view))\(view.isUserInteractionEnabled ? "" : "/off")"
     }.joined(separator: ";") ?? "none"
     let name = hit.map { String(describing: type(of: $0)) } ?? "nil"
-    let message = "hit_test at=(\(Int(point.x)),\(Int(point.y))) view=\(name) inMap=\(inMap) above=\(stack)"
+    // Recognizer states (0 possible, 1 began, 2 changed, 3 ended, 4 cancelled,
+    // 5 failed). A touch has just begun, so a recognizer still in 3/4/5 that
+    // did not get it was never reset: UIKit still counts an earlier touch as
+    // active, and that recognizer ignores every new touch.
+    func state(_ recognizer: UIGestureRecognizer?) -> String {
+      recognizer.map { "\($0.state.rawValue)/\($0.numberOfTouches)" } ?? "-"
+    }
+    func named(_ part: String, on view: UIView?) -> UIGestureRecognizer? {
+      view?.gestureRecognizers?.first { NSStringFromClass(type(of: $0)).contains(part) }
+    }
+    var pans: [UIGestureRecognizer] = []
+    func collectPans(_ view: UIView) {
+      pans += (view.gestureRecognizers ?? []).filter { $0 is UIPanGestureRecognizer }
+      view.subviews.forEach(collectPans)
+    }
+    collectPans(mapView)
+    let probe = mapView.gestureRecognizers?.first { $0 is MapTouchProbe }
+    let states = "probe=\(state(probe)) pans=\(pans.map { state($0) }.joined(separator: ","))" +
+      " gate=\(state(named("DelayingGestureRecognizer", on: mapView.superview)))" +
+      " forward=\(state(named("ForwardingGestureRecognizer", on: mapView.superview)))"
+    let message = "hit_test at=(\(Int(point.x)),\(Int(point.y))) view=\(name) inMap=\(inMap) \(states) above=\(stack)"
     eventChannel.invokeMethod("mapDiagnostic", arguments: ["event": String(message.prefix(400))])
   }
 
