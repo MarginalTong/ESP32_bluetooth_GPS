@@ -473,6 +473,13 @@ class NavigationController extends ChangeNotifier {
   List<RoadSegment> _lastAppliedSideRoads = const [];
 
   static const int _offRouteSamplesBeforeReroute = 2;
+  // Recent stream fixes, oldest first. A bike that has not moved cannot have
+  // left the route: an off-route fix then is GPS drift (indoors, beside tall
+  // buildings, waiting at lights), and rerouting from it cannot succeed.
+  final List<NavigationFix> _recentFixes = [];
+  static const int _recentFixLimit = 20;
+  static const Duration _stationaryEvidence = Duration(seconds: 20);
+  static const double _movingSpeedMetersPerSecond = 2.0;
   static const Duration _startMatchGrace = Duration(seconds: 15);
   DateTime? _lastAcceptedFixAt;
   static const Duration _minRerouteInterval = Duration(seconds: 10);
@@ -655,6 +662,8 @@ class NavigationController extends ChangeNotifier {
         return;
       }
       _lastAcceptedFixAt = pos.timestamp;
+      _recentFixes.add(pos);
+      if (_recentFixes.length > _recentFixLimit) _recentFixes.removeAt(0);
     }
     _latestPosition = pos;
 
@@ -729,6 +738,14 @@ class NavigationController extends ChangeNotifier {
         _error = null;
       }
       return false;
+    }
+
+    if (pos is NavigationFix && _isStationary(pos)) {
+      if (_offRouteSamples > 0 || !_awaitingValidRoute) {
+        _log('off_route_ignored_while_stationary ${_fixDetails(pos)}');
+      }
+      _offRouteSamples = 0;
+      return _awaitingValidRoute;
     }
 
     // The first stream fix can differ from the fix used to request the route.
@@ -890,6 +907,24 @@ class NavigationController extends ChangeNotifier {
     } finally {
       if (_rerouteRequestId == requestId) _rerouting = false;
     }
+  }
+
+  /// Whether every fix of the last [_stationaryEvidence] lies within the two
+  /// fixes' combined accuracy of [pos]. The stream only reports moves over
+  /// its distance filter, so an older fix still marks where a still bike was.
+  bool _isStationary(NavigationFix pos) {
+    if (pos.speed.isFinite && pos.speed >= _movingSpeedMetersPerSecond) {
+      return false;
+    }
+    for (final fix in _recentFixes.reversed) {
+      if (!fix.timestamp.isBefore(pos.timestamp)) continue;
+      final radius = math.max(pos.accuracy + fix.accuracy, 20.0);
+      if (pos.distanceTo(fix) > radius) return false;
+      if (pos.timestamp.difference(fix.timestamp) >= _stationaryEvidence) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool _isCurrentReroute(
@@ -1280,6 +1315,7 @@ class NavigationController extends ChangeNotifier {
     _lastReliableNavState = null;
     _origin = null;
     _latestPosition = null;
+    _recentFixes.clear();
     _destination = null;
     _routeOptions = const [];
     _selectedRouteIndex = 0;

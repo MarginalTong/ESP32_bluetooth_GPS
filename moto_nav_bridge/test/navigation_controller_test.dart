@@ -786,6 +786,64 @@ void main() {
     expect(ble.sent.last.direction, DeviceDirection.right);
   });
 
+  group('off-route while stationary', () {
+    // The stream rejects fixes more than 10 s from now, so 20 s of history is
+    // built from timestamps on either side of a short real delay.
+    NavigationFix drift(LatLng at, Duration offset, {double speed = -1}) =>
+        NavigationFix(at.latitude, at.longitude,
+            heading: -1,
+            accuracy: 30,
+            speed: speed,
+            timestamp: DateTime.now().add(offset));
+    const nearby = LatLng(0.0005, 0.0021); // ~15 m from offRoute
+
+    test('indoor drift beside the route does not reroute', () async {
+      await controller.startNavigation(p2);
+      positions.emit(drift(offRoute, const Duration(milliseconds: -9500)));
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      positions.emit(drift(nearby, const Duration(milliseconds: 9500)));
+      await pumpEventQueue();
+      positions.emit(drift(offRoute, const Duration(milliseconds: 9600)));
+      await pumpEventQueue(times: 10);
+
+      expect(routes.fetchCount, 1);
+      expect(controller.diagnostics, isNot(contains('reroute_start')));
+      expect(controller.diagnostics,
+          contains('off_route_ignored_while_stationary'));
+      expect(controller.current?.rerouting, isNot(true));
+    });
+
+    test('leaving the route still reroutes when speed is unknown', () async {
+      await controller.startNavigation(p2);
+      positions.emit(drift(p0, const Duration(milliseconds: -9500)));
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      positions.emit(drift(offRoute, const Duration(milliseconds: 9500)));
+      await pumpEventQueue();
+      positions.emit(drift(offRoute, const Duration(milliseconds: 9600)));
+      await pumpEventQueue(times: 10);
+
+      expect(routes.fetchCount, 2);
+      expect(controller.diagnostics, contains('reroute_start'));
+    });
+
+    test('a moving fix is never treated as stationary', () async {
+      await controller.startNavigation(p2);
+      positions.emit(drift(offRoute, const Duration(milliseconds: -9500)));
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      positions.emit(
+          drift(nearby, const Duration(milliseconds: 9500), speed: 5));
+      await pumpEventQueue();
+      positions.emit(
+          drift(offRoute, const Duration(milliseconds: 9600), speed: 5));
+      await pumpEventQueue(times: 10);
+
+      expect(routes.fetchCount, 2);
+    });
+  });
+
   test('selecting an alternate route switches engine and sends new instruction',
       () async {
     routes = FakeRoutes(mainRoute, alternates: [
