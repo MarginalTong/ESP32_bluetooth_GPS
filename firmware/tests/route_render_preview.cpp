@@ -1,12 +1,15 @@
-// Renders the round panel's map view the old way and the new way, side by
-// side, so drawing changes can be judged without hardware.
+// Renders the round panel's navigation screen the old way and the new way,
+// side by side, so drawing changes can be judged without hardware.
 // Run with: bash firmware/tests/run_route_render_preview.sh [out.ppm]
-// The runner prepends the sketch's ROUTE RENDER block.
+// The runner prepends the sketch's ROUTE RENDER block and the GFX fonts.
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vector>
+
+#include "glcdfont.c"
+#include "Fonts/FreeSansBold24pt7b.h"
 
 // Waveshare 1.46 geometry, as in the sketch.
 static const int kCanvas = 240, kView = 380, kViewOffset = 16, kPanel = 412;
@@ -26,6 +29,12 @@ static float mapY(float y) {
   const float projected = kMapTop + 25 + (y - 2) * (kMapBottom - kMapTop - 47) / 32.0f;
   return anchor + (projected - anchor) * 1.90f;
 }
+static int instructionX(int x) { return 66 + (x - 66) * 5 / 4; }
+static int instructionY(int y) { return 180 + (y - 93) * 5 / 4; }
+// The sketch's left-turn arrow, in pre-transform coordinates.
+static const int kArrowLeft[][4] = {
+    {82, 128, 82, 116}, {82, 116, 74, 106}, {74, 106, 42, 106},
+    {42, 106, 60, 93}, {42, 106, 60, 119}};
 
 // The route ahead, in metres: straight for 30 m, then curving right.
 struct Point { float x, y; };
@@ -83,6 +92,17 @@ static void oldSideRoad(std::vector<uint16_t>& c, int x0, int y0, int x1, int y1
       if (color > c[y * kCanvas + x]) c[y * kCanvas + x] = color;
     }
 }
+// Adafruit GFX classic font, as Adafruit_GFX::drawChar draws it.
+static void classicText(std::vector<uint16_t>& c, const char* text, int x, int y, int size) {
+  for (; *text; ++text, x += 6 * size)
+    for (int i = 0; i < 5; ++i) {
+      uint8_t column = font[uint8_t(*text) * 5 + i];
+      for (int j = 0; j < 8; ++j, column >>= 1)
+        if (column & 1)
+          for (int a = 0; a < size; ++a)
+            for (int b = 0; b < size; ++b) putCanvas(c, x + i * size + a, y + j * size + b, 0xFFFF);
+    }
+}
 
 static std::vector<uint16_t> renderOld() {
   std::vector<uint16_t> canvas(kCanvas * kCanvas, 0);
@@ -110,6 +130,11 @@ static std::vector<uint16_t> renderOld() {
   fillTri(canvas, mx, my - 12, mx - 10, my + 6, mx + 10, my + 6, 0xFFFF);
   for (int y = kMapClipBottom; y < kCanvas; ++y)
     for (int x = 0; x < kCanvas; ++x) canvas[y * kCanvas + x] = 0;
+  for (const auto& s : kArrowLeft)
+    thickLine(canvas, instructionX(s[0]), instructionY(s[1]), instructionX(s[2]),
+              instructionY(s[3]), 4);
+  classicText(canvas, "105", 192 - 3 * 24, 176, 4);
+  classicText(canvas, "m", 196, 183, 2);
   // Old presentDisplay: nearest-neighbour upscale and circle test per pixel.
   std::vector<uint16_t> out(kView * kView, 0);
   const int r = kPanel / 2 - 3;
@@ -123,7 +148,7 @@ static std::vector<uint16_t> renderOld() {
 }
 
 // ---- New pipeline -----------------------------------------------------------
-// Canvas coordinate to the map layer, as the sketch's layerCoord().
+// Canvas coordinate to the native layer, as the sketch's layerCoord().
 static float layer(float canvasValue) { return (canvasValue + 0.5f) * kScale; }
 
 static std::vector<uint16_t> renderNew() {
@@ -156,14 +181,26 @@ static std::vector<uint16_t> renderNew() {
     const float x1 = layer(mapX(j.x + side * 10)), y1 = layer(mapY(j.y + side * 3));
     const float dx = x1 - x0, dy = y1 - y0, length = hypotf(dx, dy);
     map.strokeFadingRails(x0, y0, dx / length, dy / length, 48 * kScale, 3 * kScale,
-                            1.9f * kScale, 245);
+                          1.9f * kScale, 245);
   }
   map.strokePolyline(xy, 20, kRouteStroke * kScale / 2, 255);
   const float mx = layer(119), my = layer(166 - 12);
   map.fillTriangle(mx, my - 21 * kScale, mx - 18 * kScale, my + 14 * kScale,
-                     mx + 18 * kScale, my + 14 * kScale, 0);
+                   mx + 18 * kScale, my + 14 * kScale, 0);
   map.fillTriangle(mx, my - 12 * kScale, mx - 10 * kScale, my + 6 * kScale,
-                     mx + 10 * kScale, my + 6 * kScale, 255);
+                   mx + 10 * kScale, my + 6 * kScale, 255);
+  // Instruction strip, as drawInstructionLine() and drawDistance() draw it.
+  map.clipBottom = kView;
+  for (const auto& s : kArrowLeft)
+    map.strokeSegment(layer(instructionX(s[0])), layer(instructionY(s[1])),
+                      layer(instructionX(s[2])), layer(instructionY(s[3])), 5 * kScale / 2,
+                      255);
+  const GFXfont* uiFont = &FreeSansBold24pt7b;
+  const float big = 28 * kScale / GrayLayer::capHeight(uiFont);
+  const float small = 14 * kScale / GrayLayer::capHeight(uiFont);
+  const float numberLeft = 192 * kScale - GrayLayer::textWidth(uiFont, "105", big);
+  map.drawText(uiFont, "105", numberLeft, 204 * kScale, big, 255);
+  map.drawText(uiFont, "m", 195 * kScale, 204 * kScale, small, 255);
   static PanelComposer composer;
   const float center = kPanel / 2.0f - kViewOffset;
   composer.init(kView, kView, kCanvas, kCanvas, center, center, kPanel / 2.0f - 3);

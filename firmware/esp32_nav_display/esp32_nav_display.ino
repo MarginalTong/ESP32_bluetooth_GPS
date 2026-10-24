@@ -7,6 +7,7 @@
 #if NAV_WAVESHARE_146
 #include <Wire.h>
 #include <Arduino_GFX_Library.h>
+#include <Fonts/FreeSansBold24pt7b.h>
 #if !defined(CONFIG_IDF_TARGET_ESP32S3)
 #error "Select ESP32S3 Dev Module for the Waveshare 1.46 board"
 #endif
@@ -365,14 +366,15 @@ struct KeyRing {
 // END PACKET AUTH
 
 // BEGIN ROUTE RENDER - kept inline so this sketch can be copied on its own.
-// Anti-aliased map drawing at the panel's native resolution. The map is
+// Anti-aliased drawing at the panel's native resolution. The UI is
 // monochrome, so it is an 8-bit gray layer: 0 is black, 255 white. Strokes
 // use per-pixel distance coverage, which also gives round caps and joins.
+// Text comes from Adafruit GFX outline-derived fonts, supersampled.
 // Written as members so the Arduino preprocessor generates no prototypes.
 struct GrayLayer {
   uint8_t* pixels = nullptr;
   int16_t width = 0, height = 0;
-  // Rows at and below this are never drawn (the instruction strip).
+  // Rows at and below this are never drawn (e.g. below the map).
   int16_t clipBottom = 0;
 
   static float clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
@@ -448,6 +450,104 @@ struct GrayLayer {
         const float fade = 1.0f - t * t * (3.0f - 2.0f * t);
         const uint8_t value = uint8_t(peak * fade * (1.0f - edge / softWidth) + 0.5f);
         if (value > row[x]) row[x] = value;
+      }
+    }
+  }
+
+  // Anti-aliased rounded rectangle spanning [x0, x1] x [y0, y1].
+  void fillRoundRect(float x0, float y0, float x1, float y1, float radius,
+                     uint8_t level) {
+    if (pixels == nullptr) return;
+    int16_t left, right, top, bottom;
+    bounds(x0 - 1.0f, x1 + 1.0f, width, left, right);
+    bounds(y0 - 1.0f, y1 + 1.0f, clipBottom, top, bottom);
+    const float cx = (x0 + x1) / 2.0f, cy = (y0 + y1) / 2.0f;
+    const float innerX = (x1 - x0) / 2.0f - radius, innerY = (y1 - y0) / 2.0f - radius;
+    for (int16_t y = top; y <= bottom; ++y) {
+      uint8_t* row = pixels + size_t(y) * width;
+      for (int16_t x = left; x <= right; ++x) {
+        const float qx = fmaxf(fabsf(x + 0.5f - cx) - innerX, 0.0f);
+        const float qy = fmaxf(fabsf(y + 0.5f - cy) - innerY, 0.0f);
+        const float coverage = clamp01(radius + 0.5f - sqrtf(qx * qx + qy * qy));
+        if (coverage <= 0.0f) continue;
+        const uint8_t value = uint8_t(level * coverage + 0.5f);
+        if (value > row[x]) row[x] = value;
+      }
+    }
+  }
+
+  static const GFXglyph* glyphFor(const GFXfont* font, char c) {
+    const uint8_t code = uint8_t(c);
+    if (code < font->first || code > font->last) return nullptr;
+    return font->glyph + (code - font->first);
+  }
+
+  // Height of a capital letter, in font pixels.
+  static float capHeight(const GFXfont* font) {
+    const GFXglyph* glyph = glyphFor(font, 'H');
+    return glyph != nullptr ? -float(glyph->yOffset) : float(font->yAdvance);
+  }
+
+  static float textWidth(const GFXfont* font, const char* text, float scale) {
+    float advance = 0.0f;
+    for (const char* c = text; *c != '\0'; ++c) {
+      const GFXglyph* glyph = glyphFor(font, *c);
+      if (glyph != nullptr) advance += glyph->xAdvance;
+    }
+    return advance * scale;
+  }
+
+  // `x` is the left edge of the first glyph's advance box, `baseline` the
+  // text baseline, both in layer pixels.
+  void drawText(const GFXfont* font, const char* text, float x, float baseline,
+                float scale, uint8_t level) {
+    for (const char* c = text; *c != '\0'; ++c) {
+      const GFXglyph* glyph = glyphFor(font, *c);
+      if (glyph == nullptr) continue;
+      drawGlyph(font, *glyph, x, baseline, scale, level);
+      x += glyph->xAdvance * scale;
+    }
+  }
+
+  static int glyphBit(const uint8_t* bits, const GFXglyph& glyph, int x, int y) {
+    if (x < 0 || y < 0 || x >= glyph.width || y >= glyph.height) return 0;
+    const unsigned index = unsigned(y) * glyph.width + unsigned(x);
+    return (bits[index >> 3] >> (7 - (index & 7))) & 1;
+  }
+
+  // 4x4 supersampling of the bilinearly filtered 1-bit glyph: smooth edges
+  // whether the font is scaled up or down.
+  void drawGlyph(const GFXfont* font, const GFXglyph& glyph, float x, float baseline,
+                 float scale, uint8_t level) {
+    if (pixels == nullptr || glyph.width == 0 || glyph.height == 0) return;
+    const uint8_t* bits = font->bitmap + glyph.bitmapOffset;
+    const float left0 = x + glyph.xOffset * scale;
+    const float top0 = baseline + glyph.yOffset * scale;
+    int16_t left, right, top, bottom;
+    bounds(left0 - 1.0f, left0 + glyph.width * scale + 1.0f, width, left, right);
+    bounds(top0 - 1.0f, top0 + glyph.height * scale + 1.0f, clipBottom, top, bottom);
+    for (int16_t py = top; py <= bottom; ++py) {
+      uint8_t* row = pixels + size_t(py) * width;
+      for (int16_t px = left; px <= right; ++px) {
+        int hits = 0;
+        for (int sy = 0; sy < 4; ++sy) {
+          const float v = (py + (sy + 0.5f) / 4.0f - top0) / scale - 0.5f;
+          const int j = int(floorf(v));
+          const float fv = v - j;
+          for (int sx = 0; sx < 4; ++sx) {
+            const float u = (px + (sx + 0.5f) / 4.0f - left0) / scale - 0.5f;
+            const int i = int(floorf(u));
+            const float fu = u - i;
+            const float upper = glyphBit(bits, glyph, i, j) * (1.0f - fu) +
+                                glyphBit(bits, glyph, i + 1, j) * fu;
+            const float lower = glyphBit(bits, glyph, i, j + 1) * (1.0f - fu) +
+                                glyphBit(bits, glyph, i + 1, j + 1) * fu;
+            if (upper * (1.0f - fv) + lower * fv >= 0.5f) ++hits;
+          }
+        }
+        if (hits == 0) continue;
+        const uint8_t value = uint8_t(level * hits / 16);
+        if (value > row[px]) row[px] = value;
       }
     }
   }
@@ -593,12 +693,13 @@ uint32_t sessionCounter = 0;
 BleMailbox mailbox;
 MapMotion mapMotion;
 #if NAV_WAVESHARE_146
-// Native-resolution map, in PSRAM. Without it the map is drawn into the
-// 240x240 canvas and upscaled like the rest of the UI.
-GrayLayer mapLayer;
+// The whole UI at the panel's native resolution, in PSRAM. Drawing code keeps
+// the 240x240 canvas coordinates and scales them. Without PSRAM everything is
+// drawn into the canvas and upscaled, as before.
+GrayLayer nativeLayer;
 PanelComposer panelComposer;
-// Set when the current frame drew into mapLayer; cleared once presented.
-bool mapLayerDrawn = false;
+// Set when the current frame drew into nativeLayer; cleared once presented.
+bool nativeLayerDrawn = false;
 #endif
 
 uint32_t lastLivePacketMs = 0;
@@ -1195,16 +1296,66 @@ float mapPreviewY(float y) {
 }
 
 #if NAV_WAVESHARE_146
-constexpr float MAP_LAYER_SCALE = float(PANEL_VIEW_WIDTH) / SCREEN_WIDTH;
+constexpr float NATIVE_SCALE = float(PANEL_VIEW_WIDTH) / SCREEN_WIDTH;
+const GFXfont* const UI_FONT = &FreeSansBold24pt7b;
 
-bool useMapLayer() { return mapLayer.pixels != nullptr; }
+bool useNativeLayer() { return nativeLayer.pixels != nullptr; }
 
-// Canvas pixel coordinate to the center of the matching map-layer area, so
-// the layer lines up with the upscaled canvas UI.
-float layerCoord(float canvasValue) { return (canvasValue + 0.5f) * MAP_LAYER_SCALE; }
+// Canvas pixel coordinate to the center of the matching native-layer area.
+float layerCoord(float canvasValue) { return (canvasValue + 0.5f) * NATIVE_SCALE; }
+
+// The classic font's size n is 7n canvas pixels tall; keep those heights.
+float uiTextScale(uint8_t size) {
+  return 7.0f * size * NATIVE_SCALE / GrayLayer::capHeight(UI_FONT);
+}
 #else
-bool useMapLayer() { return false; }
+bool useNativeLayer() { return false; }
 #endif
+
+// Starts a frame: everything drawn until presentDisplay() is shown together.
+void beginFrame() {
+  display.fillScreen(COLOR_BG);
+#if NAV_WAVESHARE_146
+  if (useNativeLayer()) {
+    nativeLayer.clear();
+    nativeLayerDrawn = true;
+  }
+#endif
+}
+
+// Text whose capitals span [top, top + 7 * size] canvas pixels.
+void drawUiText(const char* value, uint8_t size, float left, float top) {
+#if NAV_WAVESHARE_146
+  if (useNativeLayer()) {
+    nativeLayer.drawText(UI_FONT, value, left * NATIVE_SCALE,
+                         (top + 7.0f * size) * NATIVE_SCALE, uiTextScale(size), 255);
+    return;
+  }
+#endif
+  display.setTextSize(size);
+  display.setCursor(lroundf(left), lroundf(top));
+  display.print(value);
+}
+
+float uiTextWidth(const char* value, uint8_t size) {
+#if NAV_WAVESHARE_146
+  if (useNativeLayer())
+    return GrayLayer::textWidth(UI_FONT, value, uiTextScale(size)) / NATIVE_SCALE;
+#endif
+  return strlen(value) * 6.0f * size;
+}
+
+void fillUiTriangle(float x0, float y0, float x1, float y1, float x2, float y2) {
+#if NAV_WAVESHARE_146
+  if (useNativeLayer()) {
+    nativeLayer.fillTriangle(layerCoord(x0), layerCoord(y0), layerCoord(x1),
+                             layerCoord(y1), layerCoord(x2), layerCoord(y2), 255);
+    return;
+  }
+#endif
+  display.fillTriangle(lroundf(x0), lroundf(y0), lroundf(x1), lroundf(y1),
+                       lroundf(x2), lroundf(y2), COLOR_WHITE);
+}
 
 void presentDisplay() {
 #if NAV_WAVESHARE_146
@@ -1215,14 +1366,14 @@ void presentDisplay() {
   static uint16_t band[PANEL_VIEW_WIDTH * bandRows];
   const uint16_t* source = display.getBuffer();
   if (!source) return;
-  const GrayLayer* layer = mapLayerDrawn ? &mapLayer : nullptr;
+  const GrayLayer* layer = nativeLayerDrawn ? &nativeLayer : nullptr;
   for (int16_t y = 0; y < PANEL_VIEW_HEIGHT; y += bandRows) {
     const int16_t rows =
         PANEL_VIEW_HEIGHT - y < bandRows ? int16_t(PANEL_VIEW_HEIGHT - y) : bandRows;
     panelComposer.compose(source, layer, band, y, rows);
     tft.draw16bitRGBBitmap(PANEL_VIEW_X, PANEL_VIEW_Y + y, band, PANEL_VIEW_WIDTH, rows);
   }
-  mapLayerDrawn = false;
+  nativeLayerDrawn = false;
 #else
   tft.drawRGBBitmap(0, 0, display.getBuffer(), SCREEN_WIDTH, SCREEN_HEIGHT);
 #endif
@@ -1238,12 +1389,14 @@ void drawThickLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
   }
 }
 
-// A map stroke `thickness` canvas pixels wide, anti-aliased on the map layer.
-void drawMapLine(float x0, float y0, float x1, float y1, uint8_t thickness) {
+// A stroke as wide as drawThickLine() draws it (2 * (thickness / 2) + 1
+// canvas pixels), anti-aliased on the native layer.
+void drawStroke(float x0, float y0, float x1, float y1, uint8_t thickness) {
 #if NAV_WAVESHARE_146
-  if (useMapLayer()) {
-    mapLayer.strokeSegment(layerCoord(x0), layerCoord(y0), layerCoord(x1),
-                           layerCoord(y1), thickness * MAP_LAYER_SCALE / 2.0f, 255);
+  if (useNativeLayer()) {
+    const float width = (thickness / 2 * 2 + 1) * NATIVE_SCALE;
+    nativeLayer.strokeSegment(layerCoord(x0), layerCoord(y0), layerCoord(x1),
+                              layerCoord(y1), width / 2.0f, 255);
     return;
   }
 #endif
@@ -1289,11 +1442,11 @@ void drawSideRoadLine(float x0, float y0, float x1, float y1) {
   constexpr float railOffset = 3.0f;
   constexpr float softWidth = 1.9f;
 #if NAV_WAVESHARE_146
-  if (useMapLayer()) {
-    mapLayer.strokeFadingRails(layerCoord(x0), layerCoord(y0), ux, uy,
-                               visibleLength * MAP_LAYER_SCALE,
-                               railOffset * MAP_LAYER_SCALE,
-                               softWidth * MAP_LAYER_SCALE, 245);
+  if (useNativeLayer()) {
+    nativeLayer.strokeFadingRails(layerCoord(x0), layerCoord(y0), ux, uy,
+                               visibleLength * NATIVE_SCALE,
+                               railOffset * NATIVE_SCALE,
+                               softWidth * NATIVE_SCALE, 245);
     return;
   }
 #endif
@@ -1351,21 +1504,20 @@ int16_t instructionY(int16_t y) {
 
 void drawInstructionLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
                          uint8_t thickness = 3) {
-  drawThickLine(instructionX(x0), instructionY(y0), instructionX(x1),
-                instructionY(y1), COLOR_WHITE,
+  drawStroke(instructionX(x0), instructionY(y0), instructionX(x1),
+             instructionY(y1),
 #if NAV_WAVESHARE_146
-                thickness + 1
+             thickness + 1
 #else
-                thickness
+             thickness
 #endif
   );
 }
 
 void fillInstructionTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
                              int16_t x2, int16_t y2) {
-  display.fillTriangle(instructionX(x0), instructionY(y0),
-                       instructionX(x1), instructionY(y1),
-                       instructionX(x2), instructionY(y2), COLOR_WHITE);
+  fillUiTriangle(instructionX(x0), instructionY(y0), instructionX(x1),
+                 instructionY(y1), instructionX(x2), instructionY(y2));
 }
 
 void drawArrowUp() {
@@ -1413,6 +1565,15 @@ void drawUTurn() {
 }
 
 void drawStop() {
+#if NAV_WAVESHARE_146
+  if (useNativeLayer()) {
+    nativeLayer.fillRoundRect(instructionX(42) * NATIVE_SCALE,
+                              instructionY(98) * NATIVE_SCALE,
+                              instructionX(90) * NATIVE_SCALE,
+                              instructionY(128) * NATIVE_SCALE, 5 * NATIVE_SCALE, 255);
+    return;
+  }
+#endif
   display.fillRoundRect(instructionX(42), instructionY(98),
                         instructionX(90) - instructionX(42),
                         instructionY(128) - instructionY(98), 5, COLOR_WHITE);
@@ -1424,9 +1585,7 @@ void drawArrived() {
 }
 
 void drawUnknown() {
-  display.setTextSize(2);
-  display.setCursor(instructionX(22), instructionY(105));
-  display.println("?");
+  drawUiText("?", 2, instructionX(22), instructionY(105));
 }
 
 void drawDirection(Direction direction) {
@@ -1470,47 +1629,46 @@ void drawFallbackMapRoute(Direction direction) {
 
   switch (direction) {
     case Direction::Left:
-      drawMapLine(centerX, bottom, centerX, 55, FALLBACK_ROUTE_STROKE);
-      drawMapLine(centerX, 55, centerX - 18, 42, FALLBACK_ROUTE_STROKE);
-      drawMapLine(centerX - 18, 42, left, 42, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, bottom, centerX, 55, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, 55, centerX - 18, 42, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX - 18, 42, left, 42, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::Right:
-      drawMapLine(centerX, bottom, centerX, 55, FALLBACK_ROUTE_STROKE);
-      drawMapLine(centerX, 55, centerX + 18, 42, FALLBACK_ROUTE_STROKE);
-      drawMapLine(centerX + 18, 42, right, 42, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, bottom, centerX, 55, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, 55, centerX + 18, 42, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX + 18, 42, right, 42, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::BearLeft:
-      drawMapLine(centerX, bottom, centerX, 58, FALLBACK_ROUTE_STROKE);
-      drawMapLine(centerX, 58, centerX - 44, top, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, bottom, centerX, 58, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, 58, centerX - 44, top, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::BearRight:
-      drawMapLine(centerX, bottom, centerX, 58, FALLBACK_ROUTE_STROKE);
-      drawMapLine(centerX, 58, centerX + 44, top, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, bottom, centerX, 58, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, 58, centerX + 44, top, FALLBACK_ROUTE_STROKE);
       break;
     case Direction::UTurn:
-      drawMapLine(centerX, bottom, centerX, 36, FALLBACK_ROUTE_STROKE);
-      drawMapLine(centerX, 36, left + 28, 36, FALLBACK_ROUTE_STROKE);
-      drawMapLine(left + 28, 36, left + 28, 68, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, bottom, centerX, 36, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, 36, left + 28, 36, FALLBACK_ROUTE_STROKE);
+      drawStroke(left + 28, 36, left + 28, 68, FALLBACK_ROUTE_STROKE);
       break;
     default:
-      drawMapLine(centerX, bottom, centerX, top, FALLBACK_ROUTE_STROKE);
+      drawStroke(centerX, bottom, centerX, top, FALLBACK_ROUTE_STROKE);
       break;
   }
 }
 
 void drawMiniRouteMap(bool showRider) {
 #if NAV_WAVESHARE_146
-  if (useMapLayer()) {
-    mapLayer.clear();
-    mapLayerDrawn = true;
-  }
+  // Legacy preview coordinates can extend below the map; keep them out of
+  // the instruction strip.
+  nativeLayer.clipBottom = int16_t(MAP_CLIP_BOTTOM * NATIVE_SCALE);
 #endif
   drawSideRoadSegments();
 
   if (mapMotion.routes >= 2) {
     for (uint8_t i = 0; i + 1 < mapMotion.routes; i++) {
       const float* p = mapMotion.current + i * 2;
-      drawMapLine(mapPreviewX(p[0]), mapPreviewY(p[1]),
+      drawStroke(mapPreviewX(p[0]), mapPreviewY(p[1]),
                   mapPreviewX(p[2]), mapPreviewY(p[3]), ROUTE_STROKE);
     }
   } else {
@@ -1523,12 +1681,12 @@ void drawMiniRouteMap(bool showRider) {
     // Only live guidance may show a rider marker. A cached snapshot no longer
     // establishes the bike's current position relative to this road shape.
 #if NAV_WAVESHARE_146
-    if (useMapLayer()) {
+    if (useNativeLayer()) {
       const float x = layerCoord(markerX), y = layerCoord(markerY);
-      constexpr float s = MAP_LAYER_SCALE;
-      mapLayer.fillTriangle(x, y - 21 * s, x - 18 * s, y + 14 * s, x + 18 * s,
+      constexpr float s = NATIVE_SCALE;
+      nativeLayer.fillTriangle(x, y - 21 * s, x - 18 * s, y + 14 * s, x + 18 * s,
                             y + 14 * s, 0);
-      mapLayer.fillTriangle(x, y - 12 * s, x - 10 * s, y + 6 * s, x + 10 * s,
+      nativeLayer.fillTriangle(x, y - 12 * s, x - 10 * s, y + 6 * s, x + 10 * s,
                             y + 6 * s, 255);
     } else {
       display.fillTriangle(markerX, markerY - 21, markerX - 18, markerY + 14,
@@ -1548,6 +1706,9 @@ void drawMiniRouteMap(bool showRider) {
   // the instruction strip without drawing a visible frame or separator.
   display.fillRect(0, MAP_CLIP_BOTTOM, SCREEN_WIDTH, SCREEN_HEIGHT - MAP_CLIP_BOTTOM,
                    COLOR_BG);
+#if NAV_WAVESHARE_146
+  nativeLayer.clipBottom = nativeLayer.height;
+#endif
 }
 
 void drawDistance(int distanceMeters, bool blinkState) {
@@ -1555,33 +1716,23 @@ void drawDistance(int distanceMeters, bool blinkState) {
 #if NAV_WAVESHARE_146
   // The circle narrows at the bottom. Right-align the large number inside a
   // fixed safe column and place the small unit above its lower edge.
-  display.setTextSize(4);
   if (nav.direction == Direction::Arrived) {
-    display.setCursor(120, 176);
-    display.print("ARR");
+    drawUiText("ARR", 4, 120, 176);
     return;
   }
   if (distanceMeters <= 30) {
-    if (blinkState) {
-      display.setCursor(120, 176);
-      display.print("NOW");
-    }
+    if (blinkState) drawUiText("NOW", 4, 120, 176);
     return;
   }
+  char number[8];
   if (distanceMeters < 1000) {
-    const int16_t digits = distanceMeters < 100 ? 2 : 3;
-    display.setCursor(192 - digits * 24, 176);
-    display.print(distanceMeters);
-    display.setTextSize(2);
-    display.setCursor(196, 183);
-    display.print("m");
+    snprintf(number, sizeof(number), "%d", distanceMeters);
   } else {
-    display.setCursor(120, 176);
-    display.print(distanceMeters / 1000.0, 1);
-    display.setTextSize(2);
-    display.setCursor(194, 183);
-    display.print("km");
+    snprintf(number, sizeof(number), "%.1f", distanceMeters / 1000.0);
   }
+  // Number right-aligned at the column edge; unit on the same baseline.
+  drawUiText(number, 4, 192 - uiTextWidth(number, 4), 176);
+  drawUiText(distanceMeters < 1000 ? "m" : "km", 2, 195, 190);
 #else
   display.setTextSize(3);
   display.setCursor(DISTANCE_X, 104);
@@ -1624,6 +1775,7 @@ void drawBottomError() {
 
 #if NAV_WAVESHARE_146
 uint16_t roundTextHeight(const char* value, uint8_t size) {
+  if (useNativeLayer()) return 7 * size;
   int16_t x, y;
   uint16_t width, height;
   display.setTextSize(size);
@@ -1632,6 +1784,10 @@ uint16_t roundTextHeight(const char* value, uint8_t size) {
 }
 
 void drawRoundCenteredText(const char* value, uint8_t size, int16_t top) {
+  if (useNativeLayer()) {
+    drawUiText(value, size, (SCREEN_WIDTH - uiTextWidth(value, size)) / 2.0f, top);
+    return;
+  }
   int16_t x, y;
   uint16_t width, height;
   display.setTextSize(size);
@@ -1746,7 +1902,7 @@ void renderDisplay(bool blinkState) {
   if (!displayAvailable) return;
   if (displayPowerState == DisplayPowerState::Off) return;
 
-  display.fillScreen(COLOR_BG);
+  beginFrame();
   display.setTextColor(COLOR_WHITE);
 
   portENTER_CRITICAL(&stateMux);
@@ -1841,12 +1997,8 @@ void renderDisplay(bool blinkState) {
 #if NAV_WAVESHARE_146
     // Same right-hand column as the distance, clear of the arrow and inside
     // the round aperture.
-    display.setTextSize(2);
-    display.setCursor(112, 178);
-    display.print("NO UPDATE");
-    display.setTextSize(1);
-    display.setCursor(120, 204);
-    display.print("CHECK PHONE");
+    drawUiText("NO UPDATE", 2, 112, 178);
+    drawUiText("CHECK PHONE", 1, 120, 204);
 #else
     display.setTextSize(2);
     display.setCursor(DISTANCE_X, 100);
@@ -1976,15 +2128,15 @@ bool initDisplay() {
   panelComposer.init(PANEL_VIEW_WIDTH, PANEL_VIEW_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT,
                      PANEL_SIZE / 2.0f - PANEL_VIEW_X, PANEL_SIZE / 2.0f - PANEL_VIEW_Y,
                      PANEL_VISIBLE_RADIUS);
-  mapLayer.pixels = static_cast<uint8_t*>(heap_caps_malloc(
+  nativeLayer.pixels = static_cast<uint8_t*>(heap_caps_malloc(
       size_t(PANEL_VIEW_WIDTH) * PANEL_VIEW_HEIGHT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  if (mapLayer.pixels != nullptr) {
-    mapLayer.width = PANEL_VIEW_WIDTH;
-    mapLayer.height = PANEL_VIEW_HEIGHT;
-    mapLayer.clipBottom = int16_t(MAP_CLIP_BOTTOM * MAP_LAYER_SCALE);
-    mapLayer.clear();
+  if (nativeLayer.pixels != nullptr) {
+    nativeLayer.width = PANEL_VIEW_WIDTH;
+    nativeLayer.height = PANEL_VIEW_HEIGHT;
+    nativeLayer.clipBottom = PANEL_VIEW_HEIGHT;
+    nativeLayer.clear();
   } else {
-    Serial.println("[TFT] No PSRAM for the map layer; using the low-resolution map");
+    Serial.println("[TFT] No PSRAM for the native layer; using the 240x240 canvas");
   }
   Serial.println("[TFT] SPD2010 412x412 ready");
 #else
@@ -2022,7 +2174,7 @@ void setup() {
     Serial.println("[TFT] init failed");
     Serial.println("[TFT] continuing without display so BLE still works");
   } else {
-    display.fillScreen(COLOR_BG);
+    beginFrame();
     drawStandbyClock();
     presentDisplay();
   }
