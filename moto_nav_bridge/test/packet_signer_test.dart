@@ -52,7 +52,7 @@ void main() {
   });
 
   test('the largest navigation packet fits the firmware limit', () {
-    // Every field at its widest: three-digit coordinates, all preview points
+    // Every field at its widest: four-digit coordinates, all preview points
     // and side roads, rerouting, a 4-digit distance and a huge counter. The
     // firmware drops anything longer, so this must hold for any NavState.
     final widest = NavState(
@@ -60,9 +60,9 @@ void main() {
       distanceMeters: 9999,
       rerouting: true,
       routePreviewPoints:
-          List.filled(NavigationEngine.routePreviewMaxPoints * 2, 127),
+          List.filled(NavigationEngine.routePreviewMaxPoints * 2, 1270),
       sideRoadPreviewPoints:
-          List.filled(NavigationEngine.sideRoadPreviewMaxSegments * 4, 127),
+          List.filled(NavigationEngine.sideRoadPreviewMaxSegments * 4, 1270),
     );
     final signer = PacketSigner(key: key, sessionNonce: nonce);
     for (var i = 0; i < 999999; i++) {

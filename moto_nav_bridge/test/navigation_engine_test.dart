@@ -229,10 +229,10 @@ void main() {
     final points = engine.update(const LatLng(0, 0)).routePreviewPoints;
 
     expect(NavigationEngine.routePreviewDistanceMeters, 200);
-    expect(points.take(2), [64, 34]);
+    expect(points.take(2), [640, 340]);
     // The bend is about 111 m ahead; the eastbound section must be visible.
-    expect(points[points.length - 2], greaterThan(64));
-    expect(points.last, inInclusiveRange(15, 17));
+    expect(points[points.length - 2], greaterThan(640));
+    expect(points.last, inInclusiveRange(150, 170));
   });
 
   test('route preview points stay inside the top mini-map bounds', () {
@@ -240,12 +240,35 @@ void main() {
     final state = engine.update(p0);
     final points = state.routePreviewPoints;
 
-    expect(points.length % 2, 0);
-    expect(points.length, lessThanOrEqualTo(12));
+    expect(points.length, NavigationEngine.routePreviewMaxPoints * 2);
 
     for (var i = 0; i < points.length; i += 2) {
-      expect(points[i], inInclusiveRange(18, 110));
-      expect(points[i + 1], inInclusiveRange(2, 34));
+      expect(points[i], inInclusiveRange(180, 1100));
+      expect(points[i + 1], inInclusiveRange(20, 340));
+    }
+  });
+
+  test('route preview points are evenly spaced along the road', () {
+    // Straight north for 300 m: the 200 m preview is split into equal steps,
+    // finer than one mini-map unit.
+    final engine = NavigationEngine(const [
+      RouteStep(
+        direction: DeviceDirection.up,
+        start: LatLng(0, 0),
+        end: LatLng(0.0027, 0),
+        distanceMeters: 300,
+      ),
+    ]);
+    final points = engine.update(const LatLng(0, 0)).routePreviewPoints;
+
+    expect(points.length, NavigationEngine.routePreviewMaxPoints * 2);
+    expect(points.first, 640);
+    expect(points[1], 340);
+    expect(points[points.length - 1], 20);
+    for (var i = 2; i < points.length; i += 2) {
+      expect(points[i], 640);
+      // 320 tenths over 19 steps: 16 or 17 each after rounding.
+      expect(points[i - 1] - points[i + 1], inInclusiveRange(16, 17));
     }
   });
 
@@ -264,10 +287,10 @@ void main() {
 
     // A crossing road produces two route-anchored arms.
     expect(roads.length, 8);
-    expect(roads[0], inInclusiveRange(18, 110));
-    expect(roads[1], inInclusiveRange(2, 34));
-    expect(roads[2], inInclusiveRange(18, 110));
-    expect(roads[3], inInclusiveRange(2, 34));
+    expect(roads[0], inInclusiveRange(180, 1100));
+    expect(roads[1], inInclusiveRange(20, 340));
+    expect(roads[2], inInclusiveRange(180, 1100));
+    expect(roads[3], inInclusiveRange(20, 340));
   });
 
   test('side-road direction does not depend on the real road length', () {

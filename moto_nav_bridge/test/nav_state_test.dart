@@ -25,7 +25,7 @@ void main() {
         distanceMeters: 120,
         routePreviewPoints: [64, 20, 64, 12, 58, 2],
       );
-      expect(s.toWire(), '{"dir":"UP","dist":120,"p":[64,20,64,12,58,2]}');
+      expect(s.toWire(), '{"dir":"UP","dist":120,"P":[64,20,64,12,58,2]}');
     });
 
     test('side roads serialize as compact r array after route preview', () {
@@ -37,7 +37,7 @@ void main() {
       );
       expect(
         s.toWire(),
-        '{"dir":"LEFT","dist":80,"p":[64,34,64,20],"r":[42,22,86,22]}',
+        '{"dir":"LEFT","dist":80,"P":[64,34,64,20],"R":[42,22,86,22]}',
       );
     });
 
@@ -49,7 +49,7 @@ void main() {
         routePreviewPoints: [64, 34, 64, 20],
       );
       expect(s.toWire(),
-          '{"dir":"STOP","dist":0,"p":[64,34,64,20],"rerouting":true}');
+          '{"dir":"STOP","dist":0,"P":[64,34,64,20],"rerouting":true}');
     });
 
     test('toJson keys are dir/dist', () {
