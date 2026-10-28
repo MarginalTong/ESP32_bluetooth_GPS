@@ -1,2 +1,12 @@
 # macOS Finder metadata
 .DS_Store
+
+# PlatformIO build output and shared serial logs
+.pio/
+.navo/
+compile_commands.json
+.vscode/.browse.c_cpp.db*
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch
+firmware/tools/__pycache__/

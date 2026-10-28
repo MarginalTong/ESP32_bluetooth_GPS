@@ -1,0 +1,52 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "NAVO: Verify",
+      "type": "process",
+      "command": "${userHome}/.platformio/penv/bin/pio",
+      "args": ["run", "-d", "${workspaceFolder}", "-e", "waveshare_146"],
+      "group": {"kind": "build", "isDefault": true},
+      "problemMatcher": ["$gcc"],
+      "presentation": {"reveal": "always", "panel": "dedicated"}
+    },
+    {
+      "label": "NAVO: Upload",
+      "type": "process",
+      "command": "${userHome}/.platformio/penv/bin/pio",
+      "args": ["run", "-d", "${workspaceFolder}", "-e", "waveshare_146", "-t", "upload"],
+      "problemMatcher": ["$gcc"],
+      "presentation": {"reveal": "always", "panel": "dedicated"},
+      "runOptions": {"instanceLimit": 1}
+    },
+    {
+      "label": "NAVO: Upload + Serial Monitor",
+      "dependsOrder": "sequence",
+      "dependsOn": ["NAVO: Upload", "NAVO: Serial Monitor"],
+      "problemMatcher": []
+    },
+    {
+      "label": "NAVO: Serial Monitor",
+      "type": "process",
+      "command": "${userHome}/.platformio/penv/bin/python",
+      "args": ["${workspaceFolder}/firmware/tools/navo_monitor.py", "view"],
+      "problemMatcher": [],
+      "presentation": {"reveal": "always", "panel": "dedicated"}
+    },
+    {
+      "label": "NAVO: Stop Serial Monitor",
+      "type": "process",
+      "command": "${userHome}/.platformio/penv/bin/python",
+      "args": ["${workspaceFolder}/firmware/tools/navo_monitor.py", "stop"],
+      "problemMatcher": []
+    },
+    {
+      "label": "NAVO: Status",
+      "type": "process",
+      "command": "${userHome}/.platformio/penv/bin/python",
+      "args": ["${workspaceFolder}/firmware/tools/navo_monitor.py", "status"],
+      "problemMatcher": [],
+      "presentation": {"reveal": "always", "panel": "dedicated"}
+    }
+  ]
+}

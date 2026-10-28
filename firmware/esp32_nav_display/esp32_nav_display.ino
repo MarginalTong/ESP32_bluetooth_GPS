@@ -7,6 +7,8 @@
 #if NAV_WAVESHARE_146
 #include <Wire.h>
 #include <Arduino_GFX_Library.h>
+#include <Fonts/FreeSans9pt7b.h>
+#include <Fonts/FreeSansBold18pt7b.h>
 #include <Fonts/FreeSansBold24pt7b.h>
 #if !defined(CONFIG_IDF_TARGET_ESP32S3)
 #error "Select ESP32S3 Dev Module for the Waveshare 1.46 board"
@@ -20,8 +22,12 @@
 #include <BLEUtils.h>
 
 #include <ArduinoJson.h>
+// Both builds compile the ROUTE RENDER block, which uses them.
+#include "numeric_font.h"
+#include "text_font.h"
 #include <Preferences.h>
 #include <esp_random.h>
+#include <esp_system.h>
 #include <mbedtls/md.h>
 #include <time.h>
 #include <sys/time.h>
@@ -29,8 +35,10 @@
 #include <math.h>
 #include <esp_system.h>
 #include <esp_heap_caps.h>
+#include "../platformio/ui_screens.h"
+#include "../platformio/ui_draw.h"
 
-// BEGIN MAP MOTION - kept inline so this sketch can be copied on its own.
+// BEGIN MAP MOTION - also compiled by the host animation tests.
 // Display-only interpolation. Never used for maneuver or distance decisions.
 // Each packet starts a linear glide from where the map is drawn now to the
 // new geometry, lasting about one packet interval, so ~1 Hz updates read as
@@ -136,8 +144,10 @@ constexpr int8_t BOARD_I2C_SCL_PIN = 10;
 constexpr uint8_t LCD_RESET_MASK = 1U << 1;
 constexpr uint8_t IO_EXPANDER_ADDRESS = 0x20;
 constexpr int16_t PANEL_SIZE = 412;
-constexpr int16_t PANEL_VIEW_WIDTH = 380;
-constexpr int16_t PANEL_VIEW_HEIGHT = 380;
+// Rasterize directly at the panel's full physical resolution. The circular
+// aperture is handled by PanelComposer rather than shrinking the frame.
+constexpr int16_t PANEL_VIEW_WIDTH = PANEL_SIZE;
+constexpr int16_t PANEL_VIEW_HEIGHT = PANEL_SIZE;
 constexpr int16_t PANEL_VIEW_X = (PANEL_SIZE - PANEL_VIEW_WIDTH) / 2;
 constexpr int16_t PANEL_VIEW_Y = (PANEL_SIZE - PANEL_VIEW_HEIGHT) / 2;
 constexpr int16_t PANEL_VISIBLE_RADIUS = PANEL_SIZE / 2 - 3;
@@ -168,7 +178,6 @@ constexpr uint16_t COLOR_WHITE = 0xFFFF;
 constexpr uint16_t COLOR_ROUTE = COLOR_WHITE;
 // Primary indications are white; side-road edges fade through grayscale.
 constexpr uint16_t COLOR_ACCENT = COLOR_WHITE;
-constexpr uint16_t COLOR_MUTED = COLOR_WHITE;
 bool displayAvailable = false;
 volatile bool displayDirty = true;
 
@@ -176,20 +185,16 @@ volatile bool displayDirty = true;
 // Product behavior
 // ======================================================
 
-// Keep this false for real riding. Set true only when bench-testing the TFT
-// without a phone connected.
-constexpr bool ENABLE_DEMO_MODE = false;
-
-constexpr uint32_t DEMO_STEP_INTERVAL_MS = 1000;
-constexpr int DEMO_DISTANCE_DELTA_M = 10;
-
 // If the phone stops sending navigation packets, stop showing a stale turn.
 constexpr uint32_t LIVE_PACKET_TIMEOUT_MS = 8000;
 
 // TFT power policy. BLE keeps running while the display is dim/off.
 constexpr uint32_t DISPLAY_DIM_AFTER_IDLE_MS = 15000;
 constexpr uint32_t DISPLAY_OFF_AFTER_IDLE_MS = 60000;
-constexpr uint32_t DISPLAY_REFRESH_MS = 33;
+// At most 40 route-animation frames per second (25 ms between frame starts).
+// The loop still draws only when displayDirty; static navigation does not
+// continuously redraw. Actual panel FPS also depends on render/SPI time.
+constexpr uint32_t DISPLAY_REFRESH_MS = 25;
 
 constexpr int MAX_DISTANCE_M = 9999;
 constexpr uint8_t MAX_ROUTE_PREVIEW_POINTS = 20;
@@ -235,30 +240,14 @@ uint32_t lastDisplayActivityMs = 0;
 // Navigation state
 // ======================================================
 
-enum class Direction : uint8_t {
-  Up,
-  Left,
-  Right,
-  BearLeft,
-  BearRight,
-  UTurn,
-  Stop,
-  Arrived,
-  Unknown,
-};
-
-struct NavState {
-  Direction direction;
-  int distanceMeters;
-};
-
 NavState nav = {Direction::Stop, 0};
 bool rerouting = false;
 bool clockSynced = false;
+UiState uiState;
 
 // Placed after the enum declarations: the Arduino preprocessor inserts its
 // generated prototypes before the first function definition.
-// BEGIN PACKET AUTH - kept inline so this sketch can be copied on its own.
+// BEGIN PACKET AUTH - also compiled by the host authentication tests.
 // Must match the App's PacketSigner byte for byte. A navigation write is
 // "<json>|<16 hex>": the tag is the first 8 bytes of
 // HMAC-SHA256(key, sessionNonce || json). The key is issued at a BOOT-confirmed
@@ -365,12 +354,59 @@ struct KeyRing {
 };
 // END PACKET AUTH
 
-// BEGIN ROUTE RENDER - kept inline so this sketch can be copied on its own.
+// BEGIN ROUTE RENDER - also compiled by the host rendering tests.
 // Anti-aliased drawing at the panel's native resolution. The UI is
 // monochrome, so it is an 8-bit gray layer: 0 is black, 255 white. Strokes
 // use per-pixel distance coverage, which also gives round caps and joins.
-// Text comes from Adafruit GFX outline-derived fonts, supersampled.
+// Text comes from fonts pre-rasterized with 4-bit coverage (numeric_font.h,
+// text_font.h), larger than any on-screen use, so they are only scaled down.
 // Written as members so the Arduino preprocessor generates no prototypes.
+struct AlphaFont {
+  const NavoNumericGlyph* glyphs;
+  size_t count;
+  const uint8_t* alpha;
+  float capHeight;  // height of 'H' (or a digit), in font pixels
+
+  const NavoNumericGlyph* glyphFor(char c) const {
+    for (size_t i = 0; i < count; ++i)
+      if (glyphs[i].code == c) return &glyphs[i];
+    return nullptr;
+  }
+
+  float textWidth(const char* text, float scale) const {
+    float advance = 0.0f;
+    for (const char* c = text; *c != '\0'; ++c) {
+      const NavoNumericGlyph* glyph = glyphFor(*c);
+      if (glyph != nullptr) advance += glyph->advance;
+    }
+    return advance * scale;
+  }
+
+  float coverage(const NavoNumericGlyph& glyph, int x, int y) const {
+    if (x < 0 || y < 0 || x >= glyph.width || y >= glyph.height) return 0.0f;
+    const uint32_t index = uint32_t(y) * glyph.width + x;
+    const uint8_t packed = alpha[glyph.offset + index / 2];
+    return float(index & 1 ? packed & 15 : packed >> 4) / 15.0f;
+  }
+
+  float sample(const NavoNumericGlyph& glyph, float x, float y) const {
+    const int ix = int(floorf(x)), iy = int(floorf(y));
+    const float fx = x - ix, fy = y - iy;
+    const float upper = coverage(glyph, ix, iy) * (1.0f - fx) +
+                        coverage(glyph, ix + 1, iy) * fx;
+    const float lower = coverage(glyph, ix, iy + 1) * (1.0f - fx) +
+                        coverage(glyph, ix + 1, iy + 1) * fx;
+    return upper * (1.0f - fy) + lower * fy;
+  }
+};
+
+const AlphaFont NAVO_NUMERIC_FONT = {
+    NAVO_NUMERIC_GLYPHS, sizeof(NAVO_NUMERIC_GLYPHS) / sizeof(NAVO_NUMERIC_GLYPHS[0]),
+    NAVO_NUMERIC_ALPHA, float(NAVO_NUMERIC_CAP_HEIGHT)};
+const AlphaFont NAVO_TEXT_FONT = {
+    NAVO_TEXT_GLYPHS, sizeof(NAVO_TEXT_GLYPHS) / sizeof(NAVO_TEXT_GLYPHS[0]),
+    NAVO_TEXT_ALPHA, float(NAVO_TEXT_CAP_HEIGHT)};
+
 struct GrayLayer {
   uint8_t* pixels = nullptr;
   int16_t width = 0, height = 0;
@@ -394,10 +430,18 @@ struct GrayLayer {
     if (pixels != nullptr) memset(pixels, 0, size_t(width) * height);
   }
 
-  // Pixel rows/columns a shape spanning [lo, hi] may touch, clipped.
+  // Pixel rows/columns a shape spanning [lo, hi] may touch, clipped. Clamped
+  // before the integer conversion: a NaN or far off-screen coordinate gives
+  // an empty range instead of an index outside the buffer.
   void bounds(float lo, float hi, int16_t limit, int16_t& first, int16_t& last) const {
+    if (!(lo <= hi) || hi < 0.0f || lo >= limit) {
+      first = 1;
+      last = 0;
+      return;
+    }
     first = lo < 0.0f ? 0 : int16_t(floorf(lo));
     last = hi >= limit ? int16_t(limit - 1) : int16_t(ceilf(hi));
+    if (last >= limit) last = limit - 1;
   }
 
   // Lighten blend: keeps the brighter value, so the overlapping ends of a
@@ -476,79 +520,39 @@ struct GrayLayer {
     }
   }
 
-  static const GFXglyph* glyphFor(const GFXfont* font, char c) {
-    const uint8_t code = uint8_t(c);
-    if (code < font->first || code > font->last) return nullptr;
-    return font->glyph + (code - font->first);
-  }
-
-  // Height of a capital letter, in font pixels.
-  static float capHeight(const GFXfont* font) {
-    const GFXglyph* glyph = glyphFor(font, 'H');
-    return glyph != nullptr ? -float(glyph->yOffset) : float(font->yAdvance);
-  }
-
-  static float textWidth(const GFXfont* font, const char* text, float scale) {
-    float advance = 0.0f;
-    for (const char* c = text; *c != '\0'; ++c) {
-      const GFXglyph* glyph = glyphFor(font, *c);
-      if (glyph != nullptr) advance += glyph->xAdvance;
-    }
-    return advance * scale;
-  }
-
   // `x` is the left edge of the first glyph's advance box, `baseline` the
-  // text baseline, both in layer pixels.
-  void drawText(const GFXfont* font, const char* text, float x, float baseline,
+  // text baseline, both in layer pixels. Each output pixel averages enough
+  // bilinear samples to cover the font pixels it shrinks, so small text
+  // keeps thin strokes instead of dropping or flickering them.
+  void drawText(const AlphaFont& font, const char* text, float x, float baseline,
                 float scale, uint8_t level) {
+    if (pixels == nullptr) return;
+    const int steps = scale >= 0.5f ? 2 : (scale <= 1.0f / 6 ? 6 : int(ceilf(1.0f / scale)));
     for (const char* c = text; *c != '\0'; ++c) {
-      const GFXglyph* glyph = glyphFor(font, *c);
+      const NavoNumericGlyph* glyph = font.glyphFor(*c);
       if (glyph == nullptr) continue;
-      drawGlyph(font, *glyph, x, baseline, scale, level);
-      x += glyph->xAdvance * scale;
-    }
-  }
-
-  static int glyphBit(const uint8_t* bits, const GFXglyph& glyph, int x, int y) {
-    if (x < 0 || y < 0 || x >= glyph.width || y >= glyph.height) return 0;
-    const unsigned index = unsigned(y) * glyph.width + unsigned(x);
-    return (bits[index >> 3] >> (7 - (index & 7))) & 1;
-  }
-
-  // 4x4 supersampling of the bilinearly filtered 1-bit glyph: smooth edges
-  // whether the font is scaled up or down.
-  void drawGlyph(const GFXfont* font, const GFXglyph& glyph, float x, float baseline,
-                 float scale, uint8_t level) {
-    if (pixels == nullptr || glyph.width == 0 || glyph.height == 0) return;
-    const uint8_t* bits = font->bitmap + glyph.bitmapOffset;
-    const float left0 = x + glyph.xOffset * scale;
-    const float top0 = baseline + glyph.yOffset * scale;
-    int16_t left, right, top, bottom;
-    bounds(left0 - 1.0f, left0 + glyph.width * scale + 1.0f, width, left, right);
-    bounds(top0 - 1.0f, top0 + glyph.height * scale + 1.0f, clipBottom, top, bottom);
-    for (int16_t py = top; py <= bottom; ++py) {
-      uint8_t* row = pixels + size_t(py) * width;
-      for (int16_t px = left; px <= right; ++px) {
-        int hits = 0;
-        for (int sy = 0; sy < 4; ++sy) {
-          const float v = (py + (sy + 0.5f) / 4.0f - top0) / scale - 0.5f;
-          const int j = int(floorf(v));
-          const float fv = v - j;
-          for (int sx = 0; sx < 4; ++sx) {
-            const float u = (px + (sx + 0.5f) / 4.0f - left0) / scale - 0.5f;
-            const int i = int(floorf(u));
-            const float fu = u - i;
-            const float upper = glyphBit(bits, glyph, i, j) * (1.0f - fu) +
-                                glyphBit(bits, glyph, i + 1, j) * fu;
-            const float lower = glyphBit(bits, glyph, i, j + 1) * (1.0f - fu) +
-                                glyphBit(bits, glyph, i + 1, j + 1) * fu;
-            if (upper * (1.0f - fv) + lower * fv >= 0.5f) ++hits;
+      const float x0 = x + glyph->xOffset * scale;
+      const float y0 = baseline + glyph->yOffset * scale;
+      int16_t left, right, top, bottom;
+      bounds(x0 - 1, x0 + glyph->width * scale + 1, width, left, right);
+      bounds(y0 - 1, y0 + glyph->height * scale + 1, clipBottom, top, bottom);
+      for (int16_t py = top; py <= bottom; ++py) {
+        uint8_t* row = pixels + size_t(py) * width;
+        for (int16_t px = left; px <= right; ++px) {
+          float sum = 0.0f;
+          for (int sy = 0; sy < steps; ++sy) {
+            const float gy = (py + (sy + 0.5f) / steps - y0) / scale - 0.5f;
+            for (int sx = 0; sx < steps; ++sx) {
+              const float gx = (px + (sx + 0.5f) / steps - x0) / scale - 0.5f;
+              sum += font.sample(*glyph, gx, gy);
+            }
           }
+          if (sum <= 0.0f) continue;
+          const uint8_t value = uint8_t(level * sum / (steps * steps) + 0.5f);
+          if (value > row[px]) row[px] = value;
         }
-        if (hits == 0) continue;
-        const uint8_t value = uint8_t(level * hits / 16);
-        if (value > row[px]) row[px] = value;
       }
+      x += glyph->advance * scale;
     }
   }
 
@@ -666,6 +670,7 @@ struct BleMailbox {
   bool navReady = false;
   NavState nav = {Direction::Stop, 0};
   bool rerouting = false;
+  bool tripEnded = false;
   float map[MAP_VALUE_COUNT] = {};
   uint8_t routes = 0, roads = 0;
   bool errorReady = false;
@@ -704,26 +709,10 @@ bool nativeLayerDrawn = false;
 
 uint32_t lastLivePacketMs = 0;
 bool hasReceivedNavPacket = false;
+bool tripEnded = false;
 bool livePacketTimedOut = false;
 uint32_t rejectedPacketCount = 0;
 char lastError[48] = "";
-
-struct DemoStep {
-  Direction direction;
-  int distanceMeters;
-};
-
-const DemoStep demoRoute[] = {
-    {Direction::Up, 1000},
-    {Direction::BearLeft, 300},
-    {Direction::Left, 80},
-    {Direction::Up, 500},
-    {Direction::Right, 120},
-    {Direction::UTurn, 40},
-    {Direction::Arrived, 0},
-};
-
-size_t demoStepIndex = 0;
 
 // Arduino's .ino preprocessor sometimes generates function prototypes before
 // custom enum classes are declared, which breaks types like Direction and
@@ -734,7 +723,7 @@ const char* directionName(Direction direction);
 void setDisplayPower(DisplayPowerState state);
 void presentDisplay();
 void drawDirection(Direction direction);
-void drawMiniRouteMap(bool showRider = true);
+void drawMiniRouteMap(bool showRider, Direction direction);
 #if NAV_WAVESHARE_146
 void drawRoundCenteredText(const char* value, uint8_t size, int16_t top);
 #endif
@@ -877,16 +866,44 @@ bool isLiveFresh() {
 }
 
 bool shouldKeepDisplayAwake() {
-  return ENABLE_DEMO_MODE || bleConnected || hasReceivedNavPacket ||
+  return bleConnected || hasReceivedNavPacket ||
          nav.direction == Direction::Arrived;
 }
 
-bool isStandby() {
-  return !ENABLE_DEMO_MODE && !bleConnected;
+UiInputs captureUiInputs() {
+  UiInputs inputs;
+  // The BLE task owns pairing/auth changes; all other facts below belong to
+  // loop(). Take this pair together instead of reading them during drawing.
+  portENTER_CRITICAL(&stateMux);
+  inputs.pairing = pairingActive;
+  inputs.paired = keyRing.hasCurrent;
+  portEXIT_CRITICAL(&stateMux);
+  inputs.displayAvailable = displayAvailable;
+  inputs.displayOn = displayPowerState != DisplayPowerState::Off;
+  inputs.connected = bleConnected;
+  inputs.hadConnection = hadBleConnection;
+  inputs.hasNavigation = hasReceivedNavPacket;
+  inputs.tripEnded = tripEnded;
+  inputs.clockSynced = clockSynced;
+  inputs.rerouting = rerouting;
+  inputs.packetTimedOut = livePacketTimedOut;
+  inputs.routePointCount = mapMotion.routes;
+  inputs.navigation = nav;
+  return inputs;
 }
 
-bool isWaitingForNavigation() {
-  return !ENABLE_DEMO_MODE && bleConnected && !hasReceivedNavPacket;
+void refreshUiState() {
+  const UiState next = resolveUiState(captureUiInputs());
+  if (next.screen != uiState.screen) {
+    Serial.printf("[UI] %s -> %s\n", uiScreenName(uiState.screen),
+                  uiScreenName(next.screen));
+  }
+  if (next.screen != uiState.screen || next.connected != uiState.connected ||
+      next.navigation.direction != uiState.navigation.direction ||
+      next.navigation.distanceMeters != uiState.navigation.distanceMeters) {
+    displayDirty = true;
+  }
+  uiState = next;
 }
 
 void setDisplayPower(DisplayPowerState state) {
@@ -922,6 +939,24 @@ void wakeDisplay() {
 // cannot see a response that carried the pairing key.
 void clearPairingValue() {
   if (pairingCharacteristic != nullptr) pairingCharacteristic->setValue("{}");
+}
+
+// Why the chip last started, reported to the phone on every pairing read so
+// a dropped connection can be told apart from a crash or brownout reset.
+const char* resetReasonName(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_POWERON: return "poweron";
+    case ESP_RST_EXT: return "ext";
+    case ESP_RST_SW: return "sw";
+    case ESP_RST_PANIC: return "panic";
+    case ESP_RST_INT_WDT: return "int_wdt";
+    case ESP_RST_TASK_WDT: return "task_wdt";
+    case ESP_RST_WDT: return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT: return "brownout";
+    case ESP_RST_SDIO: return "sdio";
+    default: return "unknown";
+  }
 }
 
 void startBleAdvertising() {
@@ -1125,6 +1160,12 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     distance = constrain(distance, 0, MAX_DISTANCE_M);
 
     const bool reroutingPacket = doc["rerouting"] | false;
+    const bool endTripPacket = doc["end"] | false;
+    if (endTripPacket && (direction != Direction::Stop || reroutingPacket)) {
+      rejectedPacketCount++;
+      publishError("bad end packet");
+      return;
+    }
     float mapValues[MAP_VALUE_COUNT] = {};
     const uint8_t routePreviewPointCount = readMapValues(
         doc, "P", "p", mapValues, MAX_ROUTE_PREVIEW_POINTS, 2);
@@ -1138,6 +1179,7 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     memcpy(mailbox.map, mapValues, sizeof(mailbox.map));
     mailbox.nav = {direction, distance};
     mailbox.rerouting = reroutingPacket;
+    mailbox.tripEnded = endTripPacket;
     mailbox.routes = routePreviewPointCount;
     mailbox.roads = sideRoadSegmentCount;
     mailbox.navReady = true;
@@ -1182,15 +1224,19 @@ class PairingCallbacks : public BLECharacteristicCallbacks {
       snprintf(keyHex + i * 2, 3, "%02x", key[i]);
     memset(key, 0, sizeof(key));
 
-    char response[160];
+    const char* boot = resetReasonName(esp_reset_reason());
+    const unsigned long uptime = millis() / 1000;
+    char response[224];
     if (verified) {
       snprintf(response, sizeof(response),
-               "{\"id\":\"%s\",\"verified\":true,\"s\":\"%s\",\"k\":\"%s\"}",
-               deviceIdentity, nonceHex, keyHex);
+               "{\"id\":\"%s\",\"verified\":true,\"s\":\"%s\",\"k\":\"%s\","
+               "\"boot\":\"%s\",\"up\":%lu}",
+               deviceIdentity, nonceHex, keyHex, boot, uptime);
     } else {
       snprintf(response, sizeof(response),
-               "{\"id\":\"%s\",\"verified\":false,\"s\":\"%s\"}",
-               deviceIdentity, nonceHex);
+               "{\"id\":\"%s\",\"verified\":false,\"s\":\"%s\","
+               "\"boot\":\"%s\",\"up\":%lu}",
+               deviceIdentity, nonceHex, boot, uptime);
     }
     memset(keyHex, 0, sizeof(keyHex));
     characteristic->setValue(response);
@@ -1297,17 +1343,18 @@ float mapPreviewY(float y) {
 
 #if NAV_WAVESHARE_146
 constexpr float NATIVE_SCALE = float(PANEL_VIEW_WIDTH) / SCREEN_WIDTH;
-const GFXfont* const UI_FONT = &FreeSansBold24pt7b;
 
 bool useNativeLayer() { return nativeLayer.pixels != nullptr; }
 
+bool isNumericText(const char* value) {
+  if (*value == '\0') return false;
+  for (const char* c = value; *c != '\0'; ++c)
+    if ((*c < '0' || *c > '9') && *c != ':' && *c != '.') return false;
+  return true;
+}
+
 // Canvas pixel coordinate to the center of the matching native-layer area.
 float layerCoord(float canvasValue) { return (canvasValue + 0.5f) * NATIVE_SCALE; }
-
-// The classic font's size n is 7n canvas pixels tall; keep those heights.
-float uiTextScale(uint8_t size) {
-  return 7.0f * size * NATIVE_SCALE / GrayLayer::capHeight(UI_FONT);
-}
 #else
 bool useNativeLayer() { return false; }
 #endif
@@ -1315,6 +1362,7 @@ bool useNativeLayer() { return false; }
 // Starts a frame: everything drawn until presentDisplay() is shown together.
 void beginFrame() {
   display.fillScreen(COLOR_BG);
+  display.setTextColor(COLOR_WHITE);
 #if NAV_WAVESHARE_146
   if (useNativeLayer()) {
     nativeLayer.clear();
@@ -1327,8 +1375,12 @@ void beginFrame() {
 void drawUiText(const char* value, uint8_t size, float left, float top) {
 #if NAV_WAVESHARE_146
   if (useNativeLayer()) {
-    nativeLayer.drawText(UI_FONT, value, left * NATIVE_SCALE,
-                         (top + 7.0f * size) * NATIVE_SCALE, uiTextScale(size), 255);
+    // Numbers use the numeric font, everything else the text font. The
+    // classic font's size n is 7n canvas pixels tall; keep those heights.
+    const AlphaFont& font = isNumericText(value) ? NAVO_NUMERIC_FONT : NAVO_TEXT_FONT;
+    nativeLayer.drawText(font, value, left * NATIVE_SCALE,
+                         (top + 7.0f * size) * NATIVE_SCALE,
+                         7.0f * size * NATIVE_SCALE / font.capHeight, 255);
     return;
   }
 #endif
@@ -1339,8 +1391,10 @@ void drawUiText(const char* value, uint8_t size, float left, float top) {
 
 float uiTextWidth(const char* value, uint8_t size) {
 #if NAV_WAVESHARE_146
-  if (useNativeLayer())
-    return GrayLayer::textWidth(UI_FONT, value, uiTextScale(size)) / NATIVE_SCALE;
+  if (useNativeLayer()) {
+    const AlphaFont& font = isNumericText(value) ? NAVO_NUMERIC_FONT : NAVO_TEXT_FONT;
+    return font.textWidth(value, 7.0f * size / font.capHeight);
+  }
 #endif
   return strlen(value) * 6.0f * size;
 }
@@ -1486,17 +1540,32 @@ void drawSideRoadSegments() {
   }
 }
 
-int16_t instructionX(int16_t x) {
 #if NAV_WAVESHARE_146
-  return 66 + (x - 66) * 5 / 4;
+// The instruction row sits where the round aperture narrows. These values
+// keep every arrow (stroke included) and the widest distance text ("NOW")
+// 3 canvas px inside the visible circle of the full 412 px view, below the
+// map, with the arrow and the text centred on the same line.
+constexpr float INSTRUCTION_SCALE = 1.0f;
+constexpr float INSTRUCTION_CENTER_X = 67.5f;
+constexpr float INSTRUCTION_CENTER_Y = 185.5f;
+// Size-4 distance text: right edge, and top of its capitals (baseline 199).
+constexpr float DISTANCE_RIGHT = 203.0f;
+constexpr float DISTANCE_TOP = 171.0f;
+#endif
+
+// Arrow artwork is drawn in the original strip's coordinates, centred on
+// (66, 111.5).
+float instructionX(float x) {
+#if NAV_WAVESHARE_146
+  return INSTRUCTION_CENTER_X + (x - 66.0f) * INSTRUCTION_SCALE;
 #else
   return x;
 #endif
 }
 
-int16_t instructionY(int16_t y) {
+float instructionY(float y) {
 #if NAV_WAVESHARE_146
-  return 180 + (y - 93) * 5 / 4;
+  return INSTRUCTION_CENTER_Y + (y - 111.5f) * INSTRUCTION_SCALE;
 #else
   return y;
 #endif
@@ -1574,9 +1643,9 @@ void drawStop() {
     return;
   }
 #endif
-  display.fillRoundRect(instructionX(42), instructionY(98),
-                        instructionX(90) - instructionX(42),
-                        instructionY(128) - instructionY(98), 5, COLOR_WHITE);
+  display.fillRoundRect(lroundf(instructionX(42)), lroundf(instructionY(98)),
+                        lroundf(instructionX(90) - instructionX(42)),
+                        lroundf(instructionY(128) - instructionY(98)), 5, COLOR_WHITE);
 }
 
 void drawArrived() {
@@ -1657,7 +1726,7 @@ void drawFallbackMapRoute(Direction direction) {
   }
 }
 
-void drawMiniRouteMap(bool showRider) {
+void drawMiniRouteMap(bool showRider, Direction direction) {
 #if NAV_WAVESHARE_146
   // Legacy preview coordinates can extend below the map; keep them out of
   // the instruction strip.
@@ -1672,7 +1741,7 @@ void drawMiniRouteMap(bool showRider) {
                   mapPreviewX(p[2]), mapPreviewY(p[3]), ROUTE_STROKE);
     }
   } else {
-    drawFallbackMapRoute(nav.direction);
+    drawFallbackMapRoute(direction);
   }
 
   if (showRider) {
@@ -1711,32 +1780,64 @@ void drawMiniRouteMap(bool showRider) {
 #endif
 }
 
-void drawDistance(int distanceMeters, bool blinkState) {
+#if NAV_WAVESHARE_146
+// Returns the drawn width.
+uint16_t drawFallbackDistanceText(const char* value, const GFXfont* font,
+                                  int16_t anchorX, int16_t top, bool rightAligned) {
+  int16_t x, y;
+  uint16_t width, height;
+  display.setFont(font);
+  display.setTextSize(1);
+  display.getTextBounds(value, 0, 0, &x, &y, &width, &height);
+  display.setCursor(anchorX - (rightAligned ? int16_t(width) : 0) - x, top - y);
+  display.print(value);
+  display.setFont(nullptr);
+  return width;
+}
+#endif
+
+void drawDistance(const NavState& navigation, bool blinkState) {
+  const int distanceMeters = navigation.distanceMeters;
   display.setTextColor(COLOR_WHITE);
 #if NAV_WAVESHARE_146
-  // The circle narrows at the bottom. Right-align the large number inside a
-  // fixed safe column and place the small unit above its lower edge.
-  if (nav.direction == Direction::Arrived) {
-    drawUiText("ARR", 4, 120, 176);
-    return;
-  }
-  if (distanceMeters <= 30) {
-    if (blinkState) drawUiText("NOW", 4, 120, 176);
-    return;
-  }
+  // The circle narrows at the bottom: lay the group out leftwards from the
+  // safe right edge, unit first, both on the same baseline.
+  const char* label = nullptr;
+  const char* unit = nullptr;
   char number[8];
-  if (distanceMeters < 1000) {
-    snprintf(number, sizeof(number), "%d", distanceMeters);
+  if (navigation.direction == Direction::Arrived) {
+    label = "ARR";
+  } else if (distanceMeters <= 30) {
+    if (blinkState) label = "NOW";
   } else {
-    snprintf(number, sizeof(number), "%.1f", distanceMeters / 1000.0);
+    if (distanceMeters < 1000) {
+      snprintf(number, sizeof(number), "%d", distanceMeters);
+    } else {
+      snprintf(number, sizeof(number), "%.1f", distanceMeters / 1000.0);
+    }
+    label = number;
+    unit = distanceMeters < 1000 ? "m" : "km";
   }
-  // Number right-aligned at the column edge; unit on the same baseline.
-  drawUiText(number, 4, 192 - uiTextWidth(number, 4), 176);
-  drawUiText(distanceMeters < 1000 ? "m" : "km", 2, 195, 190);
+  float right = DISTANCE_RIGHT;
+  if (!useNativeLayer()) {
+    if (unit != nullptr)
+      right -= drawFallbackDistanceText(unit, &FreeSans9pt7b, lroundf(right),
+                                        DISTANCE_TOP + 15, true) + 3;
+    if (label != nullptr)
+      drawFallbackDistanceText(label, &FreeSansBold18pt7b, lroundf(right),
+                               DISTANCE_TOP, true);
+    return;
+  }
+  if (unit != nullptr) {
+    right -= uiTextWidth(unit, 2);
+    drawUiText(unit, 2, right, DISTANCE_TOP + 14);
+    right -= 3;
+  }
+  if (label != nullptr) drawUiText(label, 4, right - uiTextWidth(label, 4), DISTANCE_TOP);
 #else
   display.setTextSize(3);
   display.setCursor(DISTANCE_X, 104);
-  if (nav.direction == Direction::Arrived) {
+  if (navigation.direction == Direction::Arrived) {
     display.println("ARR");
     return;
   }
@@ -1760,12 +1861,18 @@ void drawBottomError() {
 
   display.setTextColor(COLOR_ACCENT);
 #if NAV_WAVESHARE_146
-  // The square canvas corners fall outside the round aperture: (8, 230) was
-  // never visible. Centre the message below the distance, where the circle is
-  // still ~148 px wide, and keep it to the 24 size-1 glyphs that fit there.
+  // Below the distance the round aperture is narrow: centre the message there
+  // and drop trailing characters until it fits the visible width at its
+  // lowest row (3 px margin).
+  constexpr float top = 208.0f;
+  const float dy = top + 7.0f - SCREEN_HEIGHT / 2.0f;
+  const float radius = PANEL_VISIBLE_RADIUS * float(SCREEN_WIDTH) / PANEL_VIEW_WIDTH - 3.0f;
+  const float available = 2.0f * sqrtf(fmaxf(0.0f, radius * radius - dy * dy));
   char visible[25];
   strlcpy(visible, lastError, sizeof(visible));
-  drawRoundCenteredText(visible, 1, 218);
+  for (size_t length = strlen(visible); length > 0 && uiTextWidth(visible, 1) > available;)
+    visible[--length] = '\0';
+  drawRoundCenteredText(visible, 1, top);
 #else
   display.setTextSize(1);
   display.setCursor(8, SCREEN_HEIGHT - 10);
@@ -1809,239 +1916,49 @@ void drawRoundCenteredStatus(const char* primary, uint8_t primarySize,
   if (secondary != nullptr)
     drawRoundCenteredText(secondary, secondarySize, top + primaryHeight + gap);
 }
+
+// Keep the idle brand legible even when the native gray layer could not be
+// allocated. GFX's built-in font scales square pixels; outline-derived fonts
+// give the fallback a proper sans-serif shape instead.
+void drawStandbyBrandText(const char* value, bool primary) {
+  const GFXfont* font = primary ? &FreeSansBold24pt7b : &FreeSans9pt7b;
+  const int16_t centerY = primary ? 105 : 146;
+  int16_t x, y;
+  uint16_t width, height;
+  display.setFont(font);
+  display.setTextSize(1);
+  display.getTextBounds(value, 0, 0, &x, &y, &width, &height);
+  display.setCursor((SCREEN_WIDTH - width) / 2 - x,
+                    centerY - int16_t(height / 2) - y);
+  display.print(value);
+  display.setFont(nullptr);
+}
 #endif
 
-void drawStandbyClock() {
-  display.setTextColor(COLOR_WHITE);
-#if NAV_WAVESHARE_146
-  if (clockSynced) {
-    char clockText[6];
-    const time_t now = time(nullptr);
-    struct tm localClock;
-    gmtime_r(&now, &localClock);
-    snprintf(clockText, sizeof(clockText), "%02d:%02d", localClock.tm_hour,
-             localClock.tm_min);
-    drawRoundCenteredStatus(clockText, 7,
-                            bleConnected ? "ready to go" : nullptr, 2);
-  } else {
-    drawRoundCenteredStatus("MOTO NAV", 3,
-                            bleConnected ? "ready to go" : "CONNECT PHONE",
-                            bleConnected ? 2 : 1);
-  }
-#else
-  if (clockSynced) {
-    char text[6];
+void renderDisplay(const UiState& state, bool blinkState) {
+  char clockText[6] = "";
+  if (state.screen == UiScreen::Clock) {
     const time_t now = time(nullptr);
     struct tm localClock;
     // The phone has already applied its local UTC offset.
     gmtime_r(&now, &localClock);
-    snprintf(text, sizeof(text), "%02d:%02d", localClock.tm_hour,
+    snprintf(clockText, sizeof(clockText), "%02d:%02d", localClock.tm_hour,
              localClock.tm_min);
-    display.setTextSize(7);
-    display.setCursor(15, 30);
-    display.print(text);
-  } else {
-    // No clock source until the phone syncs: show a calm standby title,
-    // never a placeholder time. A synced clock keeps running after disconnect.
-    display.setTextSize(3);
-    display.setCursor(48, 39);
-    display.print("MOTO NAV");
-    if (!bleConnected) {
-      display.setTextSize(1);
-      display.setCursor(81, 91);
-      display.print("CONNECT PHONE");
-    }
   }
-  if (bleConnected) {
-    display.setTextSize(2);
-    display.setCursor(54, 99);
-    display.print("ready to go");
-  }
-#endif
-}
-
-void drawStandby() {
-  if (hadBleConnection) {
-    // A dropped BLE link must never look like the normal clock/ready screen.
-    // onDisconnect has already removed the last maneuver and map geometry.
+  const UiRenderContext context = {
+      DEVICE_NAME, clockText, SCREEN_HEIGHT,
 #if NAV_WAVESHARE_146
-    drawRoundCenteredStatus("CONNECTION LOST", 2, "RECONNECT PHONE", 1);
+      DISTANCE_TOP,
 #else
-    display.setTextSize(2);
-    display.setCursor(24, 36);
-    display.print("CONNECTION LOST");
-    display.setTextSize(1);
-    display.setCursor(53, 77);
-    display.print("RECONNECT PHONE");
+      100.0f,
 #endif
-    return;
-  }
-  drawStandbyClock();
-}
-
-void drawWaitingForNavigation(bool paired) {
-  if (paired) {
-    drawStandbyClock();
-    return;
-  }
-  // Connected, but this display ignores every navigation write until a phone
-  // pairs with a BOOT press. Do not pretend to be "ready to go".
-#if NAV_WAVESHARE_146
-  drawRoundCenteredStatus("NOT PAIRED", 2, "PAIR IN THE APP", 1);
-#else
-  display.setTextSize(2);
-  display.setCursor(60, 40);
-  display.print("NOT PAIRED");
-  display.setTextSize(1);
-  display.setCursor(75, 80);
-  display.print("PAIR IN THE APP");
-#endif
-}
-
-void renderDisplay(bool blinkState) {
-  if (!displayAvailable) return;
-  if (displayPowerState == DisplayPowerState::Off) return;
-
-  beginFrame();
-  display.setTextColor(COLOR_WHITE);
-
-  portENTER_CRITICAL(&stateMux);
-  const bool showPairing = pairingActive;
-  const bool paired = keyRing.hasCurrent;
-  portEXIT_CRITICAL(&stateMux);
-  if (showPairing) {
-#if NAV_WAVESHARE_146
-    drawRoundCenteredText(DEVICE_NAME, 1, 60);
-    drawRoundCenteredStatus("PRESS BOOT", 2, "TO PAIR", 1);
-#else
-    display.setTextSize(1);
-    display.setCursor(12, 12);
-    display.print(DEVICE_NAME);
-    display.setTextSize(2);
-    display.setCursor(54, 51);
-    display.print("PRESS BOOT");
-    display.setTextSize(1);
-    display.setCursor(67, 108);
-    display.print("TO PAIR");
-#endif
-    presentDisplay();
-    return;
-  }
-
-  if (isStandby()) {
-    drawStandby();
-    presentDisplay();
-    return;
-  }
-
-  if (isWaitingForNavigation()) {
-    drawWaitingForNavigation(paired);
-    presentDisplay();
-    return;
-  }
-
-  if (rerouting) {
-    // The phone may send the last reliable route shape while it searches for
-    // a replacement. It is context, not a live rider position or turn cue.
-    if (mapMotion.routes >= 2) {
-      drawMiniRouteMap(false);
-#if NAV_WAVESHARE_146
-      drawRoundCenteredText(livePacketTimedOut ? "WAITING PHONE" : "CACHED ROUTE",
-                            1, 177);
-      drawRoundCenteredText("UPDATING...", 1, 200);
-#else
-      display.setTextSize(1);
-      display.setCursor(livePacketTimedOut ? 71 : 76, 104);
-      display.print(livePacketTimedOut ? "WAITING PHONE" : "CACHED ROUTE");
-      display.setCursor(83, 118);
-      display.print("UPDATING...");
-#endif
-    } else {
-#if NAV_WAVESHARE_146
-      drawRoundCenteredText("UPDATING...", 1,
-                            (SCREEN_HEIGHT - roundTextHeight("UPDATING...", 1)) / 2);
-#else
-      display.setTextSize(1);
-      display.setCursor(84, 62);
-      display.print("UPDATING...");
-#endif
-    }
-    presentDisplay();
-    return;
-  }
-
-  if (nav.direction == Direction::Stop) {
-    // Explicit STOP means there is no safe guidance to show.
-#if NAV_WAVESHARE_146
-    const char* message = "NO GUIDANCE";
-    drawRoundCenteredText(message, 1,
-                          (SCREEN_HEIGHT - roundTextHeight(message, 1)) / 2);
-#else
-    display.setTextSize(1);
-    display.setCursor(84, 62);
-    display.print("NO GUIDANCE");
-#endif
-    presentDisplay();
-    return;
-  }
-
-  // The app stops sending after ARRIVED, so that final screen never goes stale.
-  if (livePacketTimedOut && nav.direction != Direction::Arrived) {
-    // The phone has gone quiet while still connected (app frozen, killed or
-    // GPS stalled). While stopped, the app's heartbeat keeps packets coming
-    // only when it has a fresh fix. Keep the maneuver as context, but never
-    // present it as live: no rider marker, no countdown, an explicit label.
-    drawMiniRouteMap(false);
-    drawDirection(nav.direction);
-    display.setTextColor(COLOR_WHITE);
-#if NAV_WAVESHARE_146
-    // Same right-hand column as the distance, clear of the arrow and inside
-    // the round aperture.
-    drawUiText("NO UPDATE", 2, 112, 178);
-    drawUiText("CHECK PHONE", 1, 120, 204);
-#else
-    display.setTextSize(2);
-    display.setCursor(DISTANCE_X, 100);
-    display.print("NO UPD");
-    display.setTextSize(1);
-    display.setCursor(DISTANCE_X, 122);
-    display.print("CHECK PHONE");
-#endif
-    presentDisplay();
-    return;
-  }
-
-  drawMiniRouteMap();
-  drawDirection(nav.direction);
-  drawDistance(nav.distanceMeters, blinkState);
-
-  drawBottomError();
-  presentDisplay();
+      float(DISTANCE_X)};
+  renderUiScreen(state, context, blinkState);
 }
 
 // ======================================================
 // State updates
 // ======================================================
-
-void updateDemoMode() {
-  if (!ENABLE_DEMO_MODE || isLiveFresh()) return;
-
-  static uint32_t lastDemoUpdateMs = 0;
-  if (millis() - lastDemoUpdateMs < DEMO_STEP_INTERVAL_MS) return;
-  lastDemoUpdateMs = millis();
-
-  nav.distanceMeters -= DEMO_DISTANCE_DELTA_M;
-  displayDirty = true;
-  if (nav.distanceMeters > 0) return;
-
-  demoStepIndex++;
-  if (demoStepIndex >= sizeof(demoRoute) / sizeof(demoRoute[0])) {
-    demoStepIndex = 0;
-  }
-  nav.direction = demoRoute[demoStepIndex].direction;
-  nav.distanceMeters = demoRoute[demoStepIndex].distanceMeters;
-  displayDirty = true;
-}
 
 void updateLiveTimeout() {
   if (lastLivePacketMs == 0) return;
@@ -2053,7 +1970,7 @@ void updateLiveTimeout() {
   }
 
   // Keep the last direction: only an explicit STOP packet replaces it.
-  // renderDisplay() marks it as stale instead. The app re-sends every ~2 s
+  // The UI resolver marks it as stale instead. The app re-sends every ~2 s
   // while stopped, backed by a fresh fix, so a timeout means a real problem.
   setLastError("");
 }
@@ -2135,8 +2052,9 @@ bool initDisplay() {
     nativeLayer.height = PANEL_VIEW_HEIGHT;
     nativeLayer.clipBottom = PANEL_VIEW_HEIGHT;
     nativeLayer.clear();
+    Serial.println("[TFT] NAVO UI: native 412x412 anti-aliased text and graphics");
   } else {
-    Serial.println("[TFT] No PSRAM for the native layer; using the 240x240 canvas");
+    Serial.println("[TFT] NAVO UI: low-resolution fallback (check OPI PSRAM setting)");
   }
   Serial.println("[TFT] SPD2010 412x412 ready");
 #else
@@ -2168,22 +2086,18 @@ void setup() {
   delay(100);
   Serial.println();
   Serial.println("[BOOT] ESP32 navigation display");
+  Serial.print("[BOOT] reset reason: ");
+  Serial.println(resetReasonName(esp_reset_reason()));
 
   displayAvailable = initDisplay();
   if (!displayAvailable) {
     Serial.println("[TFT] init failed");
     Serial.println("[TFT] continuing without display so BLE still works");
   } else {
-    beginFrame();
-    drawStandbyClock();
-    presentDisplay();
+    refreshUiState();
+    renderDisplay(uiState, true);
   }
   wakeDisplay();
-
-  if (ENABLE_DEMO_MODE) {
-    nav.direction = demoRoute[0].direction;
-    nav.distanceMeters = demoRoute[0].distanceMeters;
-  }
 
   loadAuthKey();
   setupBle();
@@ -2292,19 +2206,20 @@ void applyBleMailbox() {
   if (snapshot.navReady) {
     nav = snapshot.nav;
     rerouting = snapshot.rerouting;
-    lastLivePacketMs = millis();
+    tripEnded = snapshot.tripEnded;
+    lastLivePacketMs = tripEnded ? 0 : millis();
     livePacketTimedOut = false;
-    hasReceivedNavPacket = true;
+    hasReceivedNavPacket = !tripEnded;
     displayDirty = true;
   }
   if (snapshot.wake) wakeDisplay();
 
-  if (isStandby() || isWaitingForNavigation() ||
+  if (!bleConnected || !hasReceivedNavPacket ||
       (nav.direction == Direction::Stop && !rerouting)) {
     mapMotion.valid = false;
     mapMotion.active = false;
   }
-  if (snapshot.navReady) {
+  if (snapshot.navReady && !snapshot.tripEnded) {
     mapMotion.accept(snapshot.map, snapshot.routes, snapshot.roads, millis());
   }
 }
@@ -2312,12 +2227,15 @@ void applyBleMailbox() {
 void loop() {
   updatePairing();
   applyBleMailbox();
+  updateLiveTimeout();
+  updateDisplayPower();
+  refreshUiState();
   if (mapMotion.tick(millis())) displayDirty = true;
   static time_t lastClockMinute = -1;
   const time_t clockMinute = time(nullptr) / 60;
   if (clockMinute != lastClockMinute) {
     lastClockMinute = clockMinute;
-    if (isStandby() || isWaitingForNavigation()) displayDirty = true;
+    if (uiState.screen == UiScreen::Clock) displayDirty = true;
   }
   static bool blinkState = true;
   static uint32_t lastBlinkMs = 0;
@@ -2326,22 +2244,18 @@ void loop() {
   if (millis() - lastBlinkMs > 300) {
     blinkState = !blinkState;
     lastBlinkMs = millis();
-    if (!rerouting && nav.direction != Direction::Stop &&
-        nav.direction != Direction::Arrived && nav.distanceMeters <= 30) {
+    if (uiState.screen == UiScreen::Navigating &&
+        uiState.navigation.distanceMeters <= 30) {
       displayDirty = true;
     }
   }
-
-  updateLiveTimeout();
-  updateDemoMode();
-  updateDisplayPower();
 
   if (displayDirty && millis() - lastRenderMs >= DISPLAY_REFRESH_MS) {
     lastRenderMs = millis();
     // Clear before drawing so a BLE callback arriving during the SPI transfer
     // schedules another frame instead of having its update erased here.
     displayDirty = false;
-    renderDisplay(blinkState);
+    renderDisplay(uiState, blinkState);
   }
 
   delay(5);

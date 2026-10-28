@@ -1,0 +1,12 @@
+{
+  "files.associations": {"*.ino": "cpp"},
+  "files.watcherExclude": {"**/.pio/**": true},
+  "search.exclude": {"**/.navo": true, "**/.pio": true},
+  "platformio-ide.toolbar": [
+    {"text": "$(home)", "tooltip": "PlatformIO Home", "commands": "platformio-ide.showHome"},
+    {"text": "$(check)", "tooltip": "NAVO: Build (PlatformIO)", "commands": "platformio-ide.build"},
+    {"text": "$(arrow-right)", "tooltip": "NAVO: Upload + Serial Monitor (PlatformIO)", "commands": [{"id": "workbench.action.tasks.runTask", "args": "NAVO: Upload + Serial Monitor"}]},
+    {"text": "$(plug)", "tooltip": "NAVO: Shared Serial Monitor", "commands": [{"id": "workbench.action.tasks.runTask", "args": "NAVO: Serial Monitor"}]},
+    {"text": "$(terminal)", "tooltip": "PlatformIO Terminal", "commands": "platformio-ide.newTerminal"}
+  ]
+}

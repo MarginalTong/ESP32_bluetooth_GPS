@@ -12,7 +12,7 @@
 #include "Fonts/FreeSansBold24pt7b.h"
 
 // Waveshare 1.46 geometry, as in the sketch.
-static const int kCanvas = 240, kView = 380, kViewOffset = 16, kPanel = 412;
+static const int kCanvas = 240, kView = 412, kViewOffset = 0, kPanel = 412;
 static const float kScale = float(kView) / kCanvas;
 static const float kMapLeft = 0, kMapRight = kCanvas - 1, kMapTop = 0, kMapBottom = 166;
 static const int kMapClipBottom = 166 - 4;
@@ -29,12 +29,18 @@ static float mapY(float y) {
   const float projected = kMapTop + 25 + (y - 2) * (kMapBottom - kMapTop - 47) / 32.0f;
   return anchor + (projected - anchor) * 1.90f;
 }
+// Old instruction layout (sized for a 380 px view), and the sketch's current
+// one, fitted to the visible circle of the full 412 px view.
 static int instructionX(int x) { return 66 + (x - 66) * 5 / 4; }
 static int instructionY(int y) { return 180 + (y - 93) * 5 / 4; }
-// The sketch's left-turn arrow, in pre-transform coordinates.
-static const int kArrowLeft[][4] = {
-    {82, 128, 82, 116}, {82, 116, 74, 106}, {74, 106, 42, 106},
-    {42, 106, 60, 93}, {42, 106, 60, 119}};
+static float fittedX(float x) { return 67.5f + (x - 66.0f); }
+static float fittedY(float y) { return 185.5f + (y - 111.5f); }
+static const float kDistanceRight = 203, kDistanceTop = 171;
+// The sketch's right-turn arrow, in pre-transform coordinates: its stem is
+// the lowest, leftmost stroke, so it is the first to leave the aperture.
+static const int kArrowRight[][4] = {
+    {48, 128, 48, 116}, {48, 116, 56, 106}, {56, 106, 88, 106},
+    {88, 106, 70, 93}, {88, 106, 70, 119}};
 
 // The route ahead, in metres: straight for 30 m, then curving right.
 struct Point { float x, y; };
@@ -130,10 +136,10 @@ static std::vector<uint16_t> renderOld() {
   fillTri(canvas, mx, my - 12, mx - 10, my + 6, mx + 10, my + 6, 0xFFFF);
   for (int y = kMapClipBottom; y < kCanvas; ++y)
     for (int x = 0; x < kCanvas; ++x) canvas[y * kCanvas + x] = 0;
-  for (const auto& s : kArrowLeft)
+  for (const auto& s : kArrowRight)
     thickLine(canvas, instructionX(s[0]), instructionY(s[1]), instructionX(s[2]),
               instructionY(s[3]), 4);
-  classicText(canvas, "105", 192 - 3 * 24, 176, 4);
+  classicText(canvas, "106", 192 - 3 * 24, 176, 4);
   classicText(canvas, "m", 196, 183, 2);
   // Old presentDisplay: nearest-neighbour upscale and circle test per pixel.
   std::vector<uint16_t> out(kView * kView, 0);
@@ -191,16 +197,17 @@ static std::vector<uint16_t> renderNew() {
                    mx + 10 * kScale, my + 6 * kScale, 255);
   // Instruction strip, as drawInstructionLine() and drawDistance() draw it.
   map.clipBottom = kView;
-  for (const auto& s : kArrowLeft)
-    map.strokeSegment(layer(instructionX(s[0])), layer(instructionY(s[1])),
-                      layer(instructionX(s[2])), layer(instructionY(s[3])), 5 * kScale / 2,
-                      255);
-  const GFXfont* uiFont = &FreeSansBold24pt7b;
-  const float big = 28 * kScale / GrayLayer::capHeight(uiFont);
-  const float small = 14 * kScale / GrayLayer::capHeight(uiFont);
-  const float numberLeft = 192 * kScale - GrayLayer::textWidth(uiFont, "105", big);
-  map.drawText(uiFont, "105", numberLeft, 204 * kScale, big, 255);
-  map.drawText(uiFont, "m", 195 * kScale, 204 * kScale, small, 255);
+  for (const auto& s : kArrowRight)
+    map.strokeSegment(layer(fittedX(s[0])), layer(fittedY(s[1])), layer(fittedX(s[2])),
+                      layer(fittedY(s[3])), 5 * kScale / 2, 255);
+  const float small = 14 * kScale / NAVO_TEXT_FONT.capHeight;
+  const float numericScale = 28 * kScale / NAVO_NUMERIC_FONT.capHeight;
+  const float baseline = (kDistanceTop + 28) * kScale;
+  const float unitLeft = kDistanceRight * kScale - NAVO_TEXT_FONT.textWidth("m", small);
+  map.drawText(NAVO_TEXT_FONT, "m", unitLeft, baseline, small, 255);
+  const float numberLeft =
+      unitLeft - 3 * kScale - NAVO_NUMERIC_FONT.textWidth("106", numericScale);
+  map.drawText(NAVO_NUMERIC_FONT, "106", numberLeft, baseline, numericScale, 255);
   static PanelComposer composer;
   const float center = kPanel / 2.0f - kViewOffset;
   composer.init(kView, kView, kCanvas, kCanvas, center, center, kPanel / 2.0f - 3);
@@ -209,11 +216,84 @@ static std::vector<uint16_t> renderNew() {
   return out;
 }
 
-int main(int argc, char** argv) {
-  const char* path = argc > 1 ? argv[1] : "route_preview.ppm";
-  const std::vector<uint16_t> before = renderOld(), after = renderNew();
+// ---- Standby page: NAVO and its status line ------------------------------
+// The previous native text path: an Adafruit GFX 1-bit font, 4x4 bilinear
+// supersampled, enlarged to the requested size.
+static int gfxBit(const uint8_t* bits, const GFXglyph& g, int x, int y) {
+  if (x < 0 || y < 0 || x >= g.width || y >= g.height) return 0;
+  const unsigned i = unsigned(y) * g.width + unsigned(x);
+  return (bits[i >> 3] >> (7 - (i & 7))) & 1;
+}
+static void gfxText(std::vector<uint8_t>& px, const GFXfont* font, const char* text,
+                    float x, float baseline, float scale) {
+  for (; *text; ++text) {
+    const GFXglyph& g = font->glyph[uint8_t(*text) - font->first];
+    const uint8_t* bits = font->bitmap + g.bitmapOffset;
+    const float l0 = x + g.xOffset * scale, t0 = baseline + g.yOffset * scale;
+    for (int py = int(t0) - 1; py <= int(t0 + g.height * scale) + 1; ++py)
+      for (int pxl = int(l0) - 1; pxl <= int(l0 + g.width * scale) + 1; ++pxl) {
+        if (py < 0 || py >= kView || pxl < 0 || pxl >= kView) continue;
+        float sum = 0;
+        for (int sy = 0; sy < 4; ++sy)
+          for (int sx = 0; sx < 4; ++sx) {
+            const float u = (pxl + (sx + 0.5f) / 4 - l0) / scale - 0.5f;
+            const float v = (py + (sy + 0.5f) / 4 - t0) / scale - 0.5f;
+            const int i = int(floorf(u)), j = int(floorf(v));
+            const float fu = u - i, fv = v - j;
+            sum += (gfxBit(bits, g, i, j) * (1 - fu) + gfxBit(bits, g, i + 1, j) * fu) *
+                       (1 - fv) +
+                   (gfxBit(bits, g, i, j + 1) * (1 - fu) + gfxBit(bits, g, i + 1, j + 1) * fu) *
+                       fv;
+          }
+        const uint8_t value = uint8_t(255 * sum / 16 + 0.5f);
+        uint8_t& p = px[size_t(py) * kView + pxl];
+        if (value > p) p = value;
+      }
+    x += g.xAdvance * scale;
+  }
+}
+static float gfxWidth(const GFXfont* font, const char* text, float scale) {
+  float w = 0;
+  for (; *text; ++text) w += font->glyph[uint8_t(*text) - font->first].xAdvance;
+  return w * scale;
+}
+
+// As drawRoundCenteredStatus("NAVO", 5, "READY TO GO", 1).
+static std::vector<uint16_t> renderStandby(bool newFont) {
+  std::vector<uint8_t> pixels(kView * kView, 0);
+  GrayLayer layer;
+  layer.pixels = pixels.data();
+  layer.width = kView;
+  layer.height = kView;
+  layer.clipBottom = kView;
+  const char* lines[] = {"NAVO", "READY TO GO"};
+  const int sizes[] = {5, 1}, tops[] = {90, 143};
+  for (int i = 0; i < 2; ++i) {
+    const float baseline = (tops[i] + 7 * sizes[i]) * kScale;
+    if (newFont) {
+      const float scale = 7 * sizes[i] * kScale / NAVO_TEXT_FONT.capHeight;
+      layer.drawText(NAVO_TEXT_FONT, lines[i],
+                     (kView - NAVO_TEXT_FONT.textWidth(lines[i], scale)) / 2, baseline,
+                     scale, 255);
+    } else {
+      const GFXfont* font = &FreeSansBold24pt7b;
+      const float scale = 7 * sizes[i] * kScale / -float(font->glyph['H' - font->first].yOffset);
+      gfxText(pixels, font, lines[i], (kView - gfxWidth(font, lines[i], scale)) / 2, baseline,
+              scale);
+    }
+  }
+  static PanelComposer composer;
+  const float center = kPanel / 2.0f - kViewOffset;
+  composer.init(kView, kView, kCanvas, kCanvas, center, center, kPanel / 2.0f - 3);
+  std::vector<uint16_t> canvas(kCanvas * kCanvas, 0), out(kView * kView, 0);
+  composer.compose(canvas.data(), &layer, out.data(), 0, kView);
+  return out;
+}
+
+static bool writeSideBySide(const char* path, const std::vector<uint16_t>& before,
+                            const std::vector<uint16_t>& after) {
   FILE* f = fopen(path, "wb");
-  if (!f) return 1;
+  if (!f) return false;
   const int gap = 12;
   fprintf(f, "P6\n%d %d\n255\n", kView * 2 + gap, kView);
   for (int y = 0; y < kView; ++y)
@@ -221,11 +301,26 @@ int main(int argc, char** argv) {
       uint16_t p = 0x2104;  // dark gray divider
       if (x < kView) p = before[y * kView + x];
       else if (x >= kView + gap) p = after[y * kView + x - kView - gap];
+      // Mark the panel outside the visible circle, to see what is clipped.
+      const int vx = x < kView ? x : x - kView - gap;
+      const float dx = vx + 0.5f - kPanel / 2.0f, dy = y + 0.5f - kPanel / 2.0f;
+      if (p == 0 && vx >= 0 && dx * dx + dy * dy > (kPanel / 2.0f - 3) * (kPanel / 2.0f - 3))
+        p = 0x18E3;
       const unsigned char rgb[3] = {uint8_t((p >> 11) << 3), uint8_t(((p >> 5) & 63) << 2),
                                     uint8_t((p & 31) << 3)};
       fwrite(rgb, 1, 3, f);
     }
   fclose(f);
+  return true;
+}
+
+int main(int argc, char** argv) {
+  const char* path = argc > 1 ? argv[1] : "route_preview.ppm";
+  if (!writeSideBySide(path, renderOld(), renderNew())) return 1;
   printf("wrote %s (left: old, right: new)\n", path);
+  if (argc > 2) {
+    if (!writeSideBySide(argv[2], renderStandby(false), renderStandby(true))) return 1;
+    printf("wrote %s (standby; left: GFX font, right: text font)\n", argv[2]);
+  }
   return 0;
 }
