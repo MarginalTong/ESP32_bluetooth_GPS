@@ -132,18 +132,27 @@ Hardware mapping (new board):
   implemented. First test with USB power; this is a display/BLE port only.
 
 The round board uses a 240×240 logical layout rasterized across the full
-412×412 physical panel.
-With OPI PSRAM enabled, text, route lines, arrows and the rider marker are
-anti-aliased at the view's native resolution instead of being enlarged from
-the logical canvas. Pixels outside the visible circle are clipped to black.
-Large clock and distance digits use a pre-rasterized, anti-aliased Roboto
-Medium numeric subset (Apache License 2.0) instead of scaling a small bitmap
-font; `firmware/tools/generate_numeric_font.py` regenerates the bundled header.
+412×412 physical panel. On the `experiment/no-antialiasing` branch, the native
+renderer uses **hard pixel edges**, including text, routes, arrows and the
+rider marker. It removes bilinear font supersampling and fractional edge
+coverage; the side roads keep their along-road fade. Resolution, layout,
+Roboto glyph shapes and the 25 ms animation frame limit are unchanged.
+The committed anti-aliased comparison baseline is `77d92da`.
+
+With OPI PSRAM enabled, drawing still happens at the panel's native resolution.
+Pixels outside the visible circle are clipped to black. Large clock and
+distance digits retain their pre-rasterized Roboto Medium numeric subset
+(Apache License 2.0); its existing 4-bit mask is thresholded to ink/background
+in this experiment. `firmware/tools/generate_numeric_font.py` regenerates the
+bundled header.
 The map uses the upper area and the enlarged turn/distance indications use the
 lower area; the original board retains its 240×135 layout. The BLE 128×64
 preview-point contract is unchanged. Enable OPI PSRAM for the native gray
 layer and the logical framebuffer; allocation failure falls back to the
 pixelated 240×240 canvas.
+Verify the no-AA rasterizer with `bash firmware/tests/run_hard_edge_render_test.sh`.
+Its boot log identifies the experiment as `native 412x412 hard-edge text and
+graphics (AA off)`; actual panel FPS/power must be measured on hardware.
 Check orientation on hardware; the SPD2010 library does not implement hardware
 rotation. Do not assume changing `TFT_ROTATION` will rotate the new panel.
 

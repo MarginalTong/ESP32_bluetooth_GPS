@@ -355,11 +355,10 @@ struct KeyRing {
 // END PACKET AUTH
 
 // BEGIN ROUTE RENDER - also compiled by the host rendering tests.
-// Anti-aliased drawing at the panel's native resolution. The UI is
-// monochrome, so it is an 8-bit gray layer: 0 is black, 255 white. Strokes
-// use per-pixel distance coverage, which also gives round caps and joins.
-// Text comes from fonts pre-rasterized with 4-bit coverage (numeric_font.h,
-// text_font.h), larger than any on-screen use, so they are only scaled down.
+// Hard-edged drawing at the panel's native resolution for the no-AA trial.
+// The 8-bit gray layer retains the side roads' longitudinal fade. Text and
+// shape edges use a single pixel-center decision, with no coverage blending.
+// Font assets keep their existing geometry; their 4-bit masks are thresholded.
 // Written as members so the Arduino preprocessor generates no prototypes.
 struct AlphaFont {
   const NavoNumericGlyph* glyphs;
@@ -382,21 +381,11 @@ struct AlphaFont {
     return advance * scale;
   }
 
-  float coverage(const NavoNumericGlyph& glyph, int x, int y) const {
-    if (x < 0 || y < 0 || x >= glyph.width || y >= glyph.height) return 0.0f;
+  bool inkAt(const NavoNumericGlyph& glyph, int x, int y) const {
+    if (x < 0 || y < 0 || x >= glyph.width || y >= glyph.height) return false;
     const uint32_t index = uint32_t(y) * glyph.width + x;
     const uint8_t packed = alpha[glyph.offset + index / 2];
-    return float(index & 1 ? packed & 15 : packed >> 4) / 15.0f;
-  }
-
-  float sample(const NavoNumericGlyph& glyph, float x, float y) const {
-    const int ix = int(floorf(x)), iy = int(floorf(y));
-    const float fx = x - ix, fy = y - iy;
-    const float upper = coverage(glyph, ix, iy) * (1.0f - fx) +
-                        coverage(glyph, ix + 1, iy) * fx;
-    const float lower = coverage(glyph, ix, iy + 1) * (1.0f - fx) +
-                        coverage(glyph, ix + 1, iy + 1) * fx;
-    return upper * (1.0f - fy) + lower * fy;
+    return (index & 1 ? packed & 15 : packed >> 4) >= 8;
   }
 };
 
@@ -415,15 +404,15 @@ struct GrayLayer {
 
   static float clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
 
-  static float segmentDistance(float px, float py, float ax, float ay, float bx,
-                               float by) {
+  static float segmentDistanceSquared(float px, float py, float ax, float ay,
+                                      float bx, float by) {
     const float dx = bx - ax, dy = by - ay;
     const float lengthSquared = dx * dx + dy * dy;
     const float t = lengthSquared > 0.0f
                         ? clamp01(((px - ax) * dx + (py - ay) * dy) / lengthSquared)
                         : 0.0f;
     const float ex = px - (ax + t * dx), ey = py - (ay + t * dy);
-    return sqrtf(ex * ex + ey * ey);
+    return ex * ex + ey * ey;
   }
 
   void clear() {
@@ -444,23 +433,21 @@ struct GrayLayer {
     if (last >= limit) last = limit - 1;
   }
 
-  // Lighten blend: keeps the brighter value, so the overlapping ends of a
-  // polyline's segments never double their anti-aliased edges.
+  // A hard-edged capsule: round caps/joins without edge coverage blending.
   void strokeSegment(float ax, float ay, float bx, float by, float halfWidth,
                      uint8_t level) {
-    if (pixels == nullptr) return;
-    const float reach = halfWidth + 1.0f;
+    if (pixels == nullptr || !(halfWidth > 0.0f)) return;
+    const float reach = halfWidth;
+    const float radiusSquared = halfWidth * halfWidth;
     int16_t x0, x1, y0, y1;
     bounds(fminf(ax, bx) - reach, fmaxf(ax, bx) + reach, width, x0, x1);
     bounds(fminf(ay, by) - reach, fmaxf(ay, by) + reach, clipBottom, y0, y1);
     for (int16_t y = y0; y <= y1; ++y) {
       uint8_t* row = pixels + size_t(y) * width;
       for (int16_t x = x0; x <= x1; ++x) {
-        const float coverage = clamp01(
-            halfWidth + 0.5f - segmentDistance(x + 0.5f, y + 0.5f, ax, ay, bx, by));
-        if (coverage <= 0.0f) continue;
-        const uint8_t value = uint8_t(level * coverage + 0.5f);
-        if (value > row[x]) row[x] = value;
+        if (row[x] < level &&
+            segmentDistanceSquared(x + 0.5f, y + 0.5f, ax, ay, bx, by) <= radiusSquared)
+          row[x] = level;
       }
     }
   }
@@ -472,13 +459,14 @@ struct GrayLayer {
                     halfWidth, level);
   }
 
-  // A junction arm drawn as two soft parallel rails (a road outline) that
-  // stay bright for the first 45% and then fade out towards the far end.
+  // Two hard-edged rails retain the along-road fade. The full hard width
+  // matches the former soft rail's integrated brightness/visual weight.
   void strokeFadingRails(float x0, float y0, float ux, float uy, float length,
-                         float railOffset, float softWidth, uint8_t peak) {
+                         float railOffset, float railWidth, uint8_t peak) {
     if (pixels == nullptr) return;
     const float x1 = x0 + ux * length, y1 = y0 + uy * length;
-    const float reach = railOffset + softWidth + 1.0f;
+    const float halfWidth = railWidth * 0.5f;
+    const float reach = railOffset + halfWidth;
     int16_t left, right, top, bottom;
     bounds(fminf(x0, x1) - reach, fmaxf(x0, x1) + reach, width, left, right);
     bounds(fminf(y0, y1) - reach, fmaxf(y0, y1) + reach, clipBottom, top, bottom);
@@ -489,16 +477,16 @@ struct GrayLayer {
         const float along = px * ux + py * uy;
         if (along < 0.0f || along >= length) continue;
         const float edge = fabsf(fabsf(px * uy - py * ux) - railOffset);
-        if (edge >= softWidth) continue;
+        if (edge > halfWidth) continue;
         const float t = fmaxf(0.0f, (along / length - 0.45f) / 0.55f);
         const float fade = 1.0f - t * t * (3.0f - 2.0f * t);
-        const uint8_t value = uint8_t(peak * fade * (1.0f - edge / softWidth) + 0.5f);
+        const uint8_t value = uint8_t(peak * fade + 0.5f);
         if (value > row[x]) row[x] = value;
       }
     }
   }
 
-  // Anti-aliased rounded rectangle spanning [x0, x1] x [y0, y1].
+  // Hard-edged rounded rectangle spanning [x0, x1] x [y0, y1].
   void fillRoundRect(float x0, float y0, float x1, float y1, float radius,
                      uint8_t level) {
     if (pixels == nullptr) return;
@@ -512,22 +500,17 @@ struct GrayLayer {
       for (int16_t x = left; x <= right; ++x) {
         const float qx = fmaxf(fabsf(x + 0.5f - cx) - innerX, 0.0f);
         const float qy = fmaxf(fabsf(y + 0.5f - cy) - innerY, 0.0f);
-        const float coverage = clamp01(radius + 0.5f - sqrtf(qx * qx + qy * qy));
-        if (coverage <= 0.0f) continue;
-        const uint8_t value = uint8_t(level * coverage + 0.5f);
-        if (value > row[x]) row[x] = value;
+        if (qx * qx + qy * qy <= radius * radius && level > row[x]) row[x] = level;
       }
     }
   }
 
   // `x` is the left edge of the first glyph's advance box, `baseline` the
-  // text baseline, both in layer pixels. Each output pixel averages enough
-  // bilinear samples to cover the font pixels it shrinks, so small text
-  // keeps thin strokes instead of dropping or flickering them.
+  // text baseline, both in layer pixels. Sample one font-mask pixel at each
+  // output pixel center, thresholding it to ink or background.
   void drawText(const AlphaFont& font, const char* text, float x, float baseline,
                 float scale, uint8_t level) {
-    if (pixels == nullptr) return;
-    const int steps = scale >= 0.5f ? 2 : (scale <= 1.0f / 6 ? 6 : int(ceilf(1.0f / scale)));
+    if (pixels == nullptr || !(scale > 0.0f)) return;
     for (const char* c = text; *c != '\0'; ++c) {
       const NavoNumericGlyph* glyph = font.glyphFor(*c);
       if (glyph == nullptr) continue;
@@ -538,44 +521,34 @@ struct GrayLayer {
       bounds(y0 - 1, y0 + glyph->height * scale + 1, clipBottom, top, bottom);
       for (int16_t py = top; py <= bottom; ++py) {
         uint8_t* row = pixels + size_t(py) * width;
+        const int gy = int(floorf((py + 0.5f - y0) / scale));
         for (int16_t px = left; px <= right; ++px) {
-          float sum = 0.0f;
-          for (int sy = 0; sy < steps; ++sy) {
-            const float gy = (py + (sy + 0.5f) / steps - y0) / scale - 0.5f;
-            for (int sx = 0; sx < steps; ++sx) {
-              const float gx = (px + (sx + 0.5f) / steps - x0) / scale - 0.5f;
-              sum += font.sample(*glyph, gx, gy);
-            }
-          }
-          if (sum <= 0.0f) continue;
-          const uint8_t value = uint8_t(level * sum / (steps * steps) + 0.5f);
-          if (value > row[px]) row[px] = value;
+          const int gx = int(floorf((px + 0.5f - x0) / scale));
+          if (font.inkAt(*glyph, gx, gy) && level > row[px]) row[px] = level;
         }
       }
       x += glyph->advance * scale;
     }
   }
 
-  // Anti-aliased filled triangle, blended over what is there (so it can also
-  // cut a black outline into the route).
+  // Hard-edged filled triangle. A black fill can cut the rider's outline
+  // into a white route without leaving partially blended edge pixels.
   void fillTriangle(float ax, float ay, float bx, float by, float cx, float cy,
                     uint8_t level) {
     if (pixels == nullptr) return;
     // Counter-clockwise in screen space, so the inside is on each edge's left.
-    if ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax) < 0.0f) {
+    const float area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    if (area == 0.0f) return;
+    if (area < 0.0f) {
       float tx = bx, ty = by;
       bx = cx; by = cy; cx = tx; cy = ty;
     }
     const float ex[3] = {ax, bx, cx}, ey[3] = {ay, by, cy};
-    float nx[3], ny[3], offset[3];
+    float dx[3], dy[3];
     for (int i = 0; i < 3; ++i) {
       const int j = (i + 1) % 3;
-      const float dx = ex[j] - ex[i], dy = ey[j] - ey[i];
-      const float length = sqrtf(dx * dx + dy * dy);
-      if (length <= 0.0f) return;
-      nx[i] = -dy / length;  // inward normal
-      ny[i] = dx / length;
-      offset[i] = -(nx[i] * ex[i] + ny[i] * ey[i]);
+      dx[i] = ex[j] - ex[i];
+      dy[i] = ey[j] - ey[i];
     }
     int16_t x0, x1, y0, y1;
     bounds(fminf(ax, fminf(bx, cx)) - 1.0f, fmaxf(ax, fmaxf(bx, cx)) + 1.0f, width, x0, x1);
@@ -584,12 +557,10 @@ struct GrayLayer {
       uint8_t* row = pixels + size_t(y) * width;
       for (int16_t x = x0; x <= x1; ++x) {
         const float px = x + 0.5f, py = y + 0.5f;
-        float inside = 1e9f;
+        bool inside = true;
         for (int i = 0; i < 3; ++i)
-          inside = fminf(inside, nx[i] * px + ny[i] * py + offset[i]);
-        const float coverage = clamp01(inside + 0.5f);
-        if (coverage <= 0.0f) continue;
-        row[x] = uint8_t(row[x] + (level - row[x]) * coverage + 0.5f);
+          inside = inside && dx[i] * (py - ey[i]) - dy[i] * (px - ex[i]) >= 0.0f;
+        if (inside) row[x] = level;
       }
     }
   }
@@ -1444,7 +1415,7 @@ void drawThickLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 }
 
 // A stroke as wide as drawThickLine() draws it (2 * (thickness / 2) + 1
-// canvas pixels), anti-aliased on the native layer.
+// canvas pixels), rasterized directly on the native layer.
 void drawStroke(float x0, float y0, float x1, float y1, uint8_t thickness) {
 #if NAV_WAVESHARE_146
   if (useNativeLayer()) {
@@ -1519,11 +1490,11 @@ void drawSideRoadLine(float x0, float y0, float x1, float y1) {
       const float along = px * ux + py * uy;
       if (along < 0.0f || along >= visibleLength) continue;
       const float edgeDistance = fabsf(fabsf(px * uy - py * ux) - railOffset);
-      if (edgeDistance >= softWidth) continue;
+      if (edgeDistance > softWidth * 0.5f) continue;
       // Keep the first 45% bright; reserve the fade for the outer end.
       const float t = fmaxf(0.0f, (along / visibleLength - 0.45f) / 0.55f);
       const float fade = 1.0f - t * t * (3.0f - 2.0f * t);
-      const uint8_t gray = lroundf(245.0f * fade * (1.0f - edgeDistance / softWidth));
+      const uint8_t gray = lroundf(245.0f * fade);
       const uint16_t color = ((gray >> 3) << 11) | ((gray >> 2) << 5) | (gray >> 3);
       uint16_t& pixel = pixels[y * SCREEN_WIDTH + x];
       // Overlapping branches must not erase a brighter edge already drawn.
@@ -2052,7 +2023,7 @@ bool initDisplay() {
     nativeLayer.height = PANEL_VIEW_HEIGHT;
     nativeLayer.clipBottom = PANEL_VIEW_HEIGHT;
     nativeLayer.clear();
-    Serial.println("[TFT] NAVO UI: native 412x412 anti-aliased text and graphics");
+    Serial.println("[TFT] NAVO UI: native 412x412 hard-edge text and graphics (AA off)");
   } else {
     Serial.println("[TFT] NAVO UI: low-resolution fallback (check OPI PSRAM setting)");
   }
