@@ -1,0 +1,18 @@
+project_id = "navio"
+
+[functions.account-actions]
+# The handler independently validates every Bearer token with Auth.getUser()
+# before any privileged operation, including projects using new signing keys.
+verify_jwt = false
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+[auth.email.template.confirmation]
+subject = "Your NAVIO verification code"
+content_path = "./templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Your NAVIO password reset code"
+content_path = "./templates/recovery.html"

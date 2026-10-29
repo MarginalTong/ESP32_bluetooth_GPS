@@ -1,6 +1,6 @@
 {
   "private": true,
   "type": "module",
-  "scripts": {"test": "node --test account_schema.test.mjs"},
+  "scripts": {"test": "node --experimental-strip-types --test account_schema.test.mjs account_actions.test.mjs"},
   "devDependencies": {"@electric-sql/pglite": "0.5.13"}
 }

@@ -13,3 +13,5 @@ firmware/tools/__pycache__/
 supabase/tests/node_modules/
 supabase/.temp/
 supabase/.branches/
+supabase/.env*
+!supabase/.env.example
