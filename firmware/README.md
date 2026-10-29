@@ -79,6 +79,9 @@ monitor logs/state; both are ignored by Git.
 once. A page or subtitle change marks the display dirty. Clock and close-turn
 blink refreshes are scheduled only for the page that actually uses them.
 The existing 25 ms animation frame limit is unchanged.
+`[RENDER]` diagnostics aggregate real frame time, CPU drawing/composition time,
+and LCD transfer time at most once every five seconds when frames are drawn.
+Idle gaps between navigation packets are not interpreted as animation FPS.
 Serial logs record page transitions once (for example,
 `[UI] navigating -> stale_guidance`), not on every animation frame.
 

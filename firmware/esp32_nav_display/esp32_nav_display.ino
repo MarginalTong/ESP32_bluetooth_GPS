@@ -713,6 +713,7 @@ bool tripEnded = false;
 bool livePacketTimedOut = false;
 uint32_t rejectedPacketCount = 0;
 char lastError[48] = "";
+uint32_t lastFrameTransferUs = 0;
 
 // Arduino's .ino preprocessor sometimes generates function prototypes before
 // custom enum classes are declared, which breaks types like Direction and
@@ -1412,6 +1413,7 @@ void fillUiTriangle(float x0, float y0, float x1, float y1, float x2, float y2) 
 }
 
 void presentDisplay() {
+  lastFrameTransferUs = 0;
 #if NAV_WAVESHARE_146
   // Composed and sent in bands, so no full panel framebuffer is needed: the
   // canvas UI upscaled, over the native-resolution map. Native RGB565 words
@@ -1425,11 +1427,15 @@ void presentDisplay() {
     const int16_t rows =
         PANEL_VIEW_HEIGHT - y < bandRows ? int16_t(PANEL_VIEW_HEIGHT - y) : bandRows;
     panelComposer.compose(source, layer, band, y, rows);
+    const uint32_t transferStartUs = micros();
     tft.draw16bitRGBBitmap(PANEL_VIEW_X, PANEL_VIEW_Y + y, band, PANEL_VIEW_WIDTH, rows);
+    lastFrameTransferUs += micros() - transferStartUs;
   }
   nativeLayerDrawn = false;
 #else
+  const uint32_t transferStartUs = micros();
   tft.drawRGBBitmap(0, 0, display.getBuffer(), SCREEN_WIDTH, SCREEN_HEIGHT);
+  lastFrameTransferUs = micros() - transferStartUs;
 #endif
 }
 
@@ -2224,6 +2230,27 @@ void applyBleMailbox() {
   }
 }
 
+// Aggregate actual frame work; idle gaps are deliberately not called low FPS.
+// A 40 FPS target leaves 25 ms per frame, including panel transfer.
+void reportRenderTiming(uint32_t frameUs, uint32_t transferUs) {
+  static uint32_t frames = 0, peakUs = 0, lastReportMs = 0;
+  static uint64_t totalUs = 0, totalTransferUs = 0;
+  ++frames;
+  totalUs += frameUs;
+  totalTransferUs += transferUs;
+  if (frameUs > peakUs) peakUs = frameUs;
+  const uint32_t now = millis();
+  if (lastReportMs != 0 && now - lastReportMs < 5000) return;
+  Serial.printf("[RENDER] frames=%lu frame_ms=%.1f max_ms=%.1f cpu_ms=%.1f lcd_ms=%.1f budget_ms=%lu\n",
+                static_cast<unsigned long>(frames), double(totalUs) / frames / 1000.0,
+                peakUs / 1000.0, double(totalUs - totalTransferUs) / frames / 1000.0,
+                double(totalTransferUs) / frames / 1000.0,
+                static_cast<unsigned long>(DISPLAY_REFRESH_MS));
+  frames = peakUs = 0;
+  totalUs = totalTransferUs = 0;
+  lastReportMs = now;
+}
+
 void loop() {
   updatePairing();
   applyBleMailbox();
@@ -2255,7 +2282,10 @@ void loop() {
     // Clear before drawing so a BLE callback arriving during the SPI transfer
     // schedules another frame instead of having its update erased here.
     displayDirty = false;
+    const uint32_t renderStartUs = micros();
     renderDisplay(uiState, blinkState);
+    if (uiState.screen != UiScreen::Off)
+      reportRenderTiming(micros() - renderStartUs, lastFrameTransferUs);
   }
 
   delay(5);
