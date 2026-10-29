@@ -1,4 +1,4 @@
-/// The navigation directions understood by the ESP32_NAV firmware.
+/// The navigation directions understood by the NAVIO display firmware.
 ///
 /// The `wire` value is the exact string the firmware compares against in its
 /// `if (nav.direction == "...")` render chain, so these must match the firmware

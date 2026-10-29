@@ -150,11 +150,11 @@ constexpr int16_t PANEL_VIEW_HEIGHT = PANEL_SIZE;
 constexpr int16_t PANEL_VIEW_X = (PANEL_SIZE - PANEL_VIEW_WIDTH) / 2;
 constexpr int16_t PANEL_VIEW_Y = (PANEL_SIZE - PANEL_VIEW_HEIGHT) / 2;
 constexpr int16_t PANEL_VISIBLE_RADIUS = PANEL_SIZE / 2 - 3;
-#ifndef NAVO_RENDER_SIZE
-#define NAVO_RENDER_SIZE 412
+#ifndef NAVIO_RENDER_SIZE
+#define NAVIO_RENDER_SIZE 412
 #endif
-constexpr int16_t NATIVE_LAYER_SIZE = NAVO_RENDER_SIZE;
-static_assert(NAVO_RENDER_SIZE >= SCREEN_WIDTH && NAVO_RENDER_SIZE <= PANEL_SIZE,
+constexpr int16_t NATIVE_LAYER_SIZE = NAVIO_RENDER_SIZE;
+static_assert(NAVIO_RENDER_SIZE >= SCREEN_WIDTH && NAVIO_RENDER_SIZE <= PANEL_SIZE,
               "Render size must be between the logical canvas and physical panel");
 static_assert(PANEL_VIEW_WIDTH * SCREEN_HEIGHT == PANEL_VIEW_HEIGHT * SCREEN_WIDTH,
               "Preserve the logical canvas aspect ratio");
@@ -211,7 +211,7 @@ constexpr uint8_t MAX_SIDE_ROAD_SEGMENTS = 2;
 // BLE contract - must match the Flutter app.
 // ======================================================
 
-char DEVICE_NAME[20] = "NAV";
+char DEVICE_NAME[20] = "NAVIO";
 char deviceIdentity[13] = "";
 // Waveshare's BOOT button pulls GPIO0 low. Never hold it while resetting,
 // because GPIO0 is also the ESP32-S3 download-mode strap.
@@ -367,12 +367,12 @@ struct KeyRing {
 // text_font.h), larger than any on-screen use, so they are only scaled down.
 // Written as members so the Arduino preprocessor generates no prototypes.
 struct AlphaFont {
-  const NavoNumericGlyph* glyphs;
+  const NavioNumericGlyph* glyphs;
   size_t count;
   const uint8_t* alpha;
   float capHeight;  // height of 'H' (or a digit), in font pixels
 
-  const NavoNumericGlyph* glyphFor(char c) const {
+  const NavioNumericGlyph* glyphFor(char c) const {
     for (size_t i = 0; i < count; ++i)
       if (glyphs[i].code == c) return &glyphs[i];
     return nullptr;
@@ -381,20 +381,20 @@ struct AlphaFont {
   float textWidth(const char* text, float scale) const {
     float advance = 0.0f;
     for (const char* c = text; *c != '\0'; ++c) {
-      const NavoNumericGlyph* glyph = glyphFor(*c);
+      const NavioNumericGlyph* glyph = glyphFor(*c);
       if (glyph != nullptr) advance += glyph->advance;
     }
     return advance * scale;
   }
 
-  float coverage(const NavoNumericGlyph& glyph, int x, int y) const {
+  float coverage(const NavioNumericGlyph& glyph, int x, int y) const {
     if (x < 0 || y < 0 || x >= glyph.width || y >= glyph.height) return 0.0f;
     const uint32_t index = uint32_t(y) * glyph.width + x;
     const uint8_t packed = alpha[glyph.offset + index / 2];
     return float(index & 1 ? packed & 15 : packed >> 4) / 15.0f;
   }
 
-  float sample(const NavoNumericGlyph& glyph, float x, float y) const {
+  float sample(const NavioNumericGlyph& glyph, float x, float y) const {
     const int ix = int(floorf(x)), iy = int(floorf(y));
     const float fx = x - ix, fy = y - iy;
     const float upper = coverage(glyph, ix, iy) * (1.0f - fx) +
@@ -405,12 +405,12 @@ struct AlphaFont {
   }
 };
 
-const AlphaFont NAVO_NUMERIC_FONT = {
-    NAVO_NUMERIC_GLYPHS, sizeof(NAVO_NUMERIC_GLYPHS) / sizeof(NAVO_NUMERIC_GLYPHS[0]),
-    NAVO_NUMERIC_ALPHA, float(NAVO_NUMERIC_CAP_HEIGHT)};
-const AlphaFont NAVO_TEXT_FONT = {
-    NAVO_TEXT_GLYPHS, sizeof(NAVO_TEXT_GLYPHS) / sizeof(NAVO_TEXT_GLYPHS[0]),
-    NAVO_TEXT_ALPHA, float(NAVO_TEXT_CAP_HEIGHT)};
+const AlphaFont NAVIO_NUMERIC_FONT = {
+    NAVIO_NUMERIC_GLYPHS, sizeof(NAVIO_NUMERIC_GLYPHS) / sizeof(NAVIO_NUMERIC_GLYPHS[0]),
+    NAVIO_NUMERIC_ALPHA, float(NAVIO_NUMERIC_CAP_HEIGHT)};
+const AlphaFont NAVIO_TEXT_FONT = {
+    NAVIO_TEXT_GLYPHS, sizeof(NAVIO_TEXT_GLYPHS) / sizeof(NAVIO_TEXT_GLYPHS[0]),
+    NAVIO_TEXT_ALPHA, float(NAVIO_TEXT_CAP_HEIGHT)};
 
 struct GrayLayer {
   uint8_t* pixels = nullptr;
@@ -534,7 +534,7 @@ struct GrayLayer {
     if (pixels == nullptr) return;
     const int steps = scale >= 0.5f ? 2 : (scale <= 1.0f / 6 ? 6 : int(ceilf(1.0f / scale)));
     for (const char* c = text; *c != '\0'; ++c) {
-      const NavoNumericGlyph* glyph = font.glyphFor(*c);
+      const NavioNumericGlyph* glyph = font.glyphFor(*c);
       if (glyph == nullptr) continue;
       const float x0 = x + glyph->xOffset * scale;
       const float y0 = baseline + glyph->yOffset * scale;
@@ -1393,7 +1393,7 @@ void drawUiText(const char* value, uint8_t size, float left, float top) {
   if (useNativeLayer()) {
     // Numbers use the numeric font, everything else the text font. The
     // classic font's size n is 7n canvas pixels tall; keep those heights.
-    const AlphaFont& font = isNumericText(value) ? NAVO_NUMERIC_FONT : NAVO_TEXT_FONT;
+    const AlphaFont& font = isNumericText(value) ? NAVIO_NUMERIC_FONT : NAVIO_TEXT_FONT;
     nativeLayer.drawText(font, value, left * NATIVE_SCALE,
                          (top + 7.0f * size) * NATIVE_SCALE,
                          7.0f * size * NATIVE_SCALE / font.capHeight, 255);
@@ -1408,7 +1408,7 @@ void drawUiText(const char* value, uint8_t size, float left, float top) {
 float uiTextWidth(const char* value, uint8_t size) {
 #if NAV_WAVESHARE_146
   if (useNativeLayer()) {
-    const AlphaFont& font = isNumericText(value) ? NAVO_NUMERIC_FONT : NAVO_TEXT_FONT;
+    const AlphaFont& font = isNumericText(value) ? NAVIO_NUMERIC_FONT : NAVIO_TEXT_FONT;
     return font.textWidth(value, 7.0f * size / font.capHeight);
   }
 #endif
@@ -2073,10 +2073,10 @@ bool initDisplay() {
     nativeLayer.height = NATIVE_LAYER_SIZE;
     nativeLayer.clipBottom = NATIVE_LAYER_SIZE;
     nativeLayer.clear();
-    Serial.printf("[TFT] NAVO UI: %dx%d anti-aliased rendering -> %dx%d panel\n",
+    Serial.printf("[TFT] NAVIO UI: %dx%d anti-aliased rendering -> %dx%d panel\n",
                   NATIVE_LAYER_SIZE, NATIVE_LAYER_SIZE, PANEL_VIEW_WIDTH, PANEL_VIEW_HEIGHT);
   } else {
-    Serial.println("[TFT] NAVO UI: low-resolution fallback (check OPI PSRAM setting)");
+    Serial.println("[TFT] NAVIO UI: low-resolution fallback (check OPI PSRAM setting)");
   }
   Serial.println("[TFT] SPD2010 412x412 ready");
 #else
@@ -2103,7 +2103,7 @@ void setup() {
   snprintf(deviceIdentity, sizeof(deviceIdentity), "%04X%08lX",
            static_cast<unsigned int>((chipId >> 32) & 0xffff),
            static_cast<unsigned long>(chipId & 0xffffffff));
-  snprintf(DEVICE_NAME, sizeof(DEVICE_NAME), "NAV-%s", deviceIdentity);
+  snprintf(DEVICE_NAME, sizeof(DEVICE_NAME), "NAVIO-%s", deviceIdentity);
   Serial.begin(115200);
   delay(100);
   Serial.println();

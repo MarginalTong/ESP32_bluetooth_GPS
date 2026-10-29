@@ -13,6 +13,11 @@ These are explicit user preferences for this repository:
 
 ## Firmware development
 
+- The public product name is **NAVIO**, not NAVO or Moto Nav. Keep App UI,
+  platform display names, firmware screens and documentation consistent.
+  Preserve historical package/Bundle IDs, BLE UUIDs, storage keys and the
+  internal `.navo` monitor directory unless an explicit migration is requested.
+
 - Use PlatformIO for builds and uploads; do not use Arduino CLI or Arduino IDE.
 - The current environment is `waveshare_146` in the root `platformio.ini`.
 - VS Code and the assistant share the monitor managed by

@@ -26,7 +26,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
-        android:label="moto_nav_bridge"
+        android:label="NAVIO"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

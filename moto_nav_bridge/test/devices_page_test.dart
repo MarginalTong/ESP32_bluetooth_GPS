@@ -97,7 +97,7 @@ void main() {
       final original = tester.state(find.byType(HomePage));
       await tester.tap(find.text(english ? 'My devices' : '我的设备').last);
       await tester.pumpAndSettle();
-      expect(find.text('NAV-001122334455'), findsOneWidget);
+      expect(find.text('NAVIO-001122334455'), findsOneWidget);
       await tester.tap(find.text(english ? 'Disconnect' : '断开连接'));
       await tester.pumpAndSettle();
       expect(ble.identity, isNotNull);

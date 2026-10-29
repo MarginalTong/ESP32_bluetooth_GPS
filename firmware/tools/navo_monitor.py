@@ -30,11 +30,12 @@ ENVIRONMENT = "waveshare_146"
 
 
 def pio():
-    executable = os.environ.get("NAVO_PIO") or shutil.which("pio")
+    executable = (os.environ.get("NAVIO_PIO") or os.environ.get("NAVO_PIO")
+                  or shutil.which("pio"))
     if not executable:
         executable = str(Path.home() / ".platformio/penv/bin/pio")
     if not Path(executable).is_file():
-        raise RuntimeError("Install the PlatformIO IDE extension first, or set NAVO_PIO.")
+        raise RuntimeError("Install the PlatformIO IDE extension first, or set NAVIO_PIO.")
     return executable
 
 
@@ -61,14 +62,14 @@ def port(explicit=None):
     # Use the same pyserial enumeration that PlatformIO uses. Never select a
     # random board when more than one USB serial device is attached.
     from serial.tools.list_ports import comports
-    configured = explicit or os.environ.get("NAVO_PORT")
+    configured = explicit or os.environ.get("NAVIO_PORT") or os.environ.get("NAVO_PORT")
     if configured:
         if not Path(configured).exists():
             raise RuntimeError(f"USB port missing: {configured}")
         return configured
     devices = [device.device for device in comports() if device.vid is not None]
     if len(devices) != 1:
-        raise RuntimeError(f"Expected one USB serial device, found {devices}; use --port to select NAVO.")
+        raise RuntimeError(f"Expected one USB serial device, found {devices}; use --port to select NAVIO.")
     return devices[0]
 
 
@@ -226,5 +227,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     except (OSError, RuntimeError) as error:
-        print(f"NAVO monitor: {error}", file=sys.stderr)
+        print(f"NAVIO monitor: {error}", file=sys.stderr)
         sys.exit(1)

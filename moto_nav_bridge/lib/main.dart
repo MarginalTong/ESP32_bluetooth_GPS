@@ -3,17 +3,18 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'controllers/navigation_controller.dart';
+import 'config/app_brand.dart';
 import 'services/ble_service.dart';
 import 'ui/app_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final preferences = await SharedPreferences.getInstance();
-  runApp(MotoNavBridgeApp(preferences: preferences));
+  runApp(NavioApp(preferences: preferences));
 }
 
-class MotoNavBridgeApp extends StatelessWidget {
-  const MotoNavBridgeApp({super.key, this.preferences});
+class NavioApp extends StatelessWidget {
+  const NavioApp({super.key, this.preferences});
   final SharedPreferences? preferences;
 
   @override
@@ -30,7 +31,7 @@ class MotoNavBridgeApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'Moto Nav Bridge',
+        title: AppBrand.name,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
             seedColor: const Color(0xff007aff),

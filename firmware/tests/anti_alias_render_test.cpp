@@ -44,7 +44,7 @@ int main() {
 
   // Keep fractional coverage from a 4-bit font mask instead of thresholding
   // it to binary ink/background. This fails with the no-AA experiment.
-  const NavoNumericGlyph glyphs[] = {{'X', 2, 1, 0, 0, 2, 0}};
+  const NavioNumericGlyph glyphs[] = {{'X', 2, 1, 0, 0, 2, 0}};
   const uint8_t alpha[] = {0x78};
   const AlphaFont testFont = {glyphs, 1, alpha, 1};
   layer.clear();
@@ -55,17 +55,17 @@ int main() {
   antialiased(false);
 
   layer.clear();
-  layer.drawText(NAVO_NUMERIC_FONT, "00:10", 12.3f, 100.7f, 0.8f, 255);
-  layer.drawText(NAVO_TEXT_FONT, "NAVO", 18.4f, 180.2f, 0.85f, 255);
-  layer.drawText(NAVO_TEXT_FONT, "CONNECT PHONE", 16.1f, 220.8f, 0.2f, 255);
+  layer.drawText(NAVIO_NUMERIC_FONT, "00:10", 12.3f, 100.7f, 0.8f, 255);
+  layer.drawText(NAVIO_TEXT_FONT, "NAVIO", 18.4f, 180.2f, 0.85f, 255);
+  layer.drawText(NAVIO_TEXT_FONT, "CONNECT PHONE", 16.1f, 220.8f, 0.2f, 255);
   antialiased();
-  const float advance = NAVO_NUMERIC_FONT.textWidth("00:10", 0.8f);
+  const float advance = NAVIO_NUMERIC_FONT.textWidth("00:10", 0.8f);
   check(advance > 0 && advance < size, "existing font metrics still fit the native panel");
 
   layer.clear();
   layer.clipBottom = 100;
   layer.strokeSegment(15, 80, 140, 135, 3, 255);
-  layer.drawText(NAVO_TEXT_FONT, "NAVO", 20, 120, 0.8f, 255);
+  layer.drawText(NAVIO_TEXT_FONT, "NAVIO", 20, 120, 0.8f, 255);
   antialiased();
   for (int y = 100; y < size; ++y)
     for (int x = 0; x < size; ++x)
@@ -86,7 +86,7 @@ int main() {
   layer.clear();
   layer.fillTriangle(-100, -10, 50, 500, 520, 40, 255);
   layer.fillRoundRect(-20, -20, 25, 25, 5, 255);
-  layer.drawText(NAVO_TEXT_FONT, "NAVO", -20, 8, 0.8f, 255);
+  layer.drawText(NAVIO_TEXT_FONT, "NAVIO", -20, 8, 0.8f, 255);
   for (int index = 0; index < guard; ++index) {
     check(memory[index] == 0x5a && memory[memory.size() - 1 - index] == 0x5a,
           "off-screen shapes/text must not write outside the framebuffer");

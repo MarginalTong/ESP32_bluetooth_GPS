@@ -11,12 +11,12 @@ Open the **repository root** (`ESP32_bluetooth_GPS`) in VS Code so its
 
 | Task | Action |
 | --- | --- |
-| `NAVO: Verify` | Incremental PlatformIO build; also the default ⇧⌘B build task. |
-| `NAVO: Upload` | Build and upload through PlatformIO. |
-| `NAVO: Upload + Serial Monitor` | Build, upload, then display shared serial output. |
-| `NAVO: Serial Monitor` | View the same serial stream without flashing. |
-| `NAVO: Stop Serial Monitor` | Stop the background reader and release USB. |
-| `NAVO: Status` | Show board options, USB port, monitor state and log path. |
+| `NAVIO: Verify` | Incremental PlatformIO build; also the default ⇧⌘B build task. |
+| `NAVIO: Upload` | Build and upload through PlatformIO. |
+| `NAVIO: Upload + Serial Monitor` | Build, upload, then display shared serial output. |
+| `NAVIO: Serial Monitor` | View the same serial stream without flashing. |
+| `NAVIO: Stop Serial Monitor` | Stop the background reader and release USB. |
+| `NAVIO: Status` | Show board options, USB port, monitor state and log path. |
 
 The equivalent agent/terminal commands, from the repository root, are:
 
@@ -47,7 +47,7 @@ upload, **no full-flash erase**. The monitor runs at **115200 baud**.
 With multiple USB devices, configure matching `upload_port` and `monitor_port`
 in `platformio.ini` and pass `--port` to the shared-monitor task.
 
-The PlatformIO toolbar's plug button opens `NAVO: Serial Monitor`. It runs
+The PlatformIO toolbar's plug button opens `NAVIO: Serial Monitor`. It runs
 one native **`pio device monitor`** with the built-in `time` and
 `esp32_exception_decoder` filters, through a small persistent terminal
 supervisor (`firmware/tools/navo_monitor.py`). Its UTC-timestamped output is
@@ -89,7 +89,7 @@ Page priority preserves the existing behavior: an unavailable/off panel wins,
 then BOOT pairing; disconnected/idle states are resolved before route states;
 rerouting wins over STOP/ARRIVED; STOP shows no guidance; ARRIVED never expires;
 otherwise stale guidance and live navigation are distinct pages. Explicit trip
-end returns to NAVO, while an unexpected link loss shows CONNECTION LOST.
+end returns to NAVIO, while an unexpected link loss shows CONNECTION LOST.
 Cached/stale pages never show a live rider marker or countdown.
 
 Run the board-free state/renderer tests with:
@@ -136,7 +136,7 @@ Hardware mapping (new board):
 
 The round board uses a 240×240 logical layout rasterized across the full
 412×412 physical panel. On `experiment/aa-render-360`, PlatformIO sets
-`NAVO_RENDER_SIZE=360`: the AA layer is 360×360 and is enlarged to 412×412
+`NAVIO_RENDER_SIZE=360`: the AA layer is 360×360 and is enlarged to 412×412
 using precomputed nearest-sample tables. Physical UI size, circle clipping,
 BLE coordinates and panel transfer resolution do not change. This reduces
 AA raster pixels by 23.6% and its PSRAM allocation by 40,144 bytes, but does
@@ -177,7 +177,8 @@ on a physical board. Upload is a separate step; no board is flashed automaticall
 
 BLE contract:
 
-- Device name: `NAV-<device identity>` (derived from this board's chip identity).
+- Device name: `NAVIO-<device identity>` (derived from this board's chip identity).
+  The App still discovers legacy `NAV-…` and `ESP32_NAV` firmware.
   A new physical board has a different identity: use the app's change-screen
   flow and press BOOT on the new screen; an existing binding to the old board
   will not match. BOOT is GPIO0; press it only after the screen asks for it,
@@ -229,7 +230,7 @@ Supported `dir` values:
 
 `STOP` is a temporary no-guidance state (pause or lost GPS). Ending a trip
 sends the distinct signed payload `{"dir":"STOP","dist":0,"end":true}`.
-Only that end marker returns the display to the NAVO standby page, including
+Only that end marker returns the display to the NAVIO standby page, including
 after the app disconnects; an unexpected BLE drop still shows
 `CONNECTION LOST`. Both app and display firmware must support this marker.
 

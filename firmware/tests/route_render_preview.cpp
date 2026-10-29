@@ -200,14 +200,14 @@ static std::vector<uint16_t> renderNew() {
   for (const auto& s : kArrowRight)
     map.strokeSegment(layer(fittedX(s[0])), layer(fittedY(s[1])), layer(fittedX(s[2])),
                       layer(fittedY(s[3])), 5 * kScale / 2, 255);
-  const float small = 14 * kScale / NAVO_TEXT_FONT.capHeight;
-  const float numericScale = 28 * kScale / NAVO_NUMERIC_FONT.capHeight;
+  const float small = 14 * kScale / NAVIO_TEXT_FONT.capHeight;
+  const float numericScale = 28 * kScale / NAVIO_NUMERIC_FONT.capHeight;
   const float baseline = (kDistanceTop + 28) * kScale;
-  const float unitLeft = kDistanceRight * kScale - NAVO_TEXT_FONT.textWidth("m", small);
-  map.drawText(NAVO_TEXT_FONT, "m", unitLeft, baseline, small, 255);
+  const float unitLeft = kDistanceRight * kScale - NAVIO_TEXT_FONT.textWidth("m", small);
+  map.drawText(NAVIO_TEXT_FONT, "m", unitLeft, baseline, small, 255);
   const float numberLeft =
-      unitLeft - 3 * kScale - NAVO_NUMERIC_FONT.textWidth("106", numericScale);
-  map.drawText(NAVO_NUMERIC_FONT, "106", numberLeft, baseline, numericScale, 255);
+      unitLeft - 3 * kScale - NAVIO_NUMERIC_FONT.textWidth("106", numericScale);
+  map.drawText(NAVIO_NUMERIC_FONT, "106", numberLeft, baseline, numericScale, 255);
   static PanelComposer composer;
   const float center = kPanel / 2.0f - kViewOffset;
   composer.init(kView, kView, kCanvas, kCanvas, center, center, kPanel / 2.0f - 3);
@@ -216,7 +216,7 @@ static std::vector<uint16_t> renderNew() {
   return out;
 }
 
-// ---- Standby page: NAVO and its status line ------------------------------
+// ---- Standby page: NAVIO and its status line ------------------------------
 // The previous native text path: an Adafruit GFX 1-bit font, 4x4 bilinear
 // supersampled, enlarged to the requested size.
 static int gfxBit(const uint8_t* bits, const GFXglyph& g, int x, int y) {
@@ -258,7 +258,7 @@ static float gfxWidth(const GFXfont* font, const char* text, float scale) {
   return w * scale;
 }
 
-// As drawRoundCenteredStatus("NAVO", 5, "READY TO GO", 1).
+// As drawRoundCenteredStatus("NAVIO", 5, "READY TO GO", 1).
 static std::vector<uint16_t> renderStandby(bool newFont) {
   std::vector<uint8_t> pixels(kView * kView, 0);
   GrayLayer layer;
@@ -266,14 +266,14 @@ static std::vector<uint16_t> renderStandby(bool newFont) {
   layer.width = kView;
   layer.height = kView;
   layer.clipBottom = kView;
-  const char* lines[] = {"NAVO", "READY TO GO"};
+  const char* lines[] = {"NAVIO", "READY TO GO"};
   const int sizes[] = {5, 1}, tops[] = {90, 143};
   for (int i = 0; i < 2; ++i) {
     const float baseline = (tops[i] + 7 * sizes[i]) * kScale;
     if (newFont) {
-      const float scale = 7 * sizes[i] * kScale / NAVO_TEXT_FONT.capHeight;
-      layer.drawText(NAVO_TEXT_FONT, lines[i],
-                     (kView - NAVO_TEXT_FONT.textWidth(lines[i], scale)) / 2, baseline,
+      const float scale = 7 * sizes[i] * kScale / NAVIO_TEXT_FONT.capHeight;
+      layer.drawText(NAVIO_TEXT_FONT, lines[i],
+                     (kView - NAVIO_TEXT_FONT.textWidth(lines[i], scale)) / 2, baseline,
                      scale, 255);
     } else {
       const GFXfont* font = &FreeSansBold24pt7b;

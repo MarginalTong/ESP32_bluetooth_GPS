@@ -6,13 +6,13 @@ void drawBrand(const UiState& state) {
   const char* subtitle = state.connected ? "READY TO GO" : "CONNECT PHONE";
 #if NAV_WAVESHARE_146
   if (useNativeLayer()) {
-    drawRoundCenteredStatus("NAVO", 5, subtitle, 1);
+    drawRoundCenteredStatus("NAVIO", 5, subtitle, 1);
   } else {
-    drawStandbyBrandText("NAVO", true);
+    drawStandbyBrandText("NAVIO", true);
     drawStandbyBrandText(subtitle, false);
   }
 #else
-  drawUiText("NAVO", 4, 72, 35);
+  drawUiText("NAVIO", 4, 60, 35);
   if (state.connected) drawUiText("ready to go", 2, 54, 99);
   else drawUiText(subtitle, 1, 81, 91);
 #endif

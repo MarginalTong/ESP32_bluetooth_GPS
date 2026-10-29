@@ -31,7 +31,7 @@ void main() {
           of: find.ancestor(
               of: find.text(label), matching: find.byType(CupertinoListTile)),
           matching: find.byType(CupertinoSwitch));
-      expect(find.text('Moto Nav Plus'), findsNothing);
+      expect(find.text('NAVIO Plus'), findsNothing);
       expect(find.byType(CupertinoSwitch), findsNWidgets(4));
       expect(
           tester

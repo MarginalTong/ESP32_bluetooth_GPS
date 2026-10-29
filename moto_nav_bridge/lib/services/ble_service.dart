@@ -21,7 +21,7 @@ enum BleConnectionState {
   disconnected
 }
 
-/// Owns the BLE link to the ESP32_NAV peripheral: scan -> connect -> discover
+/// Owns the BLE link to the NAVIO display: scan -> connect -> discover
 /// the write characteristic -> push [NavState] payloads (throttled).
 ///
 /// Navigation is write-only; a separate read/write characteristic confirms a
@@ -296,8 +296,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     final name = result.advertisementData.advName.isNotEmpty
         ? result.advertisementData.advName
         : result.device.platformName;
-    return name == BleConstants.deviceName ||
-        RegExp(r'^NAV-[0-9A-F]{12}$').hasMatch(name) ||
+    return BleConstants.matchesAdvertisedName(name) ||
         result.advertisementData.serviceUuids.contains(serviceUuid);
   }
 

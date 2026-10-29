@@ -32,7 +32,7 @@ def before_upload(source, target, env):
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         handle.close()
-        raise RuntimeError("Another NAVO upload is already running") from None
+        raise RuntimeError("Another NAVIO upload is already running") from None
     held_locks.append(handle)
     handle = (local / "port.lock").open("a")
     deadline = time.monotonic() + 10
@@ -47,7 +47,7 @@ def before_upload(source, target, env):
                 raise RuntimeError("Shared monitor did not release USB within 10 seconds")
             time.sleep(0.1)
     held_locks.append(handle)
-    print("NAVO: shared serial monitor released; uploading via PlatformIO")
+    print("NAVIO: shared serial monitor released; uploading via PlatformIO")
 
 
 def after_upload(source, target, env):

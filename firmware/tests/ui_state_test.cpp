@@ -75,9 +75,9 @@ static void transitions() {
   inputs = guiding();
   inputs.tripEnded = true;
   inputs.hasNavigation = false;
-  expectPage(inputs, UiScreen::Brand, "ending returns to NAVO while still connected");
+  expectPage(inputs, UiScreen::Brand, "ending returns to NAVIO while still connected");
   inputs.connected = false;
-  expectPage(inputs, UiScreen::Brand, "intentional disconnect after end stays on NAVO");
+  expectPage(inputs, UiScreen::Brand, "intentional disconnect after end stays on NAVIO");
 
   inputs = guiding();
   inputs.connected = false;
@@ -213,13 +213,13 @@ static void pages() {
   check(drawnNavigation.direction == Direction::Right && drawnNavigation.distanceMeters == 117,
         "renderer receives the selected frame's maneuver and distance");
   drawPage(UiScreen::Brand, false);
-  check(drew("NAVO") && drew("CONNECT PHONE"), "disconnected brand asks for a phone");
+  check(drew("NAVIO") && drew("CONNECT PHONE"), "disconnected brand asks for a phone");
   drawPage(UiScreen::Brand, true);
 #if NAV_WAVESHARE_146
   check(drew("READY TO GO"), "connected round-panel brand is ready");
   native = false;
   drawPage(UiScreen::Brand, false);
-  check(drew("NAVO") && drew("CONNECT PHONE"), "fallback font keeps the same brand state");
+  check(drew("NAVIO") && drew("CONNECT PHONE"), "fallback font keeps the same brand state");
 #else
   check(drew("ready to go"), "connected legacy-panel brand is ready");
 #endif

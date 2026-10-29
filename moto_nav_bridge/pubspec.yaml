@@ -1,5 +1,5 @@
 name: moto_nav_bridge
-description: Navigation middleware bridging Valhalla routes to an ESP32 BLE navigation display.
+description: NAVIO motorcycle navigation and ESP32 BLE display companion.
 publish_to: "none"
 version: 0.1.0
 
@@ -12,7 +12,7 @@ dependencies:
   shared_preferences: ^2.5.3
   flutter:
     sdk: flutter
-  # BLE — communicates with the ESP32_NAV peripheral (write-with-response).
+  # BLE — communicates with the NAVIO display (write-with-response).
   flutter_blue_plus: ^1.32.12
   # Continuous location tracking for the navigation engine.
   geolocator: ^12.0.0

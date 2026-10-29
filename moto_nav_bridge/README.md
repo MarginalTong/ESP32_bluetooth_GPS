@@ -1,6 +1,10 @@
-# Moto Nav Bridge
+# NAVIO
 
-Navigation middleware for the ESP32 motorcycle navigation display.
+Motorcycle navigation app and companion for the NAVIO display.
+
+The public product name is NAVIO. Existing package IDs, Bundle IDs, Keychain
+services, platform channels and BLE UUIDs intentionally remain unchanged so
+upgrades retain saved places, pairing keys and installed-app identity.
 
 ## Valhalla 偏航重算
 
@@ -20,7 +24,7 @@ flutter run
 详见 [配置、隐私与测试说明](docs/valhalla-rerouting.md)。
 
 ```
-Valhalla /route → maneuver parse → NavigationEngine → NavState → BLE JSON → ESP32_NAV
+Valhalla /route → maneuver parse → NavigationEngine → NavState → BLE JSON → NAVIO
 ```
 
 The ESP32 stays a thin renderer. This Flutter app does the map API call, maps
@@ -30,7 +34,7 @@ over BLE.
 
 ## Device contract (from the firmware)
 
-- Device name: `NAV-<12 hex chip identity>` (legacy boards: `ESP32_NAV`)
+- Device name: `NAVIO-<12 hex chip identity>` (legacy `NAV-…` and `ESP32_NAV` boards remain supported)
 - Service UUID: `12345678-1234-1234-1234-123456789abc`
 - Characteristic UUID: `abcd1234-5678-1234-5678-abcdef123456` (WRITE, with response)
 - Payload: signed JSON, `{"dir":"<DIR>","dist":<int>,...,"n":<counter>}|<16 hex>`,
@@ -78,7 +82,7 @@ compiled or test-run here. On your machine:
 
 ```xml
 <key>NSBluetoothAlwaysUsageDescription</key>
-<string>Connect to the ESP32_NAV navigation display.</string>
+<string>Connect to your NAVIO motorcycle navigation display over Bluetooth.</string>
 <key>NSLocationWhenInUseUsageDescription</key>
 <string>Track position to compute turn-by-turn directions.</string>
 <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

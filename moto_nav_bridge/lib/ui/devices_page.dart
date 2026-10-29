@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_text.dart';
 import '../services/ble_service.dart';
 import 'device_pairing.dart';
+import '../config/app_brand.dart';
 
 class DevicesPage extends StatefulWidget {
   const DevicesPage({super.key});
@@ -154,7 +155,7 @@ class _DevicesPageState extends State<DevicesPage> {
                           Text(
                               ble.boundIdentity == null
                                   ? text.noBoundDevice
-                                  : 'NAV-${ble.boundIdentity}',
+                                  : AppBrand.displayName(ble.boundIdentity!),
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                   fontSize: 21,

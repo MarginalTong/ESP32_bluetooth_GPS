@@ -8,8 +8,13 @@
 class BleConstants {
   const BleConstants._();
 
-  /// Legacy advertised name; current boards advertise NAV-<12 hex digits>.
+  /// Legacy name retained so existing displays can still be discovered.
   static const String deviceName = 'ESP32_NAV';
+
+  /// Accept NAVIO branding and both generations of legacy firmware.
+  static bool matchesAdvertisedName(String name) =>
+      name == deviceName ||
+      RegExp(r'^(NAVIO|NAV)-[0-9A-F]{12}$').hasMatch(name);
 
   static const String serviceUuid = '12345678-1234-1234-1234-123456789abc';
   static const String characteristicUuid =

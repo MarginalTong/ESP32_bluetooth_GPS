@@ -41,17 +41,17 @@ def main() -> None:
         "// Roboto is licensed under Apache License 2.0. Do not edit by hand.",
         "#pragma once",
         "#include <stdint.h>",
-        "struct NavoNumericGlyph {",
+        "struct NavioNumericGlyph {",
         "  char code; uint8_t width, height; int8_t xOffset, yOffset;",
         "  uint8_t advance; uint32_t offset;",
         "};",
-        "static constexpr uint8_t NAVO_NUMERIC_CAP_HEIGHT = 79;",
-        "static const NavoNumericGlyph NAVO_NUMERIC_GLYPHS[] = {",
+        "static constexpr uint8_t NAVIO_NUMERIC_CAP_HEIGHT = 79;",
+        "static const NavioNumericGlyph NAVIO_NUMERIC_GLYPHS[] = {",
     ]
     for char, width, height, left, top, advance, offset in glyphs:
         lines.append(f"  {{'{char}', {width}, {height}, {left}, {top}, "
                      f"{advance}, {offset}}},")
-    lines += ["};", "static const uint8_t NAVO_NUMERIC_ALPHA[] = {"]
+    lines += ["};", "static const uint8_t NAVIO_NUMERIC_ALPHA[] = {"]
     for index in range(0, len(data), 24):
         lines.append("  " + ", ".join(f"0x{value:02x}"
                                     for value in data[index:index + 24]) + ",")
