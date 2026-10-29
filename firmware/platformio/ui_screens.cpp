@@ -2,8 +2,17 @@
 #include "ui_draw.h"
 
 namespace {
-void drawBrand(const UiState& state) {
-  const char* subtitle = state.connected ? "READY TO GO" : "CONNECT PHONE";
+// Insets keep the compact wordmark inside the round aperture. Draw it only on
+// idle/status pages: route and maneuver pixels always belong to navigation.
+void drawCompactBrand() {
+#if NAV_WAVESHARE_146
+  drawUiText("NAVIO", 2, 38, 38);
+#else
+  drawUiText("NAVIO", 2, 12, 8);
+#endif
+}
+
+void drawDisconnectedBrand(const char* subtitle) {
 #if NAV_WAVESHARE_146
   if (useNativeLayer()) {
     drawRoundCenteredStatus("NAVIO", 5, subtitle, 1);
@@ -13,18 +22,34 @@ void drawBrand(const UiState& state) {
   }
 #else
   drawUiText("NAVIO", 4, 60, 35);
-  if (state.connected) drawUiText("ready to go", 2, 54, 99);
-  else drawUiText(subtitle, 1, 81, 91);
+  drawUiText(subtitle, 1, (240 - uiTextWidth(subtitle, 1)) / 2, 91);
+#endif
+}
+
+void drawBrand(const UiState& state) {
+  if (!state.connected) {
+    drawDisconnectedBrand("CONNECT PHONE");
+    return;
+  }
+  drawCompactBrand();
+#if NAV_WAVESHARE_146
+  drawRoundCenteredStatus("READY TO GO", 2, nullptr, 1);
+#else
+  drawUiText("ready to go", 2, 54, 65);
 #endif
 }
 
 void drawClock(const UiState& state, const UiRenderContext& context) {
+  if (!state.connected) {
+    drawDisconnectedBrand("CONNECT PHONE");
+    return;
+  }
+  drawCompactBrand();
 #if NAV_WAVESHARE_146
-  drawRoundCenteredStatus(context.clockText, 7,
-                          state.connected ? "ready to go" : nullptr, 2);
+  drawRoundCenteredStatus(context.clockText, 7, "ready to go", 2);
 #else
   drawUiText(context.clockText, 7, 15, 30);
-  if (state.connected) drawUiText("ready to go", 2, 54, 99);
+  drawUiText("ready to go", 2, 54, 99);
 #endif
 }
 
@@ -40,6 +65,7 @@ void drawPairing(const UiRenderContext& context) {
 }
 
 void drawNotPaired() {
+  drawCompactBrand();
 #if NAV_WAVESHARE_146
   drawRoundCenteredStatus("NOT PAIRED", 2, "PAIR IN THE APP", 1);
 #else
@@ -49,11 +75,11 @@ void drawNotPaired() {
 }
 
 void drawConnectionLost() {
+  drawDisconnectedBrand("CONNECTION LOST");
 #if NAV_WAVESHARE_146
-  drawRoundCenteredStatus("CONNECTION LOST", 2, "RECONNECT PHONE", 1);
+  drawRoundCenteredText("RECONNECT PHONE", 1, 177);
 #else
-  drawUiText("CONNECTION LOST", 2, 24, 36);
-  drawUiText("RECONNECT PHONE", 1, 53, 77);
+  drawUiText("RECONNECT PHONE", 1, 75, 113);
 #endif
 }
 

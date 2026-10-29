@@ -38,7 +38,7 @@ struct UiInputs {
 
 struct UiState {
   UiScreen screen = UiScreen::Off;
-  bool connected = false;  // Brand/clock subtitle, not another page decision.
+  bool connected = false;  // Frame-local brand layout and readiness subtitle.
   NavState navigation = {Direction::Stop, 0};
 };
 

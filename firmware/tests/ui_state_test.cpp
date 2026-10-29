@@ -43,7 +43,7 @@ static void transitions() {
   UiInputs inputs = boot();
   expectPage(inputs, UiScreen::Brand, "cold boot has no placeholder clock");
   inputs.clockSynced = true;
-  expectPage(inputs, UiScreen::Clock, "a synced clock can be shown before connection");
+  expectPage(inputs, UiScreen::Brand, "a synced clock must not hide the disconnected brand");
   inputs.connected = true;
   expectPage(inputs, UiScreen::NotPaired, "connection alone does not mean ready");
   inputs.pairing = true;
@@ -78,6 +78,13 @@ static void transitions() {
   expectPage(inputs, UiScreen::Brand, "ending returns to NAVIO while still connected");
   inputs.connected = false;
   expectPage(inputs, UiScreen::Brand, "intentional disconnect after end stays on NAVIO");
+  inputs.clockSynced = true;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    inputs.connected = true;
+    expectPage(inputs, UiScreen::Brand, "connected end screen uses compact brand layout");
+    inputs.connected = false;
+    expectPage(inputs, UiScreen::Brand, "disconnect restores the large brand despite synced time");
+  }
 
   inputs = guiding();
   inputs.connected = false;
@@ -132,10 +139,13 @@ static void combinations() {
         }
         if (!inputs.connected) {
           check(page == UiScreen::Off || page == UiScreen::Pairing ||
-                page == UiScreen::Brand || page == UiScreen::Clock ||
+                page == UiScreen::Brand ||
                 page == UiScreen::ConnectionLost,
                 "disconnected facts can never expose old guidance");
         }
+        if (page == UiScreen::Clock)
+          check(inputs.connected && inputs.clockSynced,
+                "the clock is a connected-only standby page");
       }
     }
   }
@@ -147,19 +157,32 @@ static std::vector<std::string> calls;
 static bool native = true;
 static bool rider = false;
 static NavState drawnNavigation = {Direction::Stop, 0};
+struct BrandDraw {
+  uint8_t size;
+  float left, top;
+  bool centered;
+};
+static std::vector<BrandDraw> brandDraws;
 
 void beginFrame() { calls.push_back("begin"); }
 void presentDisplay() { calls.push_back("present"); }
-void drawUiText(const char* text, uint8_t, float, float) { calls.push_back(text); }
+void drawUiText(const char* text, uint8_t size, float left, float top) {
+  calls.push_back(text);
+  if (std::string(text) == "NAVIO") brandDraws.push_back({size, left, top, false});
+}
 float uiTextWidth(const char*, uint8_t) { return 20; }
 bool useNativeLayer() { return native; }
 uint16_t roundTextHeight(const char*, uint8_t size) { return 7 * size; }
 void drawRoundCenteredText(const char* text, uint8_t, int16_t) { calls.push_back(text); }
-void drawRoundCenteredStatus(const char* text, uint8_t, const char* subtitle, uint8_t) {
+void drawRoundCenteredStatus(const char* text, uint8_t size, const char* subtitle, uint8_t) {
   calls.push_back(text);
+  if (std::string(text) == "NAVIO") brandDraws.push_back({size, 120, 0, true});
   if (subtitle) calls.push_back(subtitle);
 }
-void drawStandbyBrandText(const char* text, bool) { calls.push_back(text); }
+void drawStandbyBrandText(const char* text, bool primary) {
+  calls.push_back(text);
+  if (std::string(text) == "NAVIO" && primary) brandDraws.push_back({5, 120, 0, true});
+}
 void drawMiniRouteMap(bool showRider, Direction) {
   calls.push_back("route");
   rider = showRider;
@@ -180,15 +203,39 @@ static bool drew(const char* call) {
 
 static void drawPage(UiScreen page, bool connected = true) {
   calls.clear();
+  brandDraws.clear();
   rider = false;
   const UiState state{page, connected, {Direction::Right, 117}};
-  const UiRenderContext context{"NAV-TEST", "12:34", 240, 171, 132};
+  const UiRenderContext context{"NAVIO-TEST", "12:34", 240, 171, 132};
   renderUiScreen(state, context, true);
   const auto frames = std::count(calls.begin(), calls.end(), "present");
   check(frames == (page == UiScreen::Off ? 0 : 1), "one presentation per visible frame");
   if (page != UiScreen::Off) {
     check(calls.front() == "begin" && calls.back() == "present", "frame boundaries stay ordered");
   }
+}
+
+static void expectCompactBrand() {
+  check(brandDraws.size() == 1, "connected idle page draws the brand exactly once");
+  const auto& brand = brandDraws.front();
+#if NAV_WAVESHARE_146
+  check(brand.size == 2 && !brand.centered && brand.left == 38 && brand.top == 38,
+        "compact round-panel brand is inset at the upper left");
+#else
+  check(brand.size == 2 && brand.left == 12 && brand.top == 8,
+        "compact legacy-panel brand stays above the clock");
+#endif
+}
+
+static void expectLargeBrand() {
+  check(brandDraws.size() == 1, "disconnected page draws the brand exactly once");
+  const auto& brand = brandDraws.front();
+#if NAV_WAVESHARE_146
+  check(brand.centered && brand.size == 5, "disconnected round-panel brand restores its full size");
+#else
+  check(brand.size == 4 && brand.left == 60 && brand.top == 35,
+        "disconnected legacy-panel brand restores its centered position");
+#endif
 }
 
 static void pages() {
@@ -198,6 +245,10 @@ static void pages() {
     const bool live = page == UiScreen::Navigating || page == UiScreen::Arrived;
     check(drew("distance") == live && rider == live,
           "only navigation/arrival show rider and distance");
+    if (page == UiScreen::Navigating || page == UiScreen::Arrived ||
+        page == UiScreen::CachedRoute || page == UiScreen::WaitingPhone ||
+        page == UiScreen::StaleGuidance)
+      check(brandDraws.empty(), "branding never obscures route or maneuver geometry");
   }
   drawPage(UiScreen::CachedRoute);
   check(drew("CACHED ROUTE") && drew("UPDATING...") && !drew("direction"),
@@ -213,20 +264,36 @@ static void pages() {
   check(drawnNavigation.direction == Direction::Right && drawnNavigation.distanceMeters == 117,
         "renderer receives the selected frame's maneuver and distance");
   drawPage(UiScreen::Brand, false);
+  expectLargeBrand();
   check(drew("NAVIO") && drew("CONNECT PHONE"), "disconnected brand asks for a phone");
   drawPage(UiScreen::Brand, true);
+  expectCompactBrand();
 #if NAV_WAVESHARE_146
   check(drew("READY TO GO"), "connected round-panel brand is ready");
   native = false;
+  drawPage(UiScreen::Brand, true);
+  expectCompactBrand();
   drawPage(UiScreen::Brand, false);
+  expectLargeBrand();
   check(drew("NAVIO") && drew("CONNECT PHONE"), "fallback font keeps the same brand state");
+  native = true;
 #else
   check(drew("ready to go"), "connected legacy-panel brand is ready");
 #endif
   drawPage(UiScreen::Clock, true);
+  expectCompactBrand();
   check(drew("12:34") && drew("ready to go"), "clock gets the supplied time and connection subtitle");
   drawPage(UiScreen::Clock, false);
-  check(drew("12:34") && !drew("ready to go"), "disconnected clock does not claim ready");
+  expectLargeBrand();
+  check(drew("NAVIO") && drew("CONNECT PHONE") && !drew("12:34") && !drew("ready to go"),
+        "disconnected clock restores the brand instead of claiming ready");
+  drawPage(UiScreen::ConnectionLost, false);
+  expectLargeBrand();
+  check(drew("CONNECTION LOST") && drew("RECONNECT PHONE") && !drew("route"),
+        "unexpected disconnect restores branding without hiding the loss warning");
+  drawPage(UiScreen::NotPaired, true);
+  expectCompactBrand();
+  check(drew("NOT PAIRED"), "compact branding never replaces the pairing warning");
 }
 
 int main() {

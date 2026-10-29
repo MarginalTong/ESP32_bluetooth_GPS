@@ -8,7 +8,7 @@ UiScreen resolveScreen(const UiInputs& inputs) {
   if (!inputs.connected) {
     if (inputs.tripEnded) return UiScreen::Brand;
     if (inputs.hadConnection) return UiScreen::ConnectionLost;
-    return inputs.clockSynced ? UiScreen::Clock : UiScreen::Brand;
+    return UiScreen::Brand;
   }
 
   if (!inputs.hasNavigation) {

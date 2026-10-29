@@ -89,7 +89,13 @@ Page priority preserves the existing behavior: an unavailable/off panel wins,
 then BOOT pairing; disconnected/idle states are resolved before route states;
 rerouting wins over STOP/ARRIVED; STOP shows no guidance; ARRIVED never expires;
 otherwise stale guidance and live navigation are distinct pages. Explicit trip
-end returns to NAVIO, while an unexpected link loss shows CONNECTION LOST.
+end returns to the connected standby page. On connected standby/clock pages,
+NAVIO is a compact upper-left wordmark; the center shows readiness or the
+synced time. Disconnecting restores the large centered NAVIO wordmark, even
+after a clock sync. Unexpected link loss keeps CONNECTION LOST / RECONNECT
+PHONE below it, rather than implying navigation is still active. Navigation
+pages do not receive a brand overlay. This is a state-driven layout change,
+not a per-frame logo animation.
 Cached/stale pages never show a live rider marker or countdown.
 
 Run the board-free state/renderer tests with:
