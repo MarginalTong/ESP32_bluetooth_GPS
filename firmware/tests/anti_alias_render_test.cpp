@@ -91,5 +91,47 @@ int main() {
     check(memory[index] == 0x5a && memory[memory.size() - 1 - index] == 0x5a,
           "off-screen shapes/text must not write outside the framebuffer");
   }
+  // The panel stays 412px while the AA raster can be smaller. Exercise both
+  // native and experimental paths with exact-sized input and guarded output.
+  for (const int raster : {412, 360}) {
+    std::vector<uint8_t> small(raster * raster);
+    for (int y = 0; y < raster; ++y)
+      for (int x = 0; x < raster; ++x)
+        small[y * raster + x] = uint8_t((x + y * 3) % 256);
+    GrayLayer scaled;
+    scaled.pixels = small.data();
+    scaled.width = scaled.height = scaled.clipBottom = raster;
+    PanelComposer composer;
+    composer.init(size, size, 240, 240, size / 2.f, size / 2.f, size / 2.f - 3,
+                  raster, raster);
+    std::vector<uint16_t> canvas(240 * 240, 0);
+    canvas[120 * 240 + 120] = 0xf800;
+    constexpr int bandRows = 16;
+    std::vector<uint16_t> band(size * bandRows + guard * 2, 0xa55a);
+    for (int first = 0; first < size; first += bandRows) {
+      const int rows = first + bandRows <= size ? bandRows : size - first;
+      composer.compose(canvas.data(), &scaled, band.data() + guard, first, rows);
+      for (int y = first; y < first + rows; ++y)
+        for (int x = 0; x < size; ++x) {
+          const bool visible = x >= composer.spanStart[y] && x < composer.spanEnd[y];
+          const uint16_t ui = canvas[(y * 240 / size) * 240 + x * 240 / size];
+          const uint8_t g = small[(y * raster / size) * raster + x * raster / size];
+          const uint16_t expected = !visible ? 0 : ui != 0 ? ui : composer.gray565[g];
+          check(band[guard + (y - first) * size + x] == expected,
+                "scaled bands preserve UI overlay, grayscale, circle and full panel coverage");
+        }
+      for (int index = 0; index < guard; ++index)
+        check(band[index] == 0xa55a && band[band.size() - 1 - index] == 0xa55a,
+              "band composition stays within the output buffer");
+    }
+    composer.compose(canvas.data(), nullptr, band.data() + guard, 0, bandRows);
+    for (int i = 0; i < size * bandRows; ++i)
+      check(band[guard + i] == 0, "missing AA layer retains canvas-only fallback");
+    scaled.width = 1;
+    composer.compose(canvas.data(), &scaled, band.data() + guard, 0, bandRows);
+    for (int i = 0; i < size * bandRows; ++i)
+      check(band[guard + i] == 0, "mismatched layers are not read out of bounds");
+  }
   puts("anti-alias rendering: smooth edges, solid interiors, font masks, clipping and rail fade passed");
+  puts("panel composition: 412/360 rasters, band boundaries, UI overlay and fallback passed");
 }

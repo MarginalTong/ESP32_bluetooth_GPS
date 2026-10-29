@@ -144,13 +144,18 @@ constexpr int8_t BOARD_I2C_SCL_PIN = 10;
 constexpr uint8_t LCD_RESET_MASK = 1U << 1;
 constexpr uint8_t IO_EXPANDER_ADDRESS = 0x20;
 constexpr int16_t PANEL_SIZE = 412;
-// Rasterize directly at the panel's full physical resolution. The circular
-// aperture is handled by PanelComposer rather than shrinking the frame.
+// Output always fills the physical panel; rendering resolution is independent.
 constexpr int16_t PANEL_VIEW_WIDTH = PANEL_SIZE;
 constexpr int16_t PANEL_VIEW_HEIGHT = PANEL_SIZE;
 constexpr int16_t PANEL_VIEW_X = (PANEL_SIZE - PANEL_VIEW_WIDTH) / 2;
 constexpr int16_t PANEL_VIEW_Y = (PANEL_SIZE - PANEL_VIEW_HEIGHT) / 2;
 constexpr int16_t PANEL_VISIBLE_RADIUS = PANEL_SIZE / 2 - 3;
+#ifndef NAVO_RENDER_SIZE
+#define NAVO_RENDER_SIZE 412
+#endif
+constexpr int16_t NATIVE_LAYER_SIZE = NAVO_RENDER_SIZE;
+static_assert(NAVO_RENDER_SIZE >= SCREEN_WIDTH && NAVO_RENDER_SIZE <= PANEL_SIZE,
+              "Render size must be between the logical canvas and physical panel");
 static_assert(PANEL_VIEW_WIDTH * SCREEN_HEIGHT == PANEL_VIEW_HEIGHT * SCREEN_WIDTH,
               "Preserve the logical canvas aspect ratio");
 Arduino_ESP32QSPI lcdBus(TFT_CS_PIN, TFT_SCLK_PIN, TFT_DATA0_PIN,
@@ -596,24 +601,33 @@ struct GrayLayer {
 };
 
 // Builds one full panel frame: UI from the low-resolution canvas (nearest
-// sample) on top of the native-resolution gray map layer, black outside the
+// sample) on top of the independently sized gray layer, black outside the
 // round aperture. Lookup tables are computed once.
 struct PanelComposer {
   static constexpr int16_t kMaxSize = 512;
   int16_t width = 0, height = 0, canvasWidth = 0;
+  int16_t layerWidth = 0, layerHeight = 0;
   uint16_t sourceX[kMaxSize] = {}, sourceY[kMaxSize] = {};
+  uint16_t layerX[kMaxSize] = {}, layerY[kMaxSize] = {};
   int16_t spanStart[kMaxSize] = {}, spanEnd[kMaxSize] = {};
   uint16_t gray565[256] = {};
 
   // `centerX/Y` and `radius` describe the visible circle in view pixels.
   void init(int16_t viewWidth, int16_t viewHeight, int16_t canvasW, int16_t canvasH,
-            float centerX, float centerY, float radius) {
+            float centerX, float centerY, float radius,
+            int16_t layerW = 0, int16_t layerH = 0) {
     width = viewWidth;
     height = viewHeight;
     canvasWidth = canvasW;
-    for (int16_t x = 0; x < width; ++x) sourceX[x] = uint16_t(x * canvasW / width);
+    layerWidth = layerW > 0 ? layerW : viewWidth;
+    layerHeight = layerH > 0 ? layerH : viewHeight;
+    for (int16_t x = 0; x < width; ++x) {
+      sourceX[x] = uint16_t(x * canvasW / width);
+      layerX[x] = uint16_t(x * layerWidth / width);
+    }
     for (int16_t y = 0; y < height; ++y) {
       sourceY[y] = uint16_t(y * canvasH / height);
+      layerY[y] = uint16_t(y * layerHeight / height);
       const float dy = y + 0.5f - centerY;
       const float half = radius * radius - dy * dy;
       if (half <= 0.0f) {
@@ -640,11 +654,12 @@ struct PanelComposer {
       for (int16_t x = end; x < width; ++x) row[x] = 0;
       const uint16_t* canvasRow = canvas + size_t(sourceY[y]) * canvasWidth;
       const uint8_t* mapRow =
-          layer != nullptr && layer->pixels != nullptr ? layer->pixels + size_t(y) * width
-                                                       : nullptr;
+          layer != nullptr && layer->pixels != nullptr &&
+                  layer->width == layerWidth && layer->height == layerHeight
+              ? layer->pixels + size_t(layerY[y]) * layerWidth : nullptr;
       for (int16_t x = start; x < end; ++x) {
         const uint16_t ui = canvasRow[sourceX[x]];
-        row[x] = ui != 0 || mapRow == nullptr ? ui : gray565[mapRow[x]];
+        row[x] = ui != 0 || mapRow == nullptr ? ui : gray565[mapRow[layerX[x]]];
       }
     }
   }
@@ -1343,7 +1358,7 @@ float mapPreviewY(float y) {
 }
 
 #if NAV_WAVESHARE_146
-constexpr float NATIVE_SCALE = float(PANEL_VIEW_WIDTH) / SCREEN_WIDTH;
+constexpr float NATIVE_SCALE = float(NATIVE_LAYER_SIZE) / SCREEN_WIDTH;
 
 bool useNativeLayer() { return nativeLayer.pixels != nullptr; }
 
@@ -2050,15 +2065,16 @@ bool initDisplay() {
   analogWrite(TFT_BACKLIGHT_PIN, BACKLIGHT_NORMAL);
   panelComposer.init(PANEL_VIEW_WIDTH, PANEL_VIEW_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT,
                      PANEL_SIZE / 2.0f - PANEL_VIEW_X, PANEL_SIZE / 2.0f - PANEL_VIEW_Y,
-                     PANEL_VISIBLE_RADIUS);
+                     PANEL_VISIBLE_RADIUS, NATIVE_LAYER_SIZE, NATIVE_LAYER_SIZE);
   nativeLayer.pixels = static_cast<uint8_t*>(heap_caps_malloc(
-      size_t(PANEL_VIEW_WIDTH) * PANEL_VIEW_HEIGHT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      size_t(NATIVE_LAYER_SIZE) * NATIVE_LAYER_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (nativeLayer.pixels != nullptr) {
-    nativeLayer.width = PANEL_VIEW_WIDTH;
-    nativeLayer.height = PANEL_VIEW_HEIGHT;
-    nativeLayer.clipBottom = PANEL_VIEW_HEIGHT;
+    nativeLayer.width = NATIVE_LAYER_SIZE;
+    nativeLayer.height = NATIVE_LAYER_SIZE;
+    nativeLayer.clipBottom = NATIVE_LAYER_SIZE;
     nativeLayer.clear();
-    Serial.println("[TFT] NAVO UI: native 412x412 anti-aliased text and graphics");
+    Serial.printf("[TFT] NAVO UI: %dx%d anti-aliased rendering -> %dx%d panel\n",
+                  NATIVE_LAYER_SIZE, NATIVE_LAYER_SIZE, PANEL_VIEW_WIDTH, PANEL_VIEW_HEIGHT);
   } else {
     Serial.println("[TFT] NAVO UI: low-resolution fallback (check OPI PSRAM setting)");
   }
