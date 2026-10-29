@@ -4,30 +4,54 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'controllers/navigation_controller.dart';
 import 'config/app_brand.dart';
+import 'config/account_config.dart';
+import 'controllers/account_controller.dart';
+import 'services/local_account_data.dart';
+import 'services/supabase_account_backend.dart';
 import 'services/ble_service.dart';
 import 'ui/app_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final preferences = await SharedPreferences.getInstance();
-  runApp(NavioApp(preferences: preferences));
+  SupabaseAccountBackend backend;
+  try {
+    backend =
+        await SupabaseAccountBackend.initialize(AccountConfig.environment);
+  } catch (_) {
+    backend = SupabaseAccountBackend(
+        null); // A cloud outage must not stop navigation.
+  }
+  final account = AccountController(backend, LocalAccountData(preferences));
+  try {
+    await account.initialize();
+  } catch (_) {
+    account.error = 'local';
+  }
+  runApp(NavioApp(preferences: preferences, account: account));
 }
 
 class NavioApp extends StatelessWidget {
-  const NavioApp({super.key, this.preferences});
+  const NavioApp({super.key, this.preferences, this.account});
   final SharedPreferences? preferences;
+  final AccountController? account;
+
+  NavigationController _navigation(BleService ble) {
+    final nav = NavigationController(ble: ble, preferences: preferences);
+    account?.bindNavigation(nav);
+    return nav;
+  }
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        if (account != null)
+          ChangeNotifierProvider<AccountController>(create: (_) => account!),
         ChangeNotifierProvider(create: (_) => BleService()),
         ChangeNotifierProxyProvider<BleService, NavigationController>(
-          create: (ctx) => NavigationController(
-              ble: ctx.read<BleService>(), preferences: preferences),
-          update: (ctx, ble, previous) =>
-              previous ??
-              NavigationController(ble: ble, preferences: preferences),
+          create: (ctx) => _navigation(ctx.read<BleService>()),
+          update: (ctx, ble, previous) => previous ?? _navigation(ble),
         ),
       ],
       child: MaterialApp(

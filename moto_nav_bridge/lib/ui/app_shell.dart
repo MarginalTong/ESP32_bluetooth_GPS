@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_text.dart';
 import '../services/ble_service.dart';
+import '../controllers/account_controller.dart';
 import 'home_page.dart';
 import 'devices_page.dart';
 import 'map_settings_page.dart';
@@ -48,12 +49,17 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final text = AppText.of(context);
+    final account = context.watch<AccountController?>();
     final darkBar = _mapStyle != 'standard';
     return Scaffold(
       body: IndexedStack(index: _selected, children: [
-        HomePage(onMapStyleChanged: (style) {
-          if (mounted && style != _mapStyle) setState(() => _mapStyle = style);
-        }),
+        HomePage(
+            key: ValueKey(account?.localGeneration ?? 0),
+            onMapStyleChanged: (style) {
+              if (mounted && style != _mapStyle) {
+                setState(() => _mapStyle = style);
+              }
+            }),
         const DevicesPage(),
       ]),
       bottomNavigationBar: CupertinoTabBar(

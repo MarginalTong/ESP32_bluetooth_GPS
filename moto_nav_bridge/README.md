@@ -6,6 +6,14 @@ The public product name is NAVIO. Existing package IDs, Bundle IDs, Keychain
 services, platform channels and BLE UUIDs intentionally remain unchanged so
 upgrades retain saved places, pairing keys and installed-app identity.
 
+## NAVIO accounts
+
+My devices includes email account access, manual address/preference sync, and
+account deletion. Guest navigation remains available without signing in.
+Apple sign-in stays disabled until its provider, server function and paid-team
+provisioning are configured. See [account deployment and device acceptance](docs/accounts-release.md)
+for database setup, email templates, secure build configuration and TestFlight prerequisites.
+
 ## Valhalla 偏航重算
 
 首次规划、预览和偏航重算统一使用 Valhalla 服务，传入可靠的移动航向。
