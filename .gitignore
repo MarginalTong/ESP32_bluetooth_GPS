@@ -10,3 +10,6 @@ compile_commands.json
 .vscode/launch.json
 .vscode/ipch
 firmware/tools/__pycache__/
+supabase/tests/node_modules/
+supabase/.temp/
+supabase/.branches/
