@@ -38,7 +38,7 @@ int _compareRoutes(RouteCandidate a, RouteCandidate b, bool avoidEarlyUTurns) {
 int _compareMetric(int? a, int? b) {
   final knownA = a != null && a >= 0, knownB = b != null && b >= 0;
   if (knownA != knownB) return knownA ? -1 : 1;
-  return knownA ? a!.compareTo(b!) : 0;
+  return knownA ? a.compareTo(b!) : 0;
 }
 
 bool _hasEarlyUTurn(RouteCandidate route) {

@@ -80,7 +80,7 @@ void main() {
   test('eligibility and usability override a faster ETA', () {
     final bad = route(0).copyWith(expectedTravelTimeSeconds: 60);
     final usable = route(1).copyWith(expectedTravelTimeSeconds: 600);
-    final empty = const RouteCandidate(steps: [], expectedTravelTimeSeconds: 1);
+    const empty = RouteCandidate(steps: [], expectedTravelTimeSeconds: 1);
     expect(
         preferredRouteIndex([empty, bad, usable],
             eligible: (r) => !identical(r, bad)),

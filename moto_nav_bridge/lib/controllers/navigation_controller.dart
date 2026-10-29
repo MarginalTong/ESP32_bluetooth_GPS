@@ -108,6 +108,7 @@ class NavigationController extends ChangeNotifier {
     }
     _routeOptions = const [];
     _selectedRouteIndex = 0;
+    _previewRouteExplicitlySelected = false;
     _engine = null;
     notifyListeners();
   }
@@ -259,6 +260,7 @@ class NavigationController extends ChangeNotifier {
 
   int _selectedRouteIndex = 0;
   int get selectedRouteIndex => _selectedRouteIndex;
+  bool _previewRouteExplicitlySelected = false;
 
   RouteCandidate? get selectedRoute =>
       _routeOptions.isEmpty ? null : _routeOptions[_selectedRouteIndex];
@@ -516,6 +518,7 @@ class NavigationController extends ChangeNotifier {
         requestId == _previewRequestId &&
         (_phase == NavPhase.idle || _phase == NavPhase.error);
 
+    _previewRouteExplicitlySelected = false;
     _destination = destination;
     _previewingRoute = true;
     _snapshotPreferences();
@@ -559,7 +562,8 @@ class NavigationController extends ChangeNotifier {
   Future<void> startNavigation(LatLng destination) async {
     // A route picked on the preview map is an explicit user choice. Keep it
     // across the fresh route request made when the trip starts.
-    final previewSelection = _phase == NavPhase.idle &&
+    final previewSelection = _previewRouteExplicitlySelected &&
+            _phase == NavPhase.idle &&
             _destination != null &&
             _destination!.distanceTo(destination) < 5 &&
             _routeOptions.isNotEmpty
@@ -918,9 +922,13 @@ class NavigationController extends ChangeNotifier {
   Future<void> selectRoute(int index) async {
     if (_disposed || _phase == NavPhase.paused) return;
     if (index < 0 || index >= _routeOptions.length) return;
-    if (index == _selectedRouteIndex) return;
     final preview = _phase == NavPhase.idle && _destination != null;
     if (!preview && _phase != NavPhase.navigating) return;
+    // Only a deliberate tap should override the fastest candidate when Start
+    // fetches fresh ETAs. An automatically selected preview index is not a
+    // user choice. A tap on the already selected route still counts as one.
+    if (preview) _previewRouteExplicitlySelected = true;
+    if (index == _selectedRouteIndex) return;
 
     _invalidateReroute();
     _error = null;
@@ -1076,6 +1084,7 @@ class NavigationController extends ChangeNotifier {
       throw DirectionsException('No usable routes returned');
     }
     _routeOptions = List.unmodifiable(routes);
+    _previewRouteExplicitlySelected = false;
     _selectedRouteIndex = selectedIndex.clamp(0, routes.length - 1);
     final selected = _routeOptions[_selectedRouteIndex];
     _engine = NavigationEngine(selected.steps, sideRoads: selected.sideRoads);
@@ -1283,6 +1292,7 @@ class NavigationController extends ChangeNotifier {
     _destination = null;
     _routeOptions = const [];
     _selectedRouteIndex = 0;
+    _previewRouteExplicitlySelected = false;
     _rerouting = false;
     _offRouteSamples = 0;
     _lastRerouteAt = null;
