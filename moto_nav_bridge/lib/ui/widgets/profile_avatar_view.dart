@@ -9,9 +9,9 @@ class ProfileAvatarView extends StatelessWidget {
   Widget build(BuildContext context) {
     final avatar = context.watch<AvatarController?>()?.avatar;
     final fallback = Icon(
-      CupertinoIcons.person_crop_circle,
+      CupertinoIcons.person_crop_circle_fill,
       size: size,
-      color: CupertinoColors.activeBlue,
+      color: CupertinoColors.secondaryLabel.resolveFrom(context),
     );
     return ClipOval(
       child: SizedBox(

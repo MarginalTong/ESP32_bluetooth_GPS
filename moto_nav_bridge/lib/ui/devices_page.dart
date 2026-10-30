@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_text.dart';
 import '../services/ble_service.dart';
 import 'device_pairing.dart';
-import 'widgets/account_card.dart';
+import 'widgets/account_button.dart';
 import '../config/app_brand.dart';
 
 class DevicesPage extends StatefulWidget {
@@ -117,13 +117,13 @@ class _DevicesPageState extends State<DevicesPage> {
       child: CustomScrollView(slivers: [
         CupertinoSliverNavigationBar(
           largeTitle: Text(text.myDevices),
+          trailing: const AccountButton(),
           backgroundColor: const Color(0xf5f2f2f7),
           border: null,
         ),
         SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
             sliver: SliverList.list(children: [
-              const AccountCard(),
               DecoratedBox(
                   decoration: BoxDecoration(
                       color: Colors.white,
