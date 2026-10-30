@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../controllers/account_controller.dart';
 import '../l10n/app_text.dart';
 import 'widgets/google_sign_in_button.dart';
+import 'widgets/profile_avatar_editor.dart';
 
 enum _AccountForm { login, register, verify, recovery }
 
@@ -619,6 +620,7 @@ class _AccountPageState extends State<AccountPage> {
                 child: Text(notice!),
               ),
             if (loggedIn) ...[
+              const ProfileAvatarEditor(),
               CupertinoListSection.insetGrouped(
                 margin: EdgeInsets.zero,
                 children: [

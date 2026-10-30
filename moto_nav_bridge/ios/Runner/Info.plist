@@ -51,6 +51,8 @@
 	<string>Track your position while navigating in the background.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Track your position to compute turn-by-turn directions.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a profile photo for your NAVIO account. Your photo is shown to riders only while you share your location.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

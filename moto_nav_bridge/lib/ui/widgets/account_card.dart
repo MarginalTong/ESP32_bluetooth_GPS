@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../controllers/account_controller.dart';
 import '../../l10n/app_text.dart';
 import '../account_page.dart';
+import 'profile_avatar_view.dart';
 
 class AccountCard extends StatelessWidget {
   const AccountCard({super.key});
@@ -18,7 +19,7 @@ class AccountCard extends StatelessWidget {
           margin: EdgeInsets.zero,
           children: [
             CupertinoListTile(
-              leading: const Icon(CupertinoIcons.person_crop_circle, size: 30),
+              leading: const ProfileAvatarView(size: 30),
               title: Text(
                   account.user?.email ?? (en ? 'NAVIO Account' : 'NAVIO 账号'),
                   maxLines: 1,

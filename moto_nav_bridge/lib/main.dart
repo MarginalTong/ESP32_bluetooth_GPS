@@ -6,6 +6,8 @@ import 'controllers/navigation_controller.dart';
 import 'config/app_brand.dart';
 import 'config/account_config.dart';
 import 'controllers/account_controller.dart';
+import 'controllers/avatar_controller.dart';
+import 'services/avatar_backend.dart';
 import 'controllers/rider_map_controller.dart';
 import 'services/supabase_rider_backend.dart';
 import 'services/local_account_data.dart';
@@ -18,11 +20,13 @@ Future<void> main() async {
   final preferences = await SharedPreferences.getInstance();
   SupabaseAccountBackend backend;
   try {
-    backend =
-        await SupabaseAccountBackend.initialize(AccountConfig.environment);
+    backend = await SupabaseAccountBackend.initialize(
+      AccountConfig.environment,
+    );
   } catch (_) {
     backend = SupabaseAccountBackend(
-        null); // A cloud outage must not stop navigation.
+      null,
+    ); // A cloud outage must not stop navigation.
   }
   final account = AccountController(backend, LocalAccountData(preferences));
   try {
@@ -32,14 +36,32 @@ Future<void> main() async {
   }
   final riders = RiderMapController(SupabaseRiderBackend(backend.client));
   backend.beforeSignOut = riders.stopBeforeSignOut;
-  runApp(NavioApp(preferences: preferences, account: account, riders: riders));
+  final avatars = AvatarController(
+    account,
+    SupabaseAvatarBackend(backend.client),
+  );
+  runApp(
+    NavioApp(
+      preferences: preferences,
+      account: account,
+      riders: riders,
+      avatars: avatars,
+    ),
+  );
 }
 
 class NavioApp extends StatelessWidget {
-  const NavioApp({super.key, this.preferences, this.account, this.riders});
+  const NavioApp({
+    super.key,
+    this.preferences,
+    this.account,
+    this.riders,
+    this.avatars,
+  });
   final SharedPreferences? preferences;
   final AccountController? account;
   final RiderMapController? riders;
+  final AvatarController? avatars;
 
   NavigationController _navigation(BleService ble) {
     final nav = NavigationController(ble: ble, preferences: preferences);
@@ -54,6 +76,8 @@ class NavioApp extends StatelessWidget {
       providers: [
         if (account != null)
           ChangeNotifierProvider<AccountController>(create: (_) => account!),
+        if (avatars != null)
+          ChangeNotifierProvider<AvatarController>(create: (_) => avatars!),
         if (riders != null)
           ChangeNotifierProvider<RiderMapController>(create: (_) => riders!),
         ChangeNotifierProvider(create: (_) => BleService()),
