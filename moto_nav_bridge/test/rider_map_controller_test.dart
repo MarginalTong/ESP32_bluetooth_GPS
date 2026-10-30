@@ -31,6 +31,7 @@ class RidersFake implements RiderPresenceBackend {
   @override
   Stream<String?> get userChanges => auth.stream;
   int begins = 0, publishes = 0, fetches = 0;
+  bool acceptPublish = true, failBegin = false;
   final stopped = <String>[];
   Completer<String>? waitingBegin;
   Completer<bool>? waitingPublish;
@@ -39,6 +40,7 @@ class RidersFake implements RiderPresenceBackend {
   @override
   Future<String> begin() async {
     begins++;
+    if (failBegin) throw StateError('unavailable');
     return waitingBegin == null ? 'session-$begins' : waitingBegin!.future;
   }
 
@@ -50,7 +52,7 @@ class RidersFake implements RiderPresenceBackend {
   @override
   Future<bool> publish(String session, int sequence, NavigationFix fix) async {
     publishes++;
-    return waitingPublish?.future ?? true;
+    return waitingPublish?.future ?? acceptPublish;
   }
 
   @override
@@ -85,6 +87,49 @@ void main() {
     riders.dispose();
     nav.dispose();
     await backend.auth.close();
+  });
+
+  test('rejected publication withdraws the previous visible position', () async {
+    riders.setSharing(true);
+    nav.change(NavPhase.navigating, fix());
+    await pumpEventQueue();
+    backend.acceptPublish = false;
+    now = now.add(const Duration(seconds: 6));
+    nav.change(NavPhase.navigating, fix());
+    await pumpEventQueue();
+    expect(backend.stopped, contains('session-1'));
+    expect(riders.error, isNotNull);
+  });
+
+  test('successful viewing cannot clear a publication failure', () async {
+    backend.acceptPublish = false;
+    riders.setSharing(true);
+    nav.change(NavPhase.navigating, fix());
+    await pumpEventQueue();
+    expect(riders.error, isNotNull);
+    riders.setViewing(true);
+    await pumpEventQueue();
+    expect(backend.fetches, 1);
+    expect(riders.error, isNotNull);
+  });
+
+  test('publication failures back off instead of retrying on every GPS tick', () async {
+    backend.failBegin = true;
+    riders.setSharing(true);
+    nav.change(NavPhase.navigating, fix());
+    await pumpEventQueue();
+    expect(backend.begins, 1);
+    for (var i = 0; i < 4; i++) {
+      now = now.add(const Duration(seconds: 1));
+      nav.change(NavPhase.navigating, fix());
+      riders.pulse();
+      await pumpEventQueue();
+    }
+    expect(backend.begins, 1);
+    now = now.add(const Duration(seconds: 1));
+    riders.pulse();
+    await pumpEventQueue();
+    expect(backend.begins, 2);
   });
 
   test('off by default; viewing never opts into publishing', () async {

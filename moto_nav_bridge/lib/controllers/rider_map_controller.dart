@@ -17,6 +17,8 @@ class RiderMapController extends ChangeNotifier {
       _userId = id;
       sharing = viewing = false;
       riders = const [];
+      _publishError = _fetchError = null;
+      truncated = false;
       _generation++;
       _schedule();
       _notify();
@@ -37,8 +39,9 @@ class RiderMapController extends ChangeNotifier {
   int _generation = 0, _sequence = 0;
   int _tripGeneration = 0, _sessionTripGeneration = -1;
   NavPhase? _lastNavPhase;
-  DateTime? _lastPublish, _lastFetch, _lastFix;
-  String? error;
+  DateTime? _lastPublish, _lastFetch, _lastFix, _retryPublishAt;
+  String? _publishError, _fetchError;
+  String? get error => _publishError ?? _fetchError;
   List<RiderPresence> riders = const [];
   bool get signedIn => _userId != null && backend.available;
   bool get active => sharing && signedIn && _nav?.phase == NavPhase.navigating;
@@ -55,7 +58,8 @@ class RiderMapController extends ChangeNotifier {
     viewing = value && signedIn;
     _generation++;
     riders = const [];
-    error = null;
+    truncated = false;
+    _fetchError = null;
     _lastFetch = null;
     _notify();
     pulse();
@@ -64,7 +68,8 @@ class RiderMapController extends ChangeNotifier {
   void setSharing(bool value) {
     sharing = value && signedIn;
     _generation++;
-    error = null;
+    _publishError = null;
+    _retryPublishAt = null;
     _schedule();
     _notify();
   }
@@ -126,11 +131,11 @@ class RiderMapController extends ChangeNotifier {
         result.riders.where((r) => r.expiresAt.isAfter(_now())),
       );
       truncated = result.truncated;
-      error = null;
+      _fetchError = null;
     } catch (_) {
       if (_disposed || generation != _generation) return;
       riders = const [];
-      error = 'unavailable';
+      _fetchError = 'unavailable';
     } finally {
       _fetching = false;
       _notify();
@@ -187,6 +192,7 @@ class RiderMapController extends ChangeNotifier {
         }
         final generation = _generation;
         final actor = _userId;
+        if (_retryPublishAt != null && _now().isBefore(_retryPublishAt!)) continue;
         if (_session == null) {
           final token = await backend.begin();
           if (_disposed ||
@@ -215,15 +221,23 @@ class RiderMapController extends ChangeNotifier {
         final ok = await backend.publish(_session!, ++_sequence, fix);
         if (ok) {
           _lastFix = fix.timestamp;
-          error = null;
+          _publishError = null;
+          _retryPublishAt = null;
         } else {
+          final rejected = _session!;
           _session = null;
-          error = 'unavailable';
+          _lastPublish = _lastFix = null;
+          _publishError = 'unavailable';
+          _retryPublishAt = _now().add(const Duration(seconds: 5));
+          // A rejected update does not prove that the previous position was
+          // removed. Keep its token long enough to explicitly withdraw it.
+          await backend.stop(rejected);
         }
         _notify();
       }
     } catch (_) {
-      error = 'unavailable';
+      _publishError = 'unavailable';
+      _retryPublishAt = _now().add(const Duration(seconds: 5));
       _notify();
     } finally {
       _syncing = false;
