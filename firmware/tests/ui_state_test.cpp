@@ -1,6 +1,7 @@
 #include "ui_state.h"
 #include "ui_screens.h"
 #include "ui_draw.h"
+#include "arrival_feedback.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -71,6 +72,17 @@ static void transitions() {
   expectPage(inputs, UiScreen::NoGuidance, "explicit STOP takes priority over stale guidance");
   inputs.navigation.direction = Direction::Arrived;
   expectPage(inputs, UiScreen::Arrived, "arrival does not expire when the app stops sending");
+  inputs.arrivalElapsedMs = 800;
+  check(resolveUiState(inputs).arrivalProgress == 100, "check finishes after 800 ms");
+  inputs.arrivalElapsedMs = 4000;
+  expectPage(inputs, UiScreen::Brand, "arrival returns to standby without another packet");
+  ArrivalFeedback feedback;
+  feedback.update(true, UINT32_MAX - 100);
+  feedback.update(true, 200);
+  check(feedback.elapsed(200) == 301, "duplicate packets and millis wrap preserve timer");
+  feedback.update(false, 300);
+  feedback.update(true, 400);
+  check(feedback.elapsed(500) == 100, "new trip gets a new celebration");
 
   inputs = guiding();
   inputs.tripEnded = true;
@@ -196,6 +208,7 @@ void drawDistance(const NavState& navigation, bool) {
   drawnNavigation = navigation;
 }
 void drawBottomError() { calls.push_back("diagnostic"); }
+void drawArrivalCheck(uint8_t) { calls.push_back("check"); }
 
 static bool drew(const char* call) {
   return std::find(calls.begin(), calls.end(), call) != calls.end();
@@ -242,9 +255,9 @@ static void pages() {
   for (int value = 0; value <= int(UiScreen::Arrived); ++value) {
     const auto page = UiScreen(value);
     drawPage(page);
-    const bool live = page == UiScreen::Navigating || page == UiScreen::Arrived;
+    const bool live = page == UiScreen::Navigating;
     check(drew("distance") == live && rider == live,
-          "only navigation/arrival show rider and distance");
+          "only active navigation shows rider and distance");
     if (page == UiScreen::Navigating || page == UiScreen::Arrived ||
         page == UiScreen::CachedRoute || page == UiScreen::WaitingPhone ||
         page == UiScreen::StaleGuidance)

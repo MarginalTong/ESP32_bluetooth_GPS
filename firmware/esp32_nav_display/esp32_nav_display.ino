@@ -37,6 +37,7 @@
 #include <esp_heap_caps.h>
 #include "../platformio/ui_screens.h"
 #include "../platformio/ui_draw.h"
+#include "../platformio/arrival_feedback.h"
 
 // BEGIN MAP MOTION - also compiled by the host animation tests.
 // Display-only interpolation. Never used for maneuver or distance decisions.
@@ -249,6 +250,7 @@ NavState nav = {Direction::Stop, 0};
 bool rerouting = false;
 bool clockSynced = false;
 UiState uiState;
+ArrivalFeedback arrivalFeedback;
 
 // Placed after the enum declarations: the Arduino preprocessor inserts its
 // generated prototypes before the first function definition.
@@ -905,6 +907,10 @@ UiInputs captureUiInputs() {
   inputs.packetTimedOut = livePacketTimedOut;
   inputs.routePointCount = mapMotion.routes;
   inputs.navigation = nav;
+  const uint32_t now = millis();
+  arrivalFeedback.update(inputs.connected && inputs.hasNavigation &&
+      !inputs.tripEnded && !inputs.rerouting && nav.direction == Direction::Arrived, now);
+  inputs.arrivalElapsedMs = arrivalFeedback.elapsed(now);
   return inputs;
 }
 
@@ -916,7 +922,8 @@ void refreshUiState() {
   }
   if (next.screen != uiState.screen || next.connected != uiState.connected ||
       next.navigation.direction != uiState.navigation.direction ||
-      next.navigation.distanceMeters != uiState.navigation.distanceMeters) {
+      next.navigation.distanceMeters != uiState.navigation.distanceMeters ||
+      (next.screen == UiScreen::Arrived && next.arrivalProgress != uiState.arrivalProgress)) {
     displayDirty = true;
   }
   uiState = next;
@@ -1477,6 +1484,22 @@ void drawStroke(float x0, float y0, float x1, float y1, uint8_t thickness) {
 #endif
   drawThickLine(lroundf(x0), lroundf(y0), lroundf(x1), lroundf(y1), COLOR_ROUTE,
                 thickness);
+}
+
+void drawArrivalCheck(uint8_t progress) {
+  const float p = fminf(progress / 100.0f, 1.0f);
+#if NAV_WAVESHARE_146
+  constexpr float ax = 82, ay = 106, bx = 110, by = 132, cx = 162, cy = 74;
+#else
+  constexpr float ax = 88, ay = 56, bx = 112, by = 78, cx = 152, cy = 34;
+#endif
+  if (p <= 0) return;
+  const float first = fminf(p / 0.35f, 1.0f);
+  drawStroke(ax, ay, ax + (bx - ax) * first, ay + (by - ay) * first, 5);
+  if (p > 0.35f) {
+    const float second = (p - 0.35f) / 0.65f;
+    drawStroke(bx, by, bx + (cx - bx) * second, by + (cy - by) * second, 5);
+  }
 }
 
 void drawSideRoadLine(float x0, float y0, float x1, float y1) {

@@ -167,8 +167,15 @@ void renderUiScreen(const UiState& state, const UiRenderContext& context,
     case UiScreen::StaleGuidance:
       drawStaleGuidance(state, context);
       break;
-    case UiScreen::Navigating:
     case UiScreen::Arrived:
+      drawArrivalCheck(state.arrivalProgress);
+#if NAV_WAVESHARE_146
+      drawRoundCenteredText("ARRIVED", 2, 156);
+#else
+      drawUiText("ARRIVED", 2, 78, 101);
+#endif
+      break;
+    case UiScreen::Navigating:
       drawMiniRouteMap(true, state.navigation.direction);
       drawDirection(state.navigation.direction);
       drawDistance(state.navigation, blinkState);

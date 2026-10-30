@@ -18,3 +18,4 @@ void drawMiniRouteMap(bool showRider, Direction direction);
 void drawDirection(Direction direction);
 void drawDistance(const NavState& navigation, bool blinkState);
 void drawBottomError();
+void drawArrivalCheck(uint8_t progress);

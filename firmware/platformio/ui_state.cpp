@@ -1,4 +1,5 @@
 #include "ui_state.h"
+#include "arrival_feedback.h"
 
 namespace {
 UiScreen resolveScreen(const UiInputs& inputs) {
@@ -23,15 +24,18 @@ UiScreen resolveScreen(const UiInputs& inputs) {
     return inputs.packetTimedOut ? UiScreen::WaitingPhone : UiScreen::CachedRoute;
   }
   if (inputs.navigation.direction == Direction::Stop) return UiScreen::NoGuidance;
-  // The app stops sending after arrival; that final page must never expire.
-  if (inputs.navigation.direction == Direction::Arrived) return UiScreen::Arrived;
+  // Arrival completes locally even if the phone sends nothing more.
+  if (inputs.navigation.direction == Direction::Arrived)
+    return inputs.arrivalElapsedMs >= ArrivalFeedback::durationMs
+        ? UiScreen::Brand : UiScreen::Arrived;
   if (inputs.packetTimedOut) return UiScreen::StaleGuidance;
   return UiScreen::Navigating;
 }
 }  // namespace
 
 UiState resolveUiState(const UiInputs& inputs) {
-  return {resolveScreen(inputs), inputs.connected, inputs.navigation};
+  const auto progress = inputs.arrivalElapsedMs >= 800 ? 100 : inputs.arrivalElapsedMs / 8;
+  return {resolveScreen(inputs), inputs.connected, inputs.navigation, uint8_t(progress)};
 }
 
 const char* uiScreenName(UiScreen screen) {
