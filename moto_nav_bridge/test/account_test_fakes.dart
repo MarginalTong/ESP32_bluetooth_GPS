@@ -8,6 +8,10 @@ class FakeAccountBackend implements AccountBackend {
   @override
   bool appleAvailable = true;
   @override
+  bool googleAvailable = false;
+  int googleCalls = 0;
+  bool cancelGoogle = false;
+  @override
   AccountUser? user;
   final events = StreamController<AccountUser?>.broadcast(sync: true);
   @override
@@ -46,6 +50,14 @@ class FakeAccountBackend implements AccountBackend {
   }
 
   @override
+  Future<void> signInGoogle() async {
+    if (cancelGoogle) throw const AccountFailure('cancelled');
+    check();
+    googleCalls++;
+    emit(AccountUser(nextId, 'google@example.test'));
+  }
+
+  @override
   Future<void> verifyEmail(String email, String code) => signIn(email, code);
   @override
   Future<void> sendRecovery(String email) async {
@@ -76,10 +88,11 @@ class FakeAccountBackend implements AccountBackend {
     if (revision != cloud.revision) throw const AccountFailure('conflict');
     uploads++;
     cloud = AccountData(
-        revision: revision + 1,
-        displayName: data.displayName,
-        places: data.places,
-        preferences: data.preferences);
+      revision: revision + 1,
+      displayName: data.displayName,
+      places: data.places,
+      preferences: data.preferences,
+    );
     return cloud.revision;
   }
 

@@ -12,3 +12,4 @@ build/
 
 # Generated platform folders (run `flutter create .` to regenerate)
 # Keep lib/, test/, pubspec.yaml, README.md under version control.
+ios/Flutter/GoogleSignIn.local.xcconfig

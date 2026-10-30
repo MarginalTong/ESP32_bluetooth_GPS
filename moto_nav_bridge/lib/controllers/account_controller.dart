@@ -22,6 +22,7 @@ class AccountController extends ChangeNotifier {
   DateTime? lastSync;
   bool get available => backend.available;
   bool get appleAvailable => backend.appleAvailable;
+  bool get googleAvailable => backend.googleAvailable;
   bool get canModify => _navigation?.canEditPreferences ?? true;
   bool get ready =>
       !busy &&
@@ -33,12 +34,15 @@ class AccountController extends ChangeNotifier {
   Future<void> initialize() async {
     await local.recover();
     await _reconcile();
-    _authSubscription = backend.changes.listen((_) {
-      if (!busy) unawaited(_reconcile());
-    }, onError: (_) {
-      error = 'session';
-      _notify();
-    });
+    _authSubscription = backend.changes.listen(
+      (_) {
+        if (!busy) unawaited(_reconcile());
+      },
+      onError: (_) {
+        error = 'session';
+        _notify();
+      },
+    );
   }
 
   void bindNavigation(NavigationController navigation) {
@@ -59,10 +63,11 @@ class AccountController extends ChangeNotifier {
   void _applied() {
     final p = local.capture().preferences;
     _navigation?.updatePreferences(
-        highways: p['avoid_highways'] == true,
-        tolls: p['avoid_tolls'] == true,
-        ferries: p['avoid_ferries'] == true,
-        tunnels: p['avoid_tunnels'] == true);
+      highways: p['avoid_highways'] == true,
+      tolls: p['avoid_tolls'] == true,
+      ferries: p['avoid_ferries'] == true,
+      tunnels: p['avoid_tunnels'] == true,
+    );
     localGeneration++;
   }
 
@@ -110,7 +115,8 @@ class AccountController extends ChangeNotifier {
       await operation();
       success = true;
     } on AccountFailure catch (e) {
-      error = e.code;
+      // Closing a provider's account picker is not a failed login.
+      error = e.code == 'cancelled' ? null : e.code;
     } catch (_) {
       error = 'request';
     } finally {
@@ -126,6 +132,7 @@ class AccountController extends ChangeNotifier {
   Future<bool> register(String email, String password) =>
       _run(() => backend.register(email, password));
   Future<bool> signInApple() => _run(backend.signInApple);
+  Future<bool> signInGoogle() => _run(backend.signInGoogle);
   Future<bool> verifyEmail(String email, String code) =>
       _run(() => backend.verifyEmail(email, code));
   Future<bool> sendRecovery(String email) =>
@@ -142,54 +149,60 @@ class AccountController extends ChangeNotifier {
   }
 
   Future<bool> download() => _run(() async {
-        _requireAccount();
-        final id = _user!.id;
-        final before = jsonEncode(local.capture().toCache());
-        final data = await backend.download();
-        if (_disposed || backend.user?.id != id || !canModify) {
-          throw const AccountFailure('session');
-        }
-        if (jsonEncode(local.capture().toCache()) != before) {
-          throw const AccountFailure('local_changed');
-        }
-        await local.replace(data);
-        _applied();
-        lastSync = DateTime.now();
-      });
+    _requireAccount();
+    final id = _user!.id;
+    final before = jsonEncode(local.capture().toCache());
+    final data = await backend.download();
+    if (_disposed || backend.user?.id != id || !canModify) {
+      throw const AccountFailure('session');
+    }
+    if (jsonEncode(local.capture().toCache()) != before) {
+      throw const AccountFailure('local_changed');
+    }
+    await local.replace(data);
+    _applied();
+    lastSync = DateTime.now();
+  });
   Future<bool> upload() => _run(() async {
-        _requireAccount();
-        final id = _user!.id;
-        final data = local.capture();
-        final revision = await backend.upload(data, data.revision);
-        if (_disposed || backend.user?.id != id || !canModify) {
-          throw const AccountFailure('session');
-        }
-        final latest = local.capture();
-        await local.replace(AccountData(
-            revision: revision,
-            displayName: latest.displayName,
-            places: latest.places,
-            preferences: latest.preferences));
-        lastSync = DateTime.now();
-      });
+    _requireAccount();
+    final id = _user!.id;
+    final data = local.capture();
+    final revision = await backend.upload(data, data.revision);
+    if (_disposed || backend.user?.id != id || !canModify) {
+      throw const AccountFailure('session');
+    }
+    final latest = local.capture();
+    await local.replace(
+      AccountData(
+        revision: revision,
+        displayName: latest.displayName,
+        places: latest.places,
+        preferences: latest.preferences,
+      ),
+    );
+    lastSync = DateTime.now();
+  });
   Future<bool> importGuest() => _run(() async {
-        _requireAccount();
-        final guest = local.cached(null), current = local.capture();
-        await local.replace(AccountData(
-            revision: current.revision,
-            displayName: current.displayName,
-            places: guest.places,
-            preferences: guest.preferences));
-        _applied();
-      });
+    _requireAccount();
+    final guest = local.cached(null), current = local.capture();
+    await local.replace(
+      AccountData(
+        revision: current.revision,
+        displayName: current.displayName,
+        places: guest.places,
+        preferences: guest.preferences,
+      ),
+    );
+    _applied();
+  });
   Future<bool> deleteAccount() => _run(() async {
-        _requireAccount();
-        await backend.deleteAccount();
-        await local.activate(null, erasePrevious: true);
-        _user = null;
-        lastSync = null;
-        _applied();
-      });
+    _requireAccount();
+    await backend.deleteAccount();
+    await local.activate(null, erasePrevious: true);
+    _user = null;
+    lastSync = null;
+    _applied();
+  });
   @override
   void dispose() {
     _disposed = true;

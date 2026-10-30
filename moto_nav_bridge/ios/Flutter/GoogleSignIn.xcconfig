@@ -1,0 +1,3 @@
+// A real reversed iOS client ID is supplied locally only after OAuth setup.
+NAVIO_GOOGLE_IOS_URL_SCHEME = com.navio.google-disabled
+#include? "GoogleSignIn.local.xcconfig"

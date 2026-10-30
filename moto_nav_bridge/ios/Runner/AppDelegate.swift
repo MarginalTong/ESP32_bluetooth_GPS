@@ -233,6 +233,19 @@ private final class NavigationVoiceInput {
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
 
+    if let registrar = self.registrar(forPlugin: "NavioAuthConfiguration") {
+      let authConfiguration = FlutterMethodChannel(
+        name: "moto_nav_bridge/auth_configuration", binaryMessenger: registrar.messenger())
+      authConfiguration.setMethodCallHandler { call, result in
+        guard call.method == "hasUrlScheme", let requested = call.arguments as? String else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+        result(types.contains { ($0["CFBundleURLSchemes"] as? [String] ?? []).contains(requested) })
+      }
+    }
+
     if let registrar = self.registrar(forPlugin: "NavigationMapView") {
       registrar.register(
         NavigationMapViewFactory(messenger: registrar.messenger()),
