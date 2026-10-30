@@ -13,7 +13,6 @@ import '../services/nearby_places.dart';
 import '../models/nav_state.dart';
 import '../models/device_direction.dart';
 import '../models/route_candidate.dart';
-import '../models/place_result.dart';
 import '../services/directions_exception.dart';
 import '../services/location_service.dart';
 import '../services/navigation_ports.dart';
@@ -618,6 +617,7 @@ class NavigationController extends ChangeNotifier {
       final origin = await _location.currentPosition();
       _origin = origin;
       _latestPosition = origin;
+      _waypointPlan.completeAtStart(origin);
       _destination = destination;
       notifyListeners();
       final routes = await _fetchTripRoutes(_directions,

@@ -16,6 +16,10 @@ for database setup, email templates, secure build configuration and TestFlight p
 
 ## Valhalla 偏航重算
 
+支持导航前添加最多 5 个途经点：选好终点后点击「添加途经点」，可排序、替换或删除。
+经过后自动继续，偏航重算只保留未经过的点。含途经点时暂不提供备选路线。
+详见 [途经点使用与验证](docs/waypoints.md)。
+
 首次规划、预览和偏航重算统一使用 Valhalla 服务，传入可靠的移动航向。
 Apple 地图保留为底图，展示 App 选中的路线，
 与 ESP32 共用重算结果。本次没有嵌入离线引擎或地图包。

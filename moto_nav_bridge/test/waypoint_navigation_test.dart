@@ -127,6 +127,14 @@ void main() {
     expect(nav.completedWaypoints, 2);
   });
 
+  test('starting at the first stop avoids a zero-length leg', () async {
+    positions.current = first;
+    await nav.startNavigation(destination, waypoints: stops);
+    expect(nav.completedWaypoints, 1);
+    expect(routes.requests.single, [second]);
+    expect(nav.phase, NavPhase.navigating);
+  });
+
   test('late preview cannot overwrite a newer itinerary', () async {
     routes.pending = Completer();
     final slow = nav.previewDestination(destination, waypoints: stops);

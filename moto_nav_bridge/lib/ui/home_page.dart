@@ -20,6 +20,7 @@ import '../services/voice_trip_access.dart';
 import 'place_search_page.dart';
 import 'map_settings_page.dart';
 import 'route_preferences_page.dart';
+import 'waypoint_editor_page.dart';
 import 'voice_test_page.dart';
 import 'voice_trip_access_prompt.dart';
 import 'widgets/connection_card.dart';
@@ -166,7 +167,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return;
     }
     setState(() => _destination = place);
-    await nav.previewDestination(place.location);
+    await nav.previewDestination(place.location, waypoints: nav.waypoints);
   }
 
   Future<void> _recoverWakeAfterRouteChange() async {
@@ -444,7 +445,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (!mounted) return;
     final nav = context.read<NavigationController>();
-    await nav.startNavigation(destination.location);
+    await nav.startNavigation(destination.location, waypoints: nav.waypoints);
     if (mounted &&
         nav.phase == NavPhase.navigating &&
         nav.selectedRoute != null) {
@@ -473,9 +474,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     if (place != null && mounted) {
       setState(() => _destination = place);
-      await context
-          .read<NavigationController>()
-          .previewDestination(place.location);
+      final nav = context.read<NavigationController>();
+      await nav.previewDestination(place.location, waypoints: nav.waypoints);
     }
   }
 
@@ -626,8 +626,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         location: location,
       );
     });
-    await context.read<NavigationController>().previewDestination(location);
+    final nav = context.read<NavigationController>();
+    await nav.previewDestination(location, waypoints: nav.waypoints);
   }
+
+  Future<void> _editWaypoints() async {
+    final destination = _destination;
+    final nav = context.read<NavigationController>();
+    if (destination == null || !nav.canEditPreferences) return;
+    final stops = await Navigator.of(context).push<List<PlaceResult>>(
+        MaterialPageRoute(builder: (_) => WaypointEditorPage(
+            destination: destination, stops: nav.waypoints)));
+    if (!mounted || stops == null || !nav.canEditPreferences) return;
+    await nav.previewDestination(destination.location, waypoints: stops);
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -737,6 +750,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (navigating && nav.waypoints.isNotEmpty) ...[
+                        GlassPanel(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          child: Text(nav.completedWaypoints < nav.waypoints.length
+                              ? '${AppText.of(context).isEnglish ? "Next stop" : "下一途经点"}: ${nav.waypoints[nav.completedWaypoints].name} (${nav.completedWaypoints + 1}/${nav.waypoints.length})'
+                              : (AppText.of(context).isEnglish ? 'All stops visited · continuing to destination' : '途经点已全部经过 · 继续前往终点'),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       if (showInstruction) ...[
                         const InstructionCard(),
                         const SizedBox(height: 10),
@@ -747,6 +770,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           selectedRoute: nav.selectedRoute,
                           previewingRoute: nav.previewingRoute,
                           canStart: ble.state == BleConnectionState.connected,
+                          waypointCount: nav.waypoints.length,
+                          onEditWaypoints: _editWaypoints,
                           onChoose: _chooseDestination,
                           onStart: _start,
                         )
@@ -782,6 +807,8 @@ class _DestinationPanel extends StatelessWidget {
     required this.canStart,
     required this.onChoose,
     required this.onStart,
+    required this.waypointCount,
+    required this.onEditWaypoints,
   });
 
   final PlaceResult? destination;
@@ -790,6 +817,8 @@ class _DestinationPanel extends StatelessWidget {
   final bool canStart;
   final VoidCallback onChoose;
   final VoidCallback onStart;
+  final int waypointCount;
+  final VoidCallback onEditWaypoints;
 
   @override
   Widget build(BuildContext context) {
@@ -858,11 +887,18 @@ class _DestinationPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
+          if (destination != null) TextButton.icon(
+            onPressed: previewingRoute ? null : onEditWaypoints,
+            icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+            label: Text(text.isEnglish
+                ? (waypointCount == 0 ? 'Add stops' : 'Edit stops ($waypointCount)')
+                : (waypointCount == 0 ? '添加途经点' : '编辑途经点（$waypointCount）')),
+          ),
           SizedBox(
             width: double.infinity,
             height: 48,
             child: TextButton.icon(
-              onPressed: canStart && destination != null ? onStart : null,
+              onPressed: canStart && destination != null && !previewingRoute ? onStart : null,
               icon: const Icon(Icons.navigation_rounded),
               label: Text(
                 !canStart

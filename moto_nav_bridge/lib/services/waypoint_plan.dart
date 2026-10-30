@@ -29,6 +29,23 @@ class WaypointPlan {
     _routeBase = completed;
   }
 
+  /// Starting while already at a stop must not request a zero-length first leg.
+  /// This is called only for the actual trip start, never for an idle preview.
+  void completeAtStart(LatLng fix) {
+    if (fix is NavigationFix &&
+        (!fix.accuracy.isFinite ||
+            fix.accuracy < 0 ||
+            fix.accuracy > 25 ||
+            DateTime.now().difference(fix.timestamp).abs() >
+                const Duration(seconds: 10))) {
+      return;
+    }
+    while (completed < stops.length &&
+        fix.distanceTo(stops[completed].location) <= 15) {
+      completed++;
+    }
+  }
+
   bool update(RouteCandidate route, int stepIndex, LatLng fix) {
     if (completed == stops.length) return false;
     if (fix is NavigationFix &&
