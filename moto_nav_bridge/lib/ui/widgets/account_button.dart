@@ -24,7 +24,7 @@ class AccountButton extends StatelessWidget {
         onPressed: () => Navigator.of(
           context,
         ).push(CupertinoPageRoute<void>(builder: (_) => const AccountPage())),
-        child: const ProfileAvatarView(size: 32),
+        child: const ProfileAvatarView(size: 36),
       ),
     );
   }

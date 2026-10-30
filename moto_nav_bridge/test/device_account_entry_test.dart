@@ -9,6 +9,7 @@ import 'package:moto_nav_bridge/services/local_account_data.dart';
 import 'package:moto_nav_bridge/ui/account_page.dart';
 import 'package:moto_nav_bridge/ui/devices_page.dart';
 import 'package:moto_nav_bridge/ui/widgets/account_button.dart';
+import 'package:moto_nav_bridge/ui/widgets/profile_avatar_view.dart';
 import 'home_layout_test.dart' show LayoutBle;
 import 'account_test_fakes.dart';
 
@@ -71,6 +72,7 @@ void main() {
       expect(tester.getCenter(button).dx, greaterThan(330));
       expect(tester.getCenter(button).dy, lessThan(80));
       expect(tester.getSize(button).width, greaterThanOrEqualTo(44));
+      expect(tester.getSize(find.byType(ProfileAvatarView)), const Size(36, 36));
       expect(find.textContaining('guest use still available'), findsNothing);
       await tester.tap(button);
       await tester.pumpAndSettle();
