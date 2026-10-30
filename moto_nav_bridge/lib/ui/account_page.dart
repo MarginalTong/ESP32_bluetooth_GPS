@@ -36,10 +36,10 @@ class _AccountPageState extends State<AccountPage> {
     }
     if ((form == _AccountForm.register ||
             (form == _AccountForm.recovery && recoverySent)) &&
-        (password.text.length < 12 || password.text != repeat.text)) {
+        (password.text.length < 6 || password.text != repeat.text)) {
       setState(() => notice = t(
-          'Use at least 12 characters and matching passwords.',
-          '密码至少 12 位，两次输入需一致。'));
+          'Use at least 6 characters and matching passwords.',
+          '密码至少 6 位，两次输入需一致。'));
       return;
     }
     bool ok;

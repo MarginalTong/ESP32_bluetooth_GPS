@@ -46,7 +46,11 @@ or grant anonymous access to make a test pass.
 ## 2. Email delivery
 
 In Authentication settings enable email/password signup, email confirmations,
-and a password minimum of 12 characters. Keep confirmation enabled.
+and a password minimum of 6 characters, matching the app's registration and
+reset forms. Keep confirmation enabled. This Auth service setting is independent
+of the SQL migrations and must be changed in the project dashboard; shipping the
+app alone does not change the hosted policy. Longer unique passwords are still
+recommended; do not impose a new minimum on existing users when signing in.
 
 Copy `supabase/templates/confirmation.html` and `recovery.html` into the matching
 Email Templates. They use `{{ .Token }}` because the app verifies codes instead

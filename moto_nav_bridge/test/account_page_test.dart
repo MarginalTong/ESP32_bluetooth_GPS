@@ -81,6 +81,43 @@ void main() {
     expect(account.user, isNull);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('registration accepts six characters but rejects five or mismatch',
+      (tester) async {
+    await show(tester);
+    await tester.tap(find.text('Register'));
+    await tester.pumpAndSettle();
+    await tester.enterText(field('Email'), 'rider@example.test');
+    await tester.enterText(field('Password'), 'abcde');
+    await tester.enterText(field('Repeat password'), 'abcde');
+    await tester.tap(find.text('Create account'));
+    await tester.pumpAndSettle();
+    expect(field('Code from email'), findsNothing);
+    expect(find.textContaining('at least 6'), findsOneWidget);
+    await tester.enterText(field('Password'), 'abcdef');
+    await tester.tap(find.text('Create account'));
+    await tester.pumpAndSettle();
+    expect(field('Code from email'), findsNothing);
+    await tester.enterText(field('Repeat password'), 'abcdef');
+    await tester.tap(find.text('Create account'));
+    await tester.pumpAndSettle();
+    expect(field('Code from email'), findsOneWidget);
+  });
+  testWidgets('password recovery accepts a six character replacement',
+      (tester) async {
+    await show(tester);
+    await tester.enterText(field('Email'), 'rider@example.test');
+    await tester.tap(find.text('Forgot password?'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send recovery code'));
+    await tester.pumpAndSettle();
+    await tester.enterText(field('Code from email'), '123456');
+    await tester.enterText(field('New password'), 'abcdef');
+    await tester.enterText(field('Repeat password'), 'abcdef');
+    await tester.scrollUntilVisible(find.text('Set new password'), 120);
+    await tester.tap(find.text('Set new password'));
+    await tester.pumpAndSettle();
+    expect(account.user?.email, 'rider@example.test');
+  });
   testWidgets(
       'unconfigured service shows a clear status rather than a broken login',
       (tester) async {
