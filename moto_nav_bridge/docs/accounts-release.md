@@ -3,6 +3,9 @@
 ## Current scope
 
 - Supabase email/password, email-code confirmation and password recovery.
+- Native Google sign-in (iOS/Android) exchanges an ID token with the same
+  Supabase Auth project. See [Google setup](google-sign-in.md). The entry point
+  stays hidden until its public client IDs and build flag are configured.
 - Native Apple sign-in uses a raw nonce and its SHA-256 hash. It stays disabled
   unless `NAVIO_APPLE_SIGN_IN=true` and all server/developer requirements below
   are met. An optional entitlements file is supplied, but deliberately not
@@ -38,7 +41,8 @@ an already-migrated project. Future changes need a new migration.
 - `navio_save_account_data(payload, expected_revision)`: verified caller UID,
   validated bounded data, atomic replacement and conflict detection.
 - `navio_delete_email_account('DELETE')`: transactional cascade of the caller's
-  account only. Apple-linked accounts cannot bypass provider revocation.
+  non-Apple account (email or Google). The historical RPC name is preserved;
+  it rejects Apple-linked accounts so they cannot bypass provider revocation.
 
 Anonymous requests to the tables/RPCs must be rejected. Do NOT switch off RLS
 or grant anonymous access to make a test pass.

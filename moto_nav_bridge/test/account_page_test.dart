@@ -212,11 +212,51 @@ void main() {
       isEmpty,
     );
   });
+  testWidgets('Google action signs in without an email or password', (
+    tester,
+  ) async {
+    backend.googleAvailable = true;
+    await show(tester);
+    await tap(tester, find.text('Continue with Google'));
+    expect(backend.googleCalls, 1);
+    expect(find.text('google@example.test'), findsOneWidget);
+    expect(backend.uploads, 0);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets(
+    'Google cancellation stays on the form without an alarming error',
+    (tester) async {
+      backend.googleAvailable = true;
+      backend.cancelGoogle = true;
+      await show(tester);
+      await tap(tester, find.text('Continue with Google'));
+      expect(account.user, isNull);
+      expect(account.error, isNull);
+      expect(find.text('Continue with Google'), findsOneWidget);
+      expect(find.textContaining('Request failed'), findsNothing);
+    },
+  );
+  testWidgets('Google is hidden until configured and omitted from recovery', (
+    tester,
+  ) async {
+    await show(tester);
+    expect(find.text('Continue with Google'), findsNothing);
+    backend.googleAvailable = true;
+    await tester.pumpWidget(const SizedBox.shrink());
+    await show(tester);
+    expect(find.text('Continue with Google'), findsOneWidget);
+    await tap(tester, find.text('Register'));
+    expect(find.text('Continue with Google'), findsOneWidget);
+    await tap(tester, find.text('Sign in'));
+    await tap(tester, find.text('Forgot password?'));
+    expect(find.text('Continue with Google'), findsNothing);
+  });
   for (final brightness in Brightness.values) {
     testWidgets('compact $brightness form supports large text and keyboard', (
       tester,
     ) async {
       tester.view.reset();
+      backend.googleAvailable = true;
       tester.view.physicalSize = const Size(375, 812);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);

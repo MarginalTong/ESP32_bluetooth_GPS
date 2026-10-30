@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:provider/provider.dart';
 import '../controllers/account_controller.dart';
 import '../l10n/app_text.dart';
+import 'widgets/google_sign_in_button.dart';
 
 enum _AccountForm { login, register, verify, recovery }
 
@@ -159,6 +160,14 @@ class _AccountPageState extends State<AccountPage> {
     'apple_grant_failed' => t(
       'Apple authorization could not be saved. Try Apple sign-in again.',
       'Apple 授权保存失败，请重新使用 Apple 登录。',
+    ),
+    'google_unconfigured' => t(
+      'Google sign-in is not configured for this build. Use email for now.',
+      '此版本尚未配置好 Google 登录，请暂时使用邮箱登录。',
+    ),
+    'google_failed' => t(
+      'Google sign-in did not complete. Check your connection and try again.',
+      'Google 登录未完成，请检查网络后重试。',
     ),
     _ => t(
       'Request failed. Check your credentials, code and connection, then retry.',
@@ -442,7 +451,7 @@ class _AccountPageState extends State<AccountPage> {
                   ],
                 ),
               ),
-              if (account.appleAvailable &&
+              if ((account.appleAvailable || account.googleAvailable) &&
                   (creating || form == _AccountForm.login)) ...[
                 const SizedBox(height: 22),
                 Text(
@@ -454,33 +463,49 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                CupertinoButton(
-                  color: CupertinoColors.label.resolveFrom(context),
-                  borderRadius: BorderRadius.circular(14),
-                  onPressed: canAct ? account.signInApple : null,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.apple,
-                        color: CupertinoColors.systemBackground.resolveFrom(
-                          context,
+                if (account.googleAvailable) ...[
+                  GoogleSignInButton(
+                    label: t('Continue with Google', '通过 Google 继续'),
+                    onPressed: canAct
+                        ? () async {
+                            setState(() => notice = null);
+                            FocusScope.of(context).unfocus();
+                            password.clear();
+                            repeat.clear();
+                            code.clear();
+                            await account.signInGoogle();
+                          }
+                        : null,
+                  ),
+                  if (account.appleAvailable) const SizedBox(height: 12),
+                ],
+                if (account.appleAvailable)
+                  CupertinoButton(
+                    color: CupertinoColors.label.resolveFrom(context),
+                    borderRadius: BorderRadius.circular(14),
+                    onPressed: canAct ? account.signInApple : null,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.apple,
+                          color: CupertinoColors.systemBackground.resolveFrom(
+                            context,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          t('Continue with Apple', '通过 Apple 继续'),
-                          style: TextStyle(
-                            color: CupertinoColors.systemBackground.resolveFrom(
-                              context,
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            t('Continue with Apple', '通过 Apple 继续'),
+                            style: TextStyle(
+                              color: CupertinoColors.systemBackground
+                                  .resolveFrom(context),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
               ],
               const SizedBox(height: 14),
               if (form == _AccountForm.login || creating)
@@ -527,8 +552,8 @@ class _AccountPageState extends State<AccountPage> {
               const SizedBox(height: 8),
               Text(
                 t(
-                  'Guest navigation needs no account. Email authentication is handled by Supabase. Saved addresses sync only when you choose.',
-                  '游客导航无需账号。邮箱验证由 Supabase 处理，常用地址仅在你主动同步时上传。',
+                  'Guest navigation needs no account. Authentication is handled by Supabase. Saved addresses sync only when you choose.',
+                  '游客导航无需账号。账号验证由 Supabase 处理，常用地址仅在你主动同步时上传。',
                 ),
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -558,6 +583,7 @@ class _AccountPageState extends State<AccountPage> {
       ),
       child: SafeArea(
         child: ListView(
+          key: ValueKey('account:$loggedIn'),
           padding: const EdgeInsets.all(20),
           children: [
             if (!account.available)

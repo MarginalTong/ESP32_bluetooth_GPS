@@ -201,4 +201,58 @@ void main() {
       await client.dispose();
     },
   );
+  test('successful SDK exchange activates a Google Supabase user', () async {
+    final expires =
+        DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch ~/
+        1000;
+    String part(Object value) =>
+        base64Url.encode(utf8.encode(jsonEncode(value))).replaceAll('=', '');
+    final jwt =
+        '${part({'alg': 'none'})}.${part({'sub': '10000000-0000-4000-8000-000000000001', 'exp': expires, 'role': 'authenticated', 'aud': 'authenticated'})}.synthetic-signature';
+    final client = SupabaseClient(
+      'https://navio-test.invalid',
+      'public-test-key',
+      authOptions: const AuthClientOptions(autoRefreshToken: false),
+      httpClient: MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'access_token': jwt,
+            'token_type': 'bearer',
+            'expires_in': 3600,
+            'refresh_token': 'synthetic-refresh-token',
+            'user': {
+              'id': '10000000-0000-4000-8000-000000000001',
+              'aud': 'authenticated',
+              'role': 'authenticated',
+              'email': 'google@example.test',
+              'created_at': '2026-10-30T00:00:00Z',
+              'app_metadata': {
+                'provider': 'google',
+                'providers': ['google'],
+              },
+              'user_metadata': {},
+              'identities': [
+                {
+                  'id': 'synthetic-google-subject',
+                  'provider': 'google',
+                  'user_id': '10000000-0000-4000-8000-000000000001',
+                  'identity_data': {},
+                  'created_at': '2026-10-30T00:00:00Z',
+                  'updated_at': '2026-10-30T00:00:00Z',
+                },
+              ],
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+          request: request,
+        ),
+      ),
+    );
+    final backend = SupabaseAccountBackend(client, google: service());
+    await backend.signInGoogle();
+    expect(backend.user?.email, 'google@example.test');
+    expect(backend.user?.apple, isFalse);
+    await client.dispose();
+  });
 }
