@@ -12,19 +12,20 @@ import '../models/route_candidate.dart';
 import '../models/route_step.dart';
 import 'directions_exception.dart';
 import 'navigation_ports.dart';
+import 'waypoint_plan.dart';
 
 /// Direction-aware route planning against an explicitly configured Valhalla server.
 /// No coordinates are sent to a public demo server or a fallback provider.
 /// Protocol: https://valhalla.github.io/valhalla/api/route/api-reference/
-class ValhallaDirectionsService implements RouteProvider {
+class ValhallaDirectionsService implements WaypointRouteProvider {
   ValhallaDirectionsService({
     http.Client? client,
     String? routeUrl,
     Duration timeout = const Duration(seconds: 8),
     this.routePreferences,
-  })  : _client = client ?? http.Client(),
-        _routeUrl = routeUrl ?? ApiConfig.valhallaRouteUrl,
-        _timeout = timeout;
+  }) : _client = client ?? http.Client(),
+       _routeUrl = routeUrl ?? ApiConfig.valhallaRouteUrl,
+       _timeout = timeout;
 
   final http.Client _client;
   final Map<String, Object> Function()? routePreferences;
@@ -43,14 +44,33 @@ class ValhallaDirectionsService implements RouteProvider {
       (await fetchRoutes(origin: origin, destination: destination)).first.steps;
 
   @override
+  Future<List<RouteCandidate>> fetchWaypointRoutes({
+    required LatLng origin,
+    required LatLng destination,
+    required List<LatLng> waypoints,
+  }) => fetchRoutes(
+    origin: origin,
+    destination: destination,
+    waypoints: waypoints,
+  );
+
+  @override
   Future<List<RouteCandidate>> fetchRoutes({
     required LatLng origin,
     required LatLng destination,
+    List<LatLng> waypoints = const [],
   }) async {
     if (_disposed) throw DirectionsException('Valhalla service is disposed');
     final uri = _endpoint();
     _checkCoordinate(origin);
     _checkCoordinate(destination);
+    if (waypoints.length > WaypointPlan.maxStops) {
+      throw DirectionsException('Too many waypoints');
+    }
+    waypoints = List.unmodifiable(waypoints);
+    for (final waypoint in waypoints) {
+      _checkCoordinate(waypoint);
+    }
     if (_timeout <= Duration.zero) {
       throw DirectionsException('Invalid Valhalla timeout');
     }
@@ -81,6 +101,12 @@ class ValhallaDirectionsService implements RouteProvider {
           ..body = jsonEncode({
             'locations': [
               start,
+              for (final point in waypoints)
+                {
+                  'lat': point.latitude,
+                  'lon': point.longitude,
+                  'type': 'break',
+                },
               {'lat': destination.latitude, 'lon': destination.longitude},
             ],
             // Preserve the existing Apple automobile transport contract. Motorcycle
@@ -91,13 +117,14 @@ class ValhallaDirectionsService implements RouteProvider {
             'units': 'kilometers',
             'format': 'json',
             'directions_type': 'maneuvers',
-            'alternates': 2,
+            // Valhalla alternates are supported for two-location routes only.
+            'alternates': waypoints.isEmpty ? 2 : 0,
           });
 
     try {
       final body = await _readResponse(request).timeout(_timeout);
       if (_disposed) throw DirectionsException('Valhalla service is disposed');
-      return parseRoutesJson(body);
+      return parseRoutesJson(body, expectedLegs: waypoints.length + 1);
     } on TimeoutException {
       throw DirectionsException('Valhalla route planning timed out');
     } on DirectionsException {
@@ -152,7 +179,10 @@ class ValhallaDirectionsService implements RouteProvider {
   /// Parses native Valhalla JSON (polyline6), not its optional OSRM format.
   /// Destination maneuvers are not travel legs: dropping their zero-length
   /// step prevents the engine from announcing ARRIVED before the destination.
-  static List<RouteCandidate> parseRoutesJson(String body) {
+  static List<RouteCandidate> parseRoutesJson(
+    String body, {
+    int expectedLegs = 1,
+  }) {
     if (body.length > _maxResponseBytes) {
       throw DirectionsException('Valhalla response is too large');
     }
@@ -167,11 +197,19 @@ class ValhallaDirectionsService implements RouteProvider {
       if (alternatives != null && alternatives is! List) {
         throw const FormatException();
       }
-      final output = [_parseTrip(_object(root['trip']), 0)];
+      if (expectedLegs < 1 || expectedLegs > WaypointPlan.maxStops + 1) {
+        throw const FormatException();
+      }
+      final output = [_parseTrip(_object(root['trip']), 0, expectedLegs)];
       if (alternatives is List) {
         for (var i = 0; i < math.min(alternatives.length, 2); i++) {
           output.add(
-              _parseTrip(_object(_object(alternatives[i])['trip']), i + 1));
+            _parseTrip(
+              _object(_object(alternatives[i])['trip']),
+              i + 1,
+              expectedLegs,
+            ),
+          );
         }
       }
       return List.unmodifiable(output);
@@ -180,7 +218,11 @@ class ValhallaDirectionsService implements RouteProvider {
     }
   }
 
-  static RouteCandidate _parseTrip(Map<String, dynamic> trip, int index) {
+  static RouteCandidate _parseTrip(
+    Map<String, dynamic> trip,
+    int index,
+    int expectedLegs,
+  ) {
     if (trip['status'] != 0) throw const FormatException();
     final double metersPerUnit;
     switch (trip['units']) {
@@ -191,11 +233,41 @@ class ValhallaDirectionsService implements RouteProvider {
       default:
         throw const FormatException();
     }
-    // This adapter requests exactly two break locations, hence exactly one
-    // leg. Reject a proxy returning an unrelated/multipoint itinerary.
+    // Require every requested leg: never accept a response dropping a stop.
     final legs = trip['legs'];
-    if (legs is! List || legs.length != 1) throw const FormatException();
-    final leg = _object(legs.single);
+    if (legs is! List || legs.length != expectedLegs)
+      throw const FormatException();
+    final steps = <RouteStep>[];
+    for (var i = 0; i < legs.length; i++) {
+      final segment = _parseLeg(
+        _object(legs[i]),
+        metersPerUnit,
+        waypointIndex: i < legs.length - 1 ? i : null,
+        previous: steps.isEmpty ? null : steps.last,
+      );
+      if (steps.isNotEmpty &&
+          steps.last.end.distanceTo(segment.first.start) > 5) {
+        throw const FormatException();
+      }
+      steps.addAll(segment);
+    }
+    final summary = _object(trip['summary']);
+    return RouteCandidate(
+      steps: List.unmodifiable(steps),
+      name: 'Valhalla ${index + 1}',
+      distanceMeters: (_nonnegative(summary['length']) * metersPerUnit).round(),
+      expectedTravelTimeSeconds: _nonnegative(summary['time']).round(),
+      attribution: '© OpenStreetMap contributors',
+      attributionUrl: 'https://www.openstreetmap.org/copyright',
+    );
+  }
+
+  static List<RouteStep> _parseLeg(
+    Map<String, dynamic> leg,
+    double metersPerUnit, {
+    int? waypointIndex,
+    RouteStep? previous,
+  }) {
     final shape = _decodeShape(leg['shape']);
     final maneuvers = leg['maneuvers'];
     if (maneuvers is! List ||
@@ -208,7 +280,7 @@ class ValhallaDirectionsService implements RouteProvider {
     var foundDestination = false;
     for (var i = 0; i < maneuvers.length; i++) {
       final maneuver = _object(maneuvers[i]);
-      final type = _integer(maneuver['type']);
+      var type = _integer(maneuver['type']);
       final begin = _integer(maneuver['begin_shape_index']);
       final end = _integer(maneuver['end_shape_index']);
       final length = _nonnegative(maneuver['length']);
@@ -229,29 +301,60 @@ class ValhallaDirectionsService implements RouteProvider {
       if (end == begin) throw const FormatException();
       final mode = maneuver['travel_mode'];
       if (mode != null && mode != 'drive') throw const FormatException();
-      steps.add(RouteStep(
-        direction: _direction(type, shape, begin, end),
-        start: shape[begin],
-        end: shape[end],
-        distanceMeters: (length * metersPerUnit).round(),
-        geometry: List.unmodifiable(shape.sublist(begin, end + 1)),
-        rawManeuver: 'valhalla:$type',
-      ));
+      // A new leg's START is not necessarily straight ahead. Retain the turn
+      // across the stop instead of announcing UP at a right/left/U-turn.
+      if (i == 0 && previous != null && type >= 1 && type <= 3) {
+        type = _joinManeuver(previous, shape.sublist(begin, end + 1));
+      }
+      steps.add(
+        RouteStep(
+          direction: _direction(type, shape, begin, end),
+          start: shape[begin],
+          end: shape[end],
+          distanceMeters: (length * metersPerUnit).round(),
+          geometry: List.unmodifiable(shape.sublist(begin, end + 1)),
+          rawManeuver: 'valhalla:$type',
+          waypointIndex: end == shape.length - 1 ? waypointIndex : null,
+        ),
+      );
     }
     if (!foundDestination || steps.isEmpty) throw const FormatException();
-    final summary = _object(trip['summary']);
-    return RouteCandidate(
-      steps: List.unmodifiable(steps),
-      name: 'Valhalla ${index + 1}',
-      distanceMeters: (_nonnegative(summary['length']) * metersPerUnit).round(),
-      expectedTravelTimeSeconds: _nonnegative(summary['time']).round(),
-      attribution: '© OpenStreetMap contributors',
-      attributionUrl: 'https://www.openstreetmap.org/copyright',
+    return steps;
+  }
+
+  static int _joinManeuver(RouteStep previous, List<LatLng> outgoing) {
+    final incoming = previous.geometry;
+    final before = incoming.reversed.firstWhere(
+      (p) => p.distanceTo(previous.end) >= 2,
+      orElse: () => previous.start,
     );
+    final after = outgoing.firstWhere(
+      (p) => p.distanceTo(outgoing.first) >= 2,
+      orElse: () => outgoing.last,
+    );
+    double bearing(LatLng a, LatLng b) =>
+        math.atan2(
+          (b.longitude - a.longitude) * math.cos(a.latitude * math.pi / 180),
+          b.latitude - a.latitude,
+        ) *
+        180 /
+        math.pi;
+    final turn =
+        (bearing(outgoing.first, after) - bearing(before, previous.end) + 540) %
+            360 -
+        180;
+    if (turn.abs() < 20) return 1;
+    if (turn.abs() >= 160) return 12;
+    if (turn > 0) return turn < 50 ? 9 : 10;
+    return turn > -50 ? 16 : 15;
   }
 
   static DeviceDirection _direction(
-      int type, List<LatLng> shape, int begin, int end) {
+    int type,
+    List<LatLng> shape,
+    int begin,
+    int end,
+  ) {
     switch (type) {
       case 0:
       case 1:
@@ -299,7 +402,10 @@ class ValhallaDirectionsService implements RouteProvider {
   }
 
   static DeviceDirection _geometricDirection(
-      List<LatLng> shape, int entry, int exit) {
+    List<LatLng> shape,
+    int entry,
+    int exit,
+  ) {
     var before = entry - 1;
     var after = exit + 1;
     while (before >= 0 && shape[before].distanceTo(shape[entry]) < 1) {
@@ -323,8 +429,9 @@ class ValhallaDirectionsService implements RouteProvider {
 
   static double _bearing(LatLng a, LatLng b) =>
       math.atan2(
-          (b.longitude - a.longitude) * math.cos(a.latitude * math.pi / 180),
-          b.latitude - a.latitude) *
+        (b.longitude - a.longitude) * math.cos(a.latitude * math.pi / 180),
+        b.latitude - a.latitude,
+      ) *
       180 /
       math.pi;
 

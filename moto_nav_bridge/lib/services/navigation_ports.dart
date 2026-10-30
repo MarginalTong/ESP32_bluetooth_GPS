@@ -23,6 +23,15 @@ abstract interface class RouteProvider {
   void dispose();
 }
 
+/// Providers without itinerary support must never silently drop required stops.
+abstract interface class WaypointRouteProvider implements RouteProvider {
+  Future<List<RouteCandidate>> fetchWaypointRoutes({
+    required LatLng origin,
+    required LatLng destination,
+    required List<LatLng> waypoints,
+  });
+}
+
 abstract interface class SideRoadProvider {
   Future<List<RoadSegment>> fetchSideRoadsNear(LatLng position);
   void dispose();
@@ -30,8 +39,11 @@ abstract interface class SideRoadProvider {
 
 /// Optional rolling, display-only route cache. GPS updates never wait for it.
 abstract interface class RouteSideRoadProvider implements SideRoadProvider {
-  void prefetchRoute(List<LatLng> route, LatLng position,
-      void Function(LatLng loadedNear) onProgress);
+  void prefetchRoute(
+    List<LatLng> route,
+    LatLng position,
+    void Function(LatLng loadedNear) onProgress,
+  );
   void advancePrefetch(LatLng position);
   List<RoadSegment> cachedSideRoadsNear(LatLng position);
   int get cacheVersion;

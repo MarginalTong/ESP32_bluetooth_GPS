@@ -12,6 +12,7 @@ class RouteStep {
     required this.distanceMeters,
     List<LatLng>? geometry,
     this.rawManeuver,
+    this.waypointIndex,
   }) : geometry = geometry ?? const [];
 
   final DeviceDirection direction;
@@ -31,6 +32,9 @@ class RouteStep {
 
   /// The original provider maneuver identifier, kept for debugging/telemetry.
   final String? rawManeuver;
+
+  /// Intermediate stop reached at this segment end, relative to this request.
+  final int? waypointIndex;
 
   @override
   String toString() =>

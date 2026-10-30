@@ -16,8 +16,12 @@ class RouteAlignment {
     final points = geometry(route.steps.first);
     for (var i = 0; i + 1 < points.length; i++) {
       if (points[i].distanceTo(points[i + 1]) >= 2) {
-        return !aligned(latest as NavigationFix, points[i], points[i + 1],
-            tolerance: 90);
+        return !aligned(
+          latest as NavigationFix,
+          points[i],
+          points[i + 1],
+          tolerance: 90,
+        );
       }
     }
     return false;
@@ -38,12 +42,18 @@ class RouteAlignment {
             math.sin(angle);
   }
 
-  static bool aligned(NavigationFix p, LatLng a, LatLng b,
-      {double tolerance = 60}) {
+  static bool aligned(
+    NavigationFix p,
+    LatLng a,
+    LatLng b, {
+    double tolerance = 60,
+  }) {
     if (a.distanceTo(b) < 2) return false;
-    final bearing = math.atan2(
-            (b.longitude - a.longitude) * math.cos(a.latitude * math.pi / 180),
-            b.latitude - a.latitude) *
+    final bearing =
+        math.atan2(
+          (b.longitude - a.longitude) * math.cos(a.latitude * math.pi / 180),
+          b.latitude - a.latitude,
+        ) *
         180 /
         math.pi;
     return ((p.heading - bearing + 540) % 360 - 180).abs() <= tolerance;
@@ -53,13 +63,18 @@ class RouteAlignment {
       step.geometry.length >= 2 ? step.geometry : [step.start, step.end];
 
   static RouteCandidate trim(
-      RouteCandidate route, LatLng origin, LatLng latest) {
+    RouteCandidate route,
+    LatLng origin,
+    LatLng latest,
+  ) {
     if (!usable(latest) || route.steps.isEmpty) return route;
     final fix = latest as NavigationFix;
     // Only recover progress plausible during the request, not later loop legs.
     final budget = origin.distanceTo(fix) + 30;
     var travelled = 0.0;
     for (var i = 0; i < route.steps.length; i++) {
+      // Do not trim away an unacknowledged stop while a request was in flight.
+      if (i > 0 && route.steps[i - 1].waypointIndex != null) return route;
       final step = route.steps[i];
       if (step.direction == DeviceDirection.uturn) return route;
       final points = geometry(step);
@@ -77,15 +92,18 @@ class RouteAlignment {
         final t = denominator == 0
             ? 0.0
             : (-(ax * dx + ay * dy) / denominator).clamp(0.0, 1.0);
-        final projected = LatLng(a.latitude + (b.latitude - a.latitude) * t,
-            a.longitude + (b.longitude - a.longitude) * t);
+        final projected = LatLng(
+          a.latitude + (b.latitude - a.latitude) * t,
+          a.longitude + (b.longitude - a.longitude) * t,
+        );
         if (fix.distanceTo(projected) <= 15 &&
             travelled + length * t <= budget &&
             aligned(fix, a, b) &&
             forward(fix, b) > 0) {
           final remaining = [projected, ...points.skip(j + 1)];
-          return route.copyWith(steps: [
-            RouteStep(
+          return route.copyWith(
+            steps: [
+              RouteStep(
                 direction: DeviceDirection.up,
                 start: projected,
                 end: step.end,
@@ -95,13 +113,17 @@ class RouteAlignment {
                     .entries
                     .skip(1)
                     .fold<double>(
-                        0,
-                        (sum, e) =>
-                            sum + remaining[e.key - 1].distanceTo(e.value))
+                      0,
+                      (sum, e) =>
+                          sum + remaining[e.key - 1].distanceTo(e.value),
+                    )
                     .round(),
-                rawManeuver: null),
-            ...route.steps.skip(i + 1)
-          ]);
+                waypointIndex: step.waypointIndex,
+                rawManeuver: null,
+              ),
+              ...route.steps.skip(i + 1),
+            ],
+          );
         }
         travelled += length;
       }
