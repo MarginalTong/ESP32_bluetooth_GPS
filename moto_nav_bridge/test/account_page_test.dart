@@ -63,6 +63,21 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets('plain account text has a real body style under MaterialApp', (
+    tester,
+  ) async {
+    await account.signIn('rider@example.test', 'password');
+    await show(tester);
+    final label = find.textContaining('Cloud sync is manual');
+    final style = DefaultTextStyle.of(tester.element(label)).style;
+    expect(style.decoration, TextDecoration.none);
+    expect(style.fontSize, 17);
+    expect(style.color, isNot(const Color(0xD0FF0000)));
+    final rich = tester.widget<RichText>(
+      find.descendant(of: label, matching: find.byType(RichText)),
+    );
+    expect(rich.text.style?.decoration, TextDecoration.none);
+  });
   testWidgets(
     'registration exposes an email code flow and never logs a password',
     (tester) async {
