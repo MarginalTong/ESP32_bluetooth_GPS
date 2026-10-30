@@ -35,6 +35,8 @@ class RiderMapController extends ChangeNotifier {
   bool _disposed = false, _syncing = false, _dirty = false, _fetching = false;
   bool _foreground = true, _mapVisible = true;
   int _generation = 0, _sequence = 0;
+  int _tripGeneration = 0, _sessionTripGeneration = -1;
+  NavPhase? _lastNavPhase;
   DateTime? _lastPublish, _lastFetch, _lastFix;
   String? error;
   List<RiderPresence> riders = const [];
@@ -141,6 +143,12 @@ class RiderMapController extends ChangeNotifier {
 
   void _schedule() {
     if (_disposed) return;
+    final phase = _nav?.phase;
+    if (phase != _lastNavPhase) {
+      _lastNavPhase = phase;
+      _tripGeneration++;
+      _generation++;
+    }
     _dirty = true;
     if (!_syncing) unawaited(_sync());
   }
@@ -156,13 +164,25 @@ class RiderMapController extends ChangeNotifier {
     try {
       while (_dirty && !_disposed) {
         _dirty = false;
-        final fix = _nav?.voiceFix;
+        if (_session != null && _sessionTripGeneration != _tripGeneration) {
+          final token = _session!;
+          _session = null;
+          _lastPublish = _lastFix = null;
+          await backend.stop(token);
+          _dirty = true;
+          _notify();
+          continue;
+        }
+        var fix = _nav?.voiceFix;
         final wanted = active && fix != null && _usable(fix);
         if (!wanted) {
           final token = _session;
           _session = null;
           _lastPublish = _lastFix = null;
-          if (token != null) await backend.stop(token);
+          if (token != null) {
+            await backend.stop(token);
+            _notify();
+          }
           continue;
         }
         final generation = _generation;
@@ -177,7 +197,14 @@ class RiderMapController extends ChangeNotifier {
             continue;
           }
           _session = token;
+          _sessionTripGeneration = _tripGeneration;
           _sequence = 0;
+        }
+        // Never publish the fix captured before awaited session creation.
+        fix = _nav?.voiceFix;
+        if (!active || fix == null || !_usable(fix)) {
+          _dirty = true;
+          continue;
         }
         if (_lastPublish != null &&
             _now().difference(_lastPublish!) < const Duration(seconds: 5)) {

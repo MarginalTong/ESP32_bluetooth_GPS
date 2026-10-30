@@ -147,6 +147,25 @@ void main() {
     },
   );
   test(
+    'end and restart while begin is pending cannot reuse the old trip session',
+    () async {
+      final pending = Completer<String>();
+      backend.waitingBegin = pending;
+      riders.setSharing(true);
+      nav.change(NavPhase.navigating, fix());
+      await pumpEventQueue();
+      nav.change(NavPhase.arrived, fix());
+      nav.change(NavPhase.navigating, fix());
+      backend.waitingBegin = null;
+      pending.complete('old-trip');
+      await pumpEventQueue();
+      expect(backend.stopped, contains('old-trip'));
+      expect(backend.begins, 2);
+      expect(backend.publishes, 1);
+    },
+  );
+
+  test(
     'ending while a publish is delayed serializes withdrawal afterward',
     () async {
       backend.waitingPublish = Completer();
