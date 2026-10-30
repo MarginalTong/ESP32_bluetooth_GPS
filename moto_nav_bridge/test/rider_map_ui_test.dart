@@ -9,8 +9,69 @@ import 'package:moto_nav_bridge/models/rider_presence.dart';
 import 'package:moto_nav_bridge/ui/widgets/navigation_map.dart';
 import 'package:moto_nav_bridge/ui/widgets/rider_map_button.dart';
 import 'rider_map_controller_test.dart' show RidersFake;
+import 'avatar_test_fakes.dart';
 
 void main() {
+  testWidgets(
+    'unchanged photos are not resent with every marker movement',
+    (tester) async {
+      const control = MethodChannel('moto_nav_bridge/navigation_map_control');
+      final calls = <MethodCall>[];
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        SystemChannels.platform_views,
+        (_) async => null,
+      );
+      messenger.setMockMethodCallHandler(control, (call) async {
+        calls.add(call);
+        return null;
+      });
+      const id = '10000000-0000-4000-8000-000000000001';
+      const version = '20000000-0000-4000-8000-000000000001';
+      final expiry = DateTime.now().add(const Duration(minutes: 1));
+      Widget map(List<RiderPresence> list) =>
+          MaterialApp(home: NavigationMap(riders: list));
+      await tester.pumpWidget(map(const []));
+      await tester.pump();
+      await tester.pumpWidget(
+        map([
+          RiderPresence(
+            id,
+            const LatLng(-33.88, 151.12),
+            expiry,
+            avatarId: version,
+            avatarJpeg: avatarJpeg(),
+          ),
+        ]),
+      );
+      await tester.pump();
+      expect(
+        ((calls.last.arguments as Map)['riders'] as List).single,
+        contains('avatar_jpeg'),
+      );
+      await tester.pumpWidget(
+        map([
+          RiderPresence(
+            id,
+            const LatLng(-33.89, 151.12),
+            expiry,
+            avatarId: version,
+            avatarJpeg: avatarJpeg(),
+          ),
+        ]),
+      );
+      await tester.pump();
+      expect(
+        ((calls.last.arguments as Map)['riders'] as List).single,
+        isNot(contains('avatar_jpeg')),
+      );
+      expect(calls.every((c) => c.method == 'updateRiders'), isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      messenger.setMockMethodCallHandler(control, null);
+      messenger.setMockMethodCallHandler(SystemChannels.platform_views, null);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
   testWidgets('sharing requires explicit consent; viewing alone never shares', (
     tester,
   ) async {

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import '../models/profile_avatar.dart';
 import '../services/avatar_backend.dart';
 import '../services/avatar_photo_source.dart';
@@ -78,6 +79,16 @@ class AvatarController extends ChangeNotifier {
       if (!account.canModify) throw StateError('Navigation active');
       final saved = await backend.upload(actor, jpeg);
       if (_current(generation, actor)) avatar = saved;
+    } on PlatformException catch (e) {
+      if (_current(generation, actor)) {
+        error =
+            e.code == 'photo_access_denied' ||
+                e.code == 'photo_access_restricted'
+            ? 'photo_permission'
+            : 'save_failed';
+      }
+    } on FormatException {
+      if (_current(generation, actor)) error = 'photo_invalid';
     } catch (_) {
       if (_current(generation, actor)) error = 'save_failed';
     } finally {

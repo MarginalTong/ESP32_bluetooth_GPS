@@ -43,6 +43,10 @@ class RiderMapController extends ChangeNotifier {
   String? _publishError, _fetchError;
   String? get error => _publishError ?? _fetchError;
   List<RiderPresence> riders = const [];
+  final _avatarCache = <String, Uint8List>{};
+  final _avatarFailures = <String, DateTime>{};
+  bool _loadingAvatars = false;
+  String _avatarKey(RiderPresence rider) => '${rider.id}:${rider.avatarId}';
   bool get signedIn => _userId != null && backend.available;
   bool get active => sharing && signedIn && _nav?.phase == NavPhase.navigating;
 
@@ -108,6 +112,8 @@ class RiderMapController extends ChangeNotifier {
       riders = List.unmodifiable(live);
       _notify();
     }
+    _pruneAvatars();
+    _loadAvatars();
     _schedule();
     if (viewing &&
         signedIn &&
@@ -128,7 +134,10 @@ class RiderMapController extends ChangeNotifier {
       final result = await backend.fetch();
       if (_disposed || generation != _generation || !viewing) return;
       riders = List.unmodifiable(
-        result.riders.where((r) => r.expiresAt.isAfter(_now())),
+        result.riders.where((r) => r.expiresAt.isAfter(_now())).map((r) {
+          final cached = _avatarCache[_avatarKey(r)];
+          return cached == null ? r : r.withAvatar(cached);
+        }),
       );
       truncated = result.truncated;
       _fetchError = null;
@@ -138,11 +147,85 @@ class RiderMapController extends ChangeNotifier {
       _fetchError = 'unavailable';
     } finally {
       _fetching = false;
+      _pruneAvatars();
+      _loadAvatars();
       _notify();
     }
   }
 
+  void _pruneAvatars() {
+    // Bound memory to the newest 64 visible thumbnail versions, never all users.
+    final keys = riders.take(64).map(_avatarKey).toSet();
+    _avatarCache.removeWhere((key, _) => !keys.contains(key));
+    _avatarFailures.removeWhere((key, _) => !keys.contains(key));
+  }
+
+  void _loadAvatars() {
+    final photos = backend;
+    if (_disposed ||
+        _loadingAvatars ||
+        !viewing ||
+        !signedIn ||
+        !_foreground ||
+        !_mapVisible ||
+        photos is! RiderAvatarBackend) {
+      return;
+    }
+    final avatarBackend = photos as RiderAvatarBackend;
+    final pending = riders
+        .take(64)
+        .where(
+          (r) =>
+              r.avatarId != null &&
+              r.avatarJpeg == null &&
+              !_avatarCache.containsKey(_avatarKey(r)) &&
+              (_avatarFailures[_avatarKey(r)] == null ||
+                  _now().difference(_avatarFailures[_avatarKey(r)]!) >=
+                      const Duration(seconds: 30)),
+        )
+        .take(2)
+        .toList();
+    if (pending.isEmpty) return;
+    _loadingAvatars = true;
+    final generation = _generation;
+    unawaited(
+      Future.wait(
+        pending.map((rider) async {
+          final key = _avatarKey(rider);
+          try {
+            final bytes = await avatarBackend.fetchAvatar(
+              rider.id,
+              rider.avatarId!,
+            );
+            if (_disposed || generation != _generation || !viewing) return;
+            if (bytes == null) {
+              _avatarFailures[key] = _now();
+              return;
+            }
+            final stillVisible = riders.any(
+              (r) => _avatarKey(r) == key && r.expiresAt.isAfter(_now()),
+            );
+            if (!stillVisible) return;
+            _avatarCache[key] = bytes;
+            riders = List.unmodifiable(
+              riders.map((r) => _avatarKey(r) == key ? r.withAvatar(bytes) : r),
+            );
+          } catch (_) {
+            if (!_disposed && generation == _generation) {
+              _avatarFailures[key] = _now();
+            }
+          }
+        }),
+      ).whenComplete(() {
+        _loadingAvatars = false;
+        _notify();
+        if (!_disposed) _loadAvatars();
+      }),
+    );
+  }
+
   void _notify() {
+    _pruneAvatars();
     if (!_disposed) notifyListeners();
   }
 

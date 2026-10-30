@@ -6,6 +6,9 @@
 - Native Google sign-in (iOS/Android) exchanges an ID token with the same
   Supabase Auth project. See [Google setup](google-sign-in.md). The entry point
   stays hidden until its public client IDs and build flag are configured.
+- Profile avatars: gallery selection, cropped-photo confirmation and immediate
+  account sync. Photos are visible on the public rider map only while the owner
+  shares a live position. See [avatar deployment/privacy](profile-avatars.md).
 - Native Apple sign-in uses a raw nonce and its SHA-256 hash. It stays disabled
   unless `NAVIO_APPLE_SIGN_IN=true` and all server/developer requirements below
   are met. An optional entitlements file is supplied, but deliberately not

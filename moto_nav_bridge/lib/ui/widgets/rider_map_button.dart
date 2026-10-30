@@ -104,8 +104,8 @@ class _RiderSettings extends StatelessWidget {
                             ),
                             content: Text(
                               en
-                                  ? 'Other signed-in users can follow your approximate live location while you navigate in the Sydney area. No route or destination is shared. Arrival, ending navigation or turning this off withdraws it; network loss may leave a marker visible for up to about 30 seconds. This is off again when the app restarts.'
-                                  : '悉尼区域内导航时，其他已登录用户可持续查看你的近似位置；不共享路线和目的地。到达、结束导航或关闭开关后撤下；网络异常时标记可能保留约 30 秒。重启 App 后默认关闭。',
+                                  ? 'Other signed-in users can see your profile photo and follow your approximate live location while you navigate in the Sydney area. No route or destination is shared. Arrival, ending navigation or turning this off withdraws it; network loss may leave a marker visible for up to about 30 seconds. People can copy visible photos or positions. This is off again when the app restarts.'
+                                  : '悉尼区域内导航时，其他已登录用户可看到你的个人头像并持续查看近似位置；不共享路线和目的地。到达、结束导航或关闭开关后撤下；网络异常时标记可能保留约 30 秒。可见的头像和位置可能被他人截取保存。重启 App 后默认关闭。',
                             ),
                             actions: [
                               TextButton(

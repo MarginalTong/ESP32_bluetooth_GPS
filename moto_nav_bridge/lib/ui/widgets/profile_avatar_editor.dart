@@ -170,9 +170,20 @@ class ProfileAvatarEditor extends StatelessWidget {
             Semantics(
               liveRegion: true,
               child: Text(
-                en
-                    ? 'Photo could not be loaded or saved. Check your connection and retry.'
-                    : '头像读取或保存失败，请检查网络后重试。',
+                switch (controller.error) {
+                  'photo_permission' =>
+                    en
+                        ? 'Photo access was denied. Allow access in Settings, then try again.'
+                        : '未获得照片访问权限，请在系统设置中允许后重试。',
+                  'photo_invalid' =>
+                    en
+                        ? 'This photo could not be processed. Choose a different image.'
+                        : '这张照片无法处理，请选择另一张图片。',
+                  _ =>
+                    en
+                        ? 'Photo could not be loaded or saved. Check your connection and retry.'
+                        : '头像读取或保存失败，请检查网络后重试。',
+                },
                 style: const TextStyle(
                   fontSize: 13,
                   color: CupertinoColors.destructiveRed,

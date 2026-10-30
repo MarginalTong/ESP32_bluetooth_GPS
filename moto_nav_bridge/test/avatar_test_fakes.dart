@@ -37,8 +37,12 @@ class FakeAvatarBackend implements AvatarBackend {
 }
 
 class FakeAvatarSource implements AvatarPhotoSource {
+  Object? failure;
   Uint8List? result = avatarJpeg();
   Completer<Uint8List?>? gate;
   @override
-  Future<Uint8List?> choose() async => gate != null ? gate!.future : result;
+  Future<Uint8List?> choose() async {
+    if (failure != null) throw failure!;
+    return gate != null ? gate!.future : result;
+  }
 }

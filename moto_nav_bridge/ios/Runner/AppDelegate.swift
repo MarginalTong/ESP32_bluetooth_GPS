@@ -868,6 +868,8 @@ private final class RoutePreviewTriangleView: MKAnnotationView {
 
 private final class RiderAnnotation: NSObject, MKAnnotation {
   let identifier: String
+  var avatarVersion: String?
+  var avatarImage: UIImage?
   @objc dynamic var coordinate: CLLocationCoordinate2D
   var title: String? { "NAVIO · \(identifier.prefix(4).uppercased())" }
   var subtitle: String? { "Approximate location · ~100 m" }
@@ -1535,12 +1537,16 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       visible.insert(id)
       let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
       if let existing = riderAnnotations[id] {
+        if applyRiderAvatar(row, to: existing), let view = mapView.view(for: existing) {
+          view.image = riderImage(existing)
+        }
         if abs(existing.coordinate.latitude - lat) > 0.000001 ||
             abs(existing.coordinate.longitude - lon) > 0.000001 {
           UIView.animate(withDuration: 1.0) { existing.coordinate = coordinate }
         }
       } else {
         let marker = RiderAnnotation(identifier: id, coordinate: coordinate)
+        _ = applyRiderAvatar(row, to: marker)
         riderAnnotations[id] = marker
         mapView.addAnnotation(marker)
       }
@@ -1559,15 +1565,7 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       view.annotation = rider
       view.canShowCallout = true
       view.clusteringIdentifier = "navio-riders"
-      let hue = CGFloat(rider.identifier.utf8.reduce(0) { ($0 + Int($1)) % 360 }) / 360
-      view.image = UIGraphicsImageRenderer(size: CGSize(width: 34, height: 34)).image { context in
-        UIColor.white.setFill()
-        context.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: 34, height: 34))
-        UIColor(hue: hue, saturation: 0.65, brightness: 0.78, alpha: 1).setFill()
-        context.cgContext.fillEllipse(in: CGRect(x: 2, y: 2, width: 30, height: 30))
-        UIImage(systemName: "person.fill")?.withTintColor(.white, renderingMode: .alwaysOriginal)
-            .draw(in: CGRect(x: 8, y: 7, width: 18, height: 20))
-      }
+      view.image = riderImage(rider)
       return view
     }
     if annotation is RoutePreviewAnnotation {
@@ -1582,6 +1580,41 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     view.annotation = annotation
     view.update(course: movementCourse, mapHeading: mapView.camera.heading)
     return view
+  }
+
+  private func applyRiderAvatar(_ row: [String: Any], to rider: RiderAnnotation) -> Bool {
+    let version = (row["avatar_id"] as? String).flatMap { UUID(uuidString: $0)?.uuidString }
+    var changed = version != rider.avatarVersion
+    if changed { rider.avatarVersion = version; rider.avatarImage = nil }
+    if version != nil, rider.avatarImage == nil,
+       let encoded = row["avatar_jpeg"] as? String, encoded.utf8.count <= 43692,
+       let data = Data(base64Encoded: encoded), data.count <= 32768,
+       let image = UIImage(data: data), image.size.width <= 256, image.size.height <= 256 {
+      rider.avatarImage = image
+      changed = true
+    }
+    return changed
+  }
+
+  private func riderImage(_ rider: RiderAnnotation) -> UIImage {
+    let hue = CGFloat(rider.identifier.utf8.reduce(0) { ($0 + Int($1)) % 360 }) / 360
+    return UIGraphicsImageRenderer(size: CGSize(width: 38, height: 38)).image { context in
+      UIColor.white.setFill()
+      context.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: 38, height: 38))
+      let inner = CGRect(x: 2, y: 2, width: 34, height: 34)
+      if let image = rider.avatarImage {
+        context.cgContext.saveGState()
+        context.cgContext.addEllipse(in: inner)
+        context.cgContext.clip()
+        image.draw(in: inner)
+        context.cgContext.restoreGState()
+      } else {
+        UIColor(hue: hue, saturation: 0.65, brightness: 0.78, alpha: 1).setFill()
+        context.cgContext.fillEllipse(in: inner)
+        UIImage(systemName: "person.fill")?.withTintColor(.white, renderingMode: .alwaysOriginal)
+            .draw(in: CGRect(x: 10, y: 9, width: 18, height: 20))
+      }
+    }
   }
 
   func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {

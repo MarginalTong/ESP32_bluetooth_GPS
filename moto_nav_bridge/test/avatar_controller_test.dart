@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:moto_nav_bridge/controllers/account_controller.dart';
 import 'package:moto_nav_bridge/controllers/avatar_controller.dart';
@@ -104,4 +104,17 @@ void main() {
     expect(avatars.avatar, isNull);
     expect(avatars.busy, isFalse);
   });
+  test(
+    'permission denial and invalid photos give actionable safe errors',
+    () async {
+      await login();
+      source.failure = PlatformException(code: 'photo_access_denied');
+      await avatars.choose();
+      expect(avatars.error, 'photo_permission');
+      source.failure = const FormatException('private-file-path');
+      await avatars.choose();
+      expect(avatars.error, 'photo_invalid');
+      expect(backend.uploads, 0);
+    },
+  );
 }

@@ -55,6 +55,36 @@ class NavigationMap extends StatefulWidget {
 }
 
 class _NavigationMapState extends State<NavigationMap> {
+  final _sentAvatarVersions = <String, String>{};
+  void _sendRiders() {
+    final versions = <String, String>{};
+    final rows = widget.riders.map((r) {
+      final include =
+          r.avatarJpeg != null &&
+          r.avatarId != null &&
+          _sentAvatarVersions[r.id] != r.avatarId;
+      if (include) versions[r.id] = r.avatarId!;
+      return r.toMap(includeAvatar: include);
+    }).toList();
+    final visible = widget.riders.map((r) => r.id).toSet();
+    _sentAvatarVersions.removeWhere((key, _) => !visible.contains(key));
+    NavigationMap._control
+        .invokeMethod<void>('updateRiders', {'riders': rows})
+        .then((_) {
+          if (!mounted) return;
+          for (final entry in versions.entries) {
+            if (widget.riders.any(
+              (r) => r.id == entry.key && r.avatarId == entry.value,
+            )) {
+              _sentAvatarVersions[entry.key] = entry.value;
+            }
+          }
+        })
+        .catchError((Object _) {
+          _sentAvatarVersions.clear();
+        });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -66,9 +96,7 @@ class _NavigationMapState extends State<NavigationMap> {
     super.didUpdateWidget(oldWidget);
     if (!identical(widget.riders, oldWidget.riders) &&
         defaultTargetPlatform == TargetPlatform.iOS) {
-      NavigationMap._control.invokeMethod<void>('updateRiders', {
-        'riders': widget.riders.map((r) => r.toMap()).toList(),
-      }).catchError((Object _) {});
+      _sendRiders();
     }
     // The controller publishes a new immutable list when a route is replaced.
     // Shape summaries (distance/count/endpoints) can collide for distinct routes,

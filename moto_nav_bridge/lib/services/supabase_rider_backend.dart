@@ -1,9 +1,11 @@
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/lat_lng.dart';
 import '../models/rider_presence.dart';
 import 'rider_presence_backend.dart';
+import '../models/profile_avatar.dart';
 
-class SupabaseRiderBackend implements RiderPresenceBackend {
+class SupabaseRiderBackend implements RiderPresenceBackend, RiderAvatarBackend {
   SupabaseRiderBackend(this.client);
   final SupabaseClient? client;
   SupabaseClient get _client => client ?? (throw StateError('Unconfigured'));
@@ -62,5 +64,16 @@ class SupabaseRiderBackend implements RiderPresenceBackend {
       ),
       truncated: data['truncated'] == true,
     );
+  }
+
+  @override
+  Future<Uint8List?> fetchAvatar(String publicId, String avatarId) async {
+    final data = await _client
+        .rpc(
+          'navio_get_rider_avatar',
+          params: {'p_public_id': publicId, 'p_avatar_id': avatarId},
+        )
+        .timeout(const Duration(seconds: 8));
+    return data == null ? null : ProfileAvatar.decodeJpeg(data as String);
   }
 }
