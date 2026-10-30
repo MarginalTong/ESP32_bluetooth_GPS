@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_text.dart';
 import '../services/ble_service.dart';
 import '../controllers/account_controller.dart';
+import '../controllers/rider_map_controller.dart';
 import 'home_page.dart';
 import 'devices_page.dart';
 import 'map_settings_page.dart';
@@ -15,13 +16,15 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int _selected = 0;
   String _mapStyle = 'standard';
+  bool _foreground = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadMapStyle();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -37,6 +40,19 @@ class _AppShellState extends State<AppShell> {
         // The device page retains the actionable binding/connection error.
       }
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    context.read<RiderMapController?>()?.setVisibility(
+        foreground: _foreground, mapVisible: _selected == 0);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _loadMapStyle() async {
@@ -70,7 +86,11 @@ class _AppShellState extends State<AppShell> {
         inactiveColor:
             darkBar ? const Color(0xff8996a8) : const Color(0xff8e8e93),
         currentIndex: _selected,
-        onTap: (value) => setState(() => _selected = value),
+        onTap: (value) {
+          setState(() => _selected = value);
+          context.read<RiderMapController?>()?.setVisibility(
+              foreground: _foreground, mapVisible: value == 0);
+        },
         items: [
           BottomNavigationBarItem(
               icon: const Icon(CupertinoIcons.map),

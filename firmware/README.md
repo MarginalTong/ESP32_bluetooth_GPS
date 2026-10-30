@@ -87,7 +87,8 @@ Serial logs record page transitions once (for example,
 
 Page priority preserves the existing behavior: an unavailable/off panel wins,
 then BOOT pairing; disconnected/idle states are resolved before route states;
-rerouting wins over STOP/ARRIVED; STOP shows no guidance; ARRIVED never expires;
+rerouting wins over STOP/ARRIVED; STOP shows no guidance; ARRIVED is never marked stale,
+draws an 800 ms check animation and returns to NAVIO standby after four seconds;
 otherwise stale guidance and live navigation are distinct pages. Explicit trip
 end returns to the connected standby page. On connected standby/clock pages,
 NAVIO is a compact upper-left wordmark; the center shows readiness or the
@@ -236,7 +237,7 @@ Supported `dir` values:
 
 `STOP` is a temporary no-guidance state (pause or lost GPS). Ending a trip
 sends the distinct signed payload `{"dir":"STOP","dist":0,"end":true}`.
-Only that end marker returns the display to the NAVIO standby page, including
+That end marker returns the display to the NAVIO standby page, including
 after the app disconnects; an unexpected BLE drop still shows
 `CONNECTION LOST`. Both app and display firmware must support this marker.
 

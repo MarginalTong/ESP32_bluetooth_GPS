@@ -8,6 +8,9 @@ upgrades retain saved places, pairing keys and installed-app identity.
 
 ## NAVIO accounts
 
+Sydney rider-map pilot: optional public sharing of approximate positions during
+navigation, separate from view-only mode. See [privacy, deployment and acceptance](docs/rider-map.md).
+
 My devices includes email account access, manual address/preference sync, and
 account deletion. Guest navigation remains available without signing in.
 Apple sign-in stays disabled until its provider, server function and paid-team

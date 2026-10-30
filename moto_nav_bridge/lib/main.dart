@@ -6,6 +6,8 @@ import 'controllers/navigation_controller.dart';
 import 'config/app_brand.dart';
 import 'config/account_config.dart';
 import 'controllers/account_controller.dart';
+import 'controllers/rider_map_controller.dart';
+import 'services/supabase_rider_backend.dart';
 import 'services/local_account_data.dart';
 import 'services/supabase_account_backend.dart';
 import 'services/ble_service.dart';
@@ -28,17 +30,21 @@ Future<void> main() async {
   } catch (_) {
     account.error = 'local';
   }
-  runApp(NavioApp(preferences: preferences, account: account));
+  final riders = RiderMapController(SupabaseRiderBackend(backend.client));
+  backend.beforeSignOut = riders.stopBeforeSignOut;
+  runApp(NavioApp(preferences: preferences, account: account, riders: riders));
 }
 
 class NavioApp extends StatelessWidget {
-  const NavioApp({super.key, this.preferences, this.account});
+  const NavioApp({super.key, this.preferences, this.account, this.riders});
   final SharedPreferences? preferences;
   final AccountController? account;
+  final RiderMapController? riders;
 
   NavigationController _navigation(BleService ble) {
     final nav = NavigationController(ble: ble, preferences: preferences);
     account?.bindNavigation(nav);
+    riders?.bindNavigation(nav);
     return nav;
   }
 
@@ -48,6 +54,8 @@ class NavioApp extends StatelessWidget {
       providers: [
         if (account != null)
           ChangeNotifierProvider<AccountController>(create: (_) => account!),
+        if (riders != null)
+          ChangeNotifierProvider<RiderMapController>(create: (_) => riders!),
         ChangeNotifierProvider(create: (_) => BleService()),
         ChangeNotifierProxyProvider<BleService, NavigationController>(
           create: (ctx) => _navigation(ctx.read<BleService>()),

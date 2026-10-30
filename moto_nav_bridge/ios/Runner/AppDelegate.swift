@@ -853,12 +853,25 @@ private final class RoutePreviewTriangleView: MKAnnotationView {
   }
 }
 
+private final class RiderAnnotation: NSObject, MKAnnotation {
+  let identifier: String
+  @objc dynamic var coordinate: CLLocationCoordinate2D
+  var title: String? { "NAVIO · \(identifier.prefix(4).uppercased())" }
+  var subtitle: String? { "Approximate location · ~100 m" }
+  init(identifier: String, coordinate: CLLocationCoordinate2D) {
+    self.identifier = identifier
+    self.coordinate = coordinate
+    super.init()
+  }
+}
+
 private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MKMapViewDelegate, UIGestureRecognizerDelegate {
   private var movementCourse: CLLocationDirection?
   private let mapView: MKMapView
   private let eventChannel: FlutterMethodChannel
   private let controlChannel: FlutterMethodChannel
   private var routeLines: [MKPolyline] = []
+  private var riderAnnotations: [String: RiderAnnotation] = [:]
   private var routePreviewLine: MKPolyline?
   private var routePreviewMarker: RoutePreviewAnnotation?
   private var routePreviewSamples: [CLLocationCoordinate2D] = []
@@ -956,6 +969,11 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
         result(nil)
         return
       }
+      if call.method == "updateRiders", let args = call.arguments as? [String: Any] {
+        self?.updateRiders(args["riders"] as? [[String: Any]] ?? [])
+        result(nil)
+        return
+      }
       guard call.method == "updateMap",
             let args = call.arguments as? [String: Any] else {
         result(FlutterMethodNotImplemented)
@@ -1019,6 +1037,7 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     // Destination picking controls gestures, not user-location visibility.
     mapView.showsUserLocation = true
     languageCode = args["languageCode"] as? String ?? languageCode
+    updateRiders(args["riders"] as? [[String: Any]] ?? [])
     let nextIndex = args["selectedRouteIndex"] as? Int ?? 0
     let routeArguments = args["routes"] as? [[String: Any]] ?? []
     let destinationKey = "\(args["destinationLatitude"] ?? ""):\(args["destinationLongitude"] ?? "")"
@@ -1492,7 +1511,52 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
     updateMovementPointer()
   }
 
+  private func updateRiders(_ rows: [[String: Any]]) {
+    var visible = Set<String>()
+    for row in rows.prefix(500) {
+      guard let id = row["id"] as? String, UUID(uuidString: id) != nil,
+            let lat = row["latitude"] as? Double,
+            let lon = row["longitude"] as? Double,
+            lat.isFinite, lon.isFinite,
+            (-34.15 ... -33.50).contains(lat), (150.50 ... 151.45).contains(lon) else { continue }
+      visible.insert(id)
+      let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+      if let existing = riderAnnotations[id] {
+        if abs(existing.coordinate.latitude - lat) > 0.000001 ||
+            abs(existing.coordinate.longitude - lon) > 0.000001 {
+          UIView.animate(withDuration: 1.0) { existing.coordinate = coordinate }
+        }
+      } else {
+        let marker = RiderAnnotation(identifier: id, coordinate: coordinate)
+        riderAnnotations[id] = marker
+        mapView.addAnnotation(marker)
+      }
+    }
+    for id in Array(riderAnnotations.keys) where !visible.contains(id) {
+      if let marker = riderAnnotations.removeValue(forKey: id) { mapView.removeAnnotation(marker) }
+    }
+    // No camera fitting, route overlay replacement or gesture reset here.
+  }
+
   func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+    if let rider = annotation as? RiderAnnotation {
+      let identifier = "navio-rider"
+      let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+          ?? MKAnnotationView(annotation: rider, reuseIdentifier: identifier)
+      view.annotation = rider
+      view.canShowCallout = true
+      view.clusteringIdentifier = "navio-riders"
+      let hue = CGFloat(rider.identifier.utf8.reduce(0) { ($0 + Int($1)) % 360 }) / 360
+      view.image = UIGraphicsImageRenderer(size: CGSize(width: 34, height: 34)).image { context in
+        UIColor.white.setFill()
+        context.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: 34, height: 34))
+        UIColor(hue: hue, saturation: 0.65, brightness: 0.78, alpha: 1).setFill()
+        context.cgContext.fillEllipse(in: CGRect(x: 2, y: 2, width: 30, height: 30))
+        UIImage(systemName: "person.fill")?.withTintColor(.white, renderingMode: .alwaysOriginal)
+            .draw(in: CGRect(x: 8, y: 7, width: 18, height: 20))
+      }
+      return view
+    }
     if annotation is RoutePreviewAnnotation {
       return RoutePreviewTriangleView(annotation: annotation,
                                       reuseIdentifier: "route-preview-triangle")

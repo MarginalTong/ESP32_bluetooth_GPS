@@ -6,6 +6,7 @@ import '../services/apple_maps_service.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/navigation_controller.dart';
+import '../controllers/rider_map_controller.dart';
 import '../l10n/app_text.dart';
 import '../models/lat_lng.dart';
 import '../models/device_direction.dart';
@@ -27,6 +28,7 @@ import 'widgets/connection_card.dart';
 import 'widgets/glass_panel.dart';
 import 'widgets/instruction_card.dart';
 import 'widgets/navigation_map.dart';
+import 'widgets/rider_map_button.dart';
 
 enum _AgentAction { open, guidance }
 
@@ -645,6 +647,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final nav = context.watch<NavigationController>();
+    final riders = context.watch<RiderMapController?>();
     final ble = context.watch<BleService>();
     final navigating = nav.phase == NavPhase.navigating ||
         nav.phase == NavPhase.routing ||
@@ -706,6 +709,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 routeAnimationId: _routeAnimationId,
                 mapStyle: _mapStyle,
                 showTraffic: _showTraffic,
+                riders: riders?.viewing == true ? riders!.riders : const [],
                 onRouteSelected: nav.selectRoute,
                 onDiagnostic: nav.recordMapDiagnostic,
                 onMapPointSelected: navigating ? null : _selectMapDestination,
@@ -737,6 +741,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               ),
             ),
+            Positioned(top: safe.top + 164, right: 16,
+                child: RiderMapButton(dark: _mapStyle != 'standard')),
             Positioned(
               left: 16,
               bottom: safe.bottom + 36,

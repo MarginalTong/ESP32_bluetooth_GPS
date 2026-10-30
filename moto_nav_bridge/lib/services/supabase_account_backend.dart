@@ -12,6 +12,7 @@ class SupabaseAccountBackend implements AccountBackend {
   SupabaseAccountBackend(this.client, {this.appleEnabled = false});
   final SupabaseClient? client;
   final bool appleEnabled;
+  Future<void> Function()? beforeSignOut;
   static Future<SupabaseAccountBackend> initialize(AccountConfig config) async {
     if (!config.configured) return SupabaseAccountBackend(null);
     final secure = SecureAuthStorage(Uri.parse(config.url).host);
@@ -113,6 +114,7 @@ class SupabaseAccountBackend implements AccountBackend {
 
   @override
   Future<void> signOut() async {
+    await beforeSignOut?.call();
     // The SDK clears the local session before its network revocation request.
     try {
       await _client.auth.signOut(scope: SignOutScope.local);

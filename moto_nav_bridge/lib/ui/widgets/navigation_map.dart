@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../l10n/app_text.dart';
 import '../../models/lat_lng.dart';
 import '../../models/route_candidate.dart';
+import '../../models/rider_presence.dart';
 
 class NavigationMap extends StatefulWidget {
   const NavigationMap({
@@ -13,6 +14,7 @@ class NavigationMap extends StatefulWidget {
     this.destination,
     this.destinationName,
     this.routes = const [],
+    this.riders = const [],
     this.selectedRouteIndex = 0,
     this.routeAnimationId = 0,
     this.mapStyle = 'standard',
@@ -34,6 +36,7 @@ class NavigationMap extends StatefulWidget {
   final LatLng? destination;
   final String? destinationName;
   final List<RouteCandidate> routes;
+  final List<RiderPresence> riders;
   final int selectedRouteIndex;
 
   /// Increment to replay the selected route from origin to destination.
@@ -61,6 +64,12 @@ class _NavigationMapState extends State<NavigationMap> {
   @override
   void didUpdateWidget(covariant NavigationMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(widget.riders, oldWidget.riders) &&
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      NavigationMap._control.invokeMethod<void>('updateRiders', {
+        'riders': widget.riders.map((r) => r.toMap()).toList(),
+      }).catchError((Object _) {});
+    }
     // The controller publishes a new immutable list when a route is replaced.
     // Shape summaries (distance/count/endpoints) can collide for distinct routes,
     // while hashing every coordinate on each GPS update is unnecessary work.
@@ -167,6 +176,7 @@ class _NavigationMapState extends State<NavigationMap> {
   }
 
   Map<String, Object?> get _creationParams => {
+        'riders': widget.riders.map((r) => r.toMap()).toList(),
         if (widget.origin != null) ...{
           'originLatitude': widget.origin!.latitude,
           'originLongitude': widget.origin!.longitude,
