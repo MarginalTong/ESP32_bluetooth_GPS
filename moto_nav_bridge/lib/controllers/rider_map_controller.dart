@@ -192,7 +192,9 @@ class RiderMapController extends ChangeNotifier {
         }
         final generation = _generation;
         final actor = _userId;
-        if (_retryPublishAt != null && _now().isBefore(_retryPublishAt!)) continue;
+        if (_retryPublishAt != null && _now().isBefore(_retryPublishAt!)) {
+          continue;
+        }
         if (_session == null) {
           final token = await backend.begin();
           if (_disposed ||

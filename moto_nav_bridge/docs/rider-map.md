@@ -32,6 +32,9 @@ configure. Markers are user-device reports, not verified identities or safety ai
 - Publishing is throttled to at most once every five seconds, with no duplicate
   fix republishing. GPS/BLE updates never await cloud I/O. Server writes are
   independently limited to once per four seconds per sharing session.
+  Publication failures back off for at least five seconds. A rejected update
+  triggers an explicit attempt to withdraw the previous session; a successful
+  viewer refresh cannot clear the publisher's failure warning.
 - Viewing polls the authenticated RPC about every five seconds while the map
   tab and app are visible. This is near-real-time polling, not a Supabase
   Realtime subscription or a guaranteed frame-by-frame tracking service.
@@ -80,6 +83,13 @@ Device acceptance: two accounts, consenting vs view-only vs guest; start, pause,
 resume, arrival/end; logout/account switch; lock-screen GPS; network loss and app
 kill; expired markers; unchanged map camera/gestures as avatars move. Never power
 or flash the cracked/hot display for this test.
+
+`test/rider_clients_local_test.dart` connects two controllers through the real
+Supabase Dart SDK to a shared test-only HTTP fixture. It checks wire payload
+rounding, position movement, view-only isolation, arrival withdrawal and response
+validation without publishing simulated riders online. Authentication and RPC
+responses are simulated, not a running PostgREST service. SQL/RLS has separate
+PostgreSQL/WASM tests. These layers do not replace two-phone hosted acceptance.
 
 ## Display arrival feedback
 
