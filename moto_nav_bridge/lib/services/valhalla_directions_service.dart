@@ -25,6 +25,8 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
     this.routePreferences,
   }) : _client = client ?? http.Client(),
        _routeUrl = routeUrl ?? ApiConfig.valhallaRouteUrl,
+       // Preserve the public `timeout` constructor parameter.
+       // ignore: prefer_initializing_formals
        _timeout = timeout;
 
   final http.Client _client;
@@ -235,8 +237,9 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
     }
     // Require every requested leg: never accept a response dropping a stop.
     final legs = trip['legs'];
-    if (legs is! List || legs.length != expectedLegs)
+    if (legs is! List || legs.length != expectedLegs) {
       throw const FormatException();
+    }
     final steps = <RouteStep>[];
     for (var i = 0; i < legs.length; i++) {
       final segment = _parseLeg(

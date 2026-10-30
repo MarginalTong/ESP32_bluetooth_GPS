@@ -13,6 +13,7 @@ import '../services/nearby_places.dart';
 import '../models/nav_state.dart';
 import '../models/device_direction.dart';
 import '../models/route_candidate.dart';
+import '../models/place_result.dart';
 import '../services/directions_exception.dart';
 import '../services/location_service.dart';
 import '../services/navigation_ports.dart';
@@ -22,6 +23,7 @@ import '../services/route_alignment.dart';
 import '../services/voice_navigation_query.dart';
 import '../services/route_preference.dart';
 import '../services/valhalla_directions_service.dart';
+import '../services/waypoint_plan.dart';
 
 enum NavPhase { idle, routing, navigating, paused, arrived, error }
 
@@ -37,6 +39,8 @@ class NavigationController extends ChangeNotifier {
     PositionProvider? location,
     SideRoadProvider? sideRoads,
     SharedPreferences? preferences,
+  // Preserve the public `preferences` constructor parameter.
+  // ignore: prefer_initializing_formals
   })  : _preferences = preferences,
         _location = location ?? LocationService(),
         _sideRoads = sideRoads ?? SideRoadService() {
@@ -104,7 +108,7 @@ class NavigationController extends ChangeNotifier {
     avoidTunnels = tunnels;
     // A preview made with old preferences must not remain selectable.
     if (_sideRoads is RouteSideRoadProvider) {
-      (_sideRoads as RouteSideRoadProvider).cancelPrefetch();
+      _sideRoads.cancelPrefetch();
     }
     _routeOptions = const [];
     _selectedRouteIndex = 0;
@@ -254,6 +258,23 @@ class NavigationController extends ChangeNotifier {
 
   LatLng? _destination;
   LatLng? get destination => _destination;
+
+  WaypointPlan _waypointPlan = WaypointPlan(const []);
+  List<PlaceResult> get waypoints => _waypointPlan.stops;
+  int get completedWaypoints => _waypointPlan.completed;
+
+  Future<List<RouteCandidate>> _fetchTripRoutes(RouteProvider provider,
+      {required LatLng origin, required LatLng destination}) {
+    final remaining = _waypointPlan.remaining;
+    if (remaining.isEmpty) {
+      return provider.fetchRoutes(origin: origin, destination: destination);
+    }
+    if (provider is! WaypointRouteProvider) {
+      throw DirectionsException('Route provider does not support waypoints');
+    }
+    return provider.fetchWaypointRoutes(origin: origin,
+        destination: destination, waypoints: remaining);
+  }
 
   List<RouteCandidate> _routeOptions = const [];
   List<RouteCandidate> get routeOptions => _routeOptions;
@@ -503,11 +524,13 @@ class NavigationController extends ChangeNotifier {
 
   /// Builds route options for the destination panel without starting live
   /// navigation or writing instructions to the ESP32.
-  Future<void> previewDestination(LatLng destination) async {
+  Future<void> previewDestination(LatLng destination,
+      {List<PlaceResult> waypoints = const []}) async {
     if (_phase != NavPhase.idle && _phase != NavPhase.error) return;
+    final plan = WaypointPlan(waypoints);
 
     if (_sideRoads is RouteSideRoadProvider) {
-      (_sideRoads as RouteSideRoadProvider).cancelPrefetch();
+      _sideRoads.cancelPrefetch();
     }
 
     // A newer preview, Start or stop supersedes this request. Its late result
@@ -520,6 +543,10 @@ class NavigationController extends ChangeNotifier {
 
     _previewRouteExplicitlySelected = false;
     _destination = destination;
+    _waypointPlan = plan;
+    _routeOptions = const [];
+    _engine = null;
+    _current = null;
     _previewingRoute = true;
     _snapshotPreferences();
     _error = null;
@@ -536,7 +563,7 @@ class NavigationController extends ChangeNotifier {
       if (!current()) return;
       final origin = await _location.currentPosition();
       if (!current()) return;
-      final routes = await _directions.fetchRoutes(
+      final routes = await _fetchTripRoutes(_directions,
         origin: origin,
         destination: destination,
       );
@@ -559,10 +586,18 @@ class NavigationController extends ChangeNotifier {
 
   /// Builds a route from the current location to [destination] and starts
   /// streaming navigation updates to the device.
-  Future<void> startNavigation(LatLng destination) async {
+  Future<void> startNavigation(LatLng destination,
+      {List<PlaceResult>? waypoints}) async {
+    final stops = waypoints ??
+        (((_destination?.distanceTo(destination) ?? double.infinity) < 5)
+            ? this.waypoints : const <PlaceResult>[]);
+    final plan = WaypointPlan(stops);
     // A route picked on the preview map is an explicit user choice. Keep it
     // across the fresh route request made when the trip starts.
     final previewSelection = _previewRouteExplicitlySelected &&
+            stops.length == this.waypoints.length &&
+            stops.asMap().entries.every((e) =>
+                e.value.location.distanceTo(this.waypoints[e.key].location) < 1) &&
             _phase == NavPhase.idle &&
             _destination != null &&
             _destination!.distanceTo(destination) < 5 &&
@@ -570,6 +605,7 @@ class NavigationController extends ChangeNotifier {
         ? _selectedRouteIndex
         : null;
     await stopNavigation();
+    _waypointPlan = plan;
     _snapshotPreferences();
 
     if (!await _location.ensurePermission()) {
@@ -584,7 +620,7 @@ class NavigationController extends ChangeNotifier {
       _latestPosition = origin;
       _destination = destination;
       notifyListeners();
-      final routes = await _directions.fetchRoutes(
+      final routes = await _fetchTripRoutes(_directions,
         origin: origin,
         destination: destination,
       );
@@ -676,13 +712,16 @@ class NavigationController extends ChangeNotifier {
     }
 
     if (_sideRoads is RouteSideRoadProvider) {
-      (_sideRoads as RouteSideRoadProvider).advancePrefetch(pos);
+      _sideRoads.advancePrefetch(pos);
       _applyCachedSideRoads(pos);
     } else {
       unawaited(_maybeRefreshSideRoads(pos));
     }
 
     final navState = engine.update(pos);
+    if (_offRouteSamples == 0 && !_awaitingValidRoute && selectedRoute != null) {
+      _waypointPlan.update(selectedRoute!, engine.currentStepIndex, pos);
+    }
     _current = navState;
     if (_offRouteSamples == 0 && !_awaitingValidRoute) {
       _lastReliableNavState = navState;
@@ -788,7 +827,7 @@ class NavigationController extends ChangeNotifier {
 
     try {
       unawaited(ble.send(_current!));
-      final routes = await _rerouteDirections.fetchRoutes(
+      final routes = await _fetchTripRoutes(_rerouteDirections,
         origin: pos,
         destination: destination,
       );
@@ -1024,8 +1063,8 @@ class NavigationController extends ChangeNotifier {
     try {
       final start = await currentFreshFix();
       if (start == null) return false;
-      final routes = await _directions
-          .fetchRoutes(origin: start, destination: destination)
+      final routes = await _fetchTripRoutes(_directions,
+          origin: start, destination: destination)
           .timeout(const Duration(seconds: 25));
       if (!valid()) return false;
       final latest = await currentFreshFix();
@@ -1054,6 +1093,8 @@ class NavigationController extends ChangeNotifier {
       _routeOptions = List.unmodifiable(aligned);
       _selectedRouteIndex = selected;
       _engine = nextEngine;
+      _waypointPlan.bindRoute();
+      _waypointPlan.update(aligned[selected], nextEngine.currentStepIndex, latest);
       _current = nextState;
       _error = null;
       _offRouteSamples = 0;
@@ -1088,7 +1129,13 @@ class NavigationController extends ChangeNotifier {
     _selectedRouteIndex = selectedIndex.clamp(0, routes.length - 1);
     final selected = _routeOptions[_selectedRouteIndex];
     _engine = NavigationEngine(selected.steps, sideRoads: selected.sideRoads);
-    _lastReliableNavState = _engine!.update(selected.polyline.first);
+    _waypointPlan.bindRoute();
+    final initialPosition = _waypointPlan.stops.isEmpty
+        ? selected.polyline.first : (_latestPosition ?? selected.polyline.first);
+    _lastReliableNavState = _engine!.update(initialPosition);
+    if (_phase == NavPhase.routing || _phase == NavPhase.navigating) {
+      _waypointPlan.update(selected, _engine!.currentStepIndex, initialPosition);
+    }
   }
 
   void _startRouteSideRoadPrefetch() {
@@ -1277,7 +1324,7 @@ class NavigationController extends ChangeNotifier {
     _previewRequestId++;
     _previewingRoute = false;
     if (_sideRoads is RouteSideRoadProvider) {
-      (_sideRoads as RouteSideRoadProvider).cancelPrefetch();
+      _sideRoads.cancelPrefetch();
     }
     await _posSub?.cancel();
     _posSub = null;
@@ -1290,6 +1337,7 @@ class NavigationController extends ChangeNotifier {
     _origin = null;
     _latestPosition = null;
     _destination = null;
+    _waypointPlan = WaypointPlan(const []);
     _routeOptions = const [];
     _selectedRouteIndex = 0;
     _previewRouteExplicitlySelected = false;

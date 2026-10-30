@@ -29,6 +29,7 @@ class NavigationEngine {
   List<RoadSegment> _sideRoads;
 
   int _index = 0;
+  final Set<int> _reachedWaypoints = {};
   int _matchSegment = 0;
   int _matchStep = -1;
   bool reverseTravel = false;
@@ -97,6 +98,16 @@ class NavigationEngine {
     while (_index < n - 1) {
       final current = _steps[_index];
       final distToCurrentEnd = position.distanceTo(current.end);
+      final stop = current.waypointIndex;
+      if (stop != null && distToCurrentEnd <= 25 &&
+          (position is! NavigationFix ||
+              (position.accuracy.isFinite && position.accuracy >= 0 &&
+               position.accuracy <= 25 &&
+               DateTime.now().difference(position.timestamp).abs() <= const Duration(seconds: 10)))) {
+        if (_reachedWaypoints.add(stop)) _remainingRouteCacheIndex = -1;
+      }
+      // A required stop must not be skipped by the normal overshoot heuristic.
+      if (stop != null && !_reachedWaypoints.contains(stop)) break;
       final distToNextEnd = position.distanceTo(_steps[_index + 1].end);
 
       final reached = distToCurrentEnd <= arrivalThresholdMeters;
@@ -568,6 +579,8 @@ class NavigationEngine {
           output.add(point);
         }
       }
+      final stop = _steps[i].waypointIndex;
+      if (stop != null && !_reachedWaypoints.contains(stop)) break;
     }
     _remainingRouteCacheIndex = _index;
     _remainingRouteCache = List.unmodifiable(output);
