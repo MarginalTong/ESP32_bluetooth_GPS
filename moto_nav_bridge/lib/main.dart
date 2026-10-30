@@ -14,6 +14,7 @@ import 'services/local_account_data.dart';
 import 'services/supabase_account_backend.dart';
 import 'services/ble_service.dart';
 import 'ui/app_shell.dart';
+import 'ui/navio_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -88,33 +89,8 @@ class NavioApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: AppBrand.name,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xff007aff),
-            brightness: Brightness.light,
-          ),
-          scaffoldBackgroundColor: const Color(0xfff2f4f7),
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: const Color(0xffe9eef4),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-          ),
-          filledButtonTheme: FilledButtonThemeData(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0x387bbfff),
-              foregroundColor: Colors.white,
-              side: const BorderSide(color: Color(0x55ffffff)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-              textStyle: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-          useMaterial3: true,
-        ),
+        theme: NavioTheme.light(),
+        darkTheme: NavioTheme.dark(),
         debugShowCheckedModeBanner: false,
         home: const AppShell(),
       ),
