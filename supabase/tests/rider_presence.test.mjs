@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 let db;
 const watchdog=setTimeout(()=>{console.error('Presence database test timed out');process.exit(1);},45000);
-watchdog.unref();
+// Keep the event loop alive while PostgreSQL's WASM module initializes.
 const a='10000000-0000-4000-8000-000000000001', b='10000000-0000-4000-8000-000000000002';
 before(async()=>{
  console.info('Initializing presence database');
@@ -17,7 +17,7 @@ before(async()=>{
  await db.exec(await readFile(new URL('../migrations/202610300002_rider_presence.sql',import.meta.url),'utf8'));
  console.info('Presence schema ready');
 });
-after(async()=>{await db?.close();});
+after(async()=>{try{await db?.close();}finally{clearTimeout(watchdog);}});
 async function as(id,query,args=[]){
  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);
  await db.exec('set role '+(id?'authenticated':'anon'));

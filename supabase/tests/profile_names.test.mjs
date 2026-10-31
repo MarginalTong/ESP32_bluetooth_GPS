@@ -23,6 +23,7 @@ before(async () => {
   await db.exec(await readFile(new URL('../migrations/202610300001_accounts.sql', import.meta.url), 'utf8'));
   await db.query('insert into public.profiles(user_id,display_name) values($1,$2)', [a, 'Existing rider']);
   await db.exec(await readFile(new URL('../migrations/202610310002_profile_names.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../migrations/202610310003_automatic_settings_sync.sql', import.meta.url), 'utf8'));
 });
 after(async () => { try { await db?.close(); } finally { clearTimeout(watchdog); } });
 async function as(id, query, args = []) {
@@ -80,4 +81,18 @@ test('deleted accounts cannot recreate profiles using a stale session', async ()
   await db.query('delete from auth.users where id=$1', [c]);
   await assert.rejects(() => get(c), e => e.code === '23503');
   await assert.rejects(() => set('Ghost', 0, c), e => e.code === '23503');
+});
+test('automatic sync rejects anonymous and switched-account requests', async () => {
+  const data = JSON.stringify({display_name: '', preferences: {}, places: []});
+  await assert.rejects(() => as('', 'select public.navio_sync_settings($1,$2::jsonb,1)', [a,data]), e => e.code === '42501');
+  await assert.rejects(() => as(b, 'select public.navio_sync_settings($1,$2::jsonb,1)', [a,data]), e => e.code === '42501');
+  assert.equal((await as(a,'select public.navio_get_account_data() data'))[0].data.revision, 1);
+});
+test('automatic sync keeps revision protection and never changes the profile name', async () => {
+  const before = await get();
+  const data = JSON.stringify({display_name: 'Stale cached name', preferences: {map_style: 'satellite'}, places: []});
+  const result = (await as(a, 'select public.navio_sync_settings($1,$2::jsonb,1) revision', [a,data]))[0];
+  assert.equal(Number(result.revision), 2);
+  assert.deepEqual(await get(), before);
+  await assert.rejects(() => as(a, 'select public.navio_sync_settings($1,$2::jsonb,1)', [a,data]), e => e.code === 'PT409');
 });

@@ -5,7 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 // Fail a hung database fixture instead of leaving CI running indefinitely.
 const watchdog = setTimeout(() => { console.error('Database test timeout'); process.exit(1); }, 45000);
-watchdog.unref();
+// Keep the event loop alive while PostgreSQL's WASM module initializes.
 
 let db;
 const a = '10000000-0000-4000-8000-000000000001';
@@ -32,7 +32,7 @@ before(async () => {
   await db.exec(await readFile(new URL('../migrations/202610300001_accounts.sql', import.meta.url), 'utf8'));
   console.info('Account migration ready');
 });
-after(async () => { await db?.close(); });
+after(async () => { try { await db?.close(); } finally { clearTimeout(watchdog); } });
 async function user(id, fn, role = 'authenticated') {
   await db.exec('begin');
   try {
