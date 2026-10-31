@@ -161,11 +161,21 @@ class SupabaseAccountBackend implements AccountBackend {
     Map<String, dynamic>.from(await _client.rpc('navio_get_account_data')),
   );
   @override
-  Future<int> upload(AccountData data, int revision) async {
+  Future<int> upload(
+    AccountData data,
+    int revision, {
+    String? expectedUser,
+  }) async {
     try {
       final result = await _client.rpc(
-        'navio_save_account_data',
-        params: {'payload': data.toCloud(), 'expected_revision': revision},
+        expectedUser == null
+            ? 'navio_save_account_data'
+            : 'navio_sync_settings',
+        params: {
+          if (expectedUser != null) 'p_expected_user': expectedUser,
+          'payload': data.toCloud(),
+          'expected_revision': revision,
+        },
       );
       return (result as num).toInt();
     } on PostgrestException catch (e) {

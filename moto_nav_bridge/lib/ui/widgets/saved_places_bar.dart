@@ -3,6 +3,8 @@ import 'package:flutter/material.dart' show MaterialPageRoute;
 import '../../l10n/app_text.dart';
 import '../../models/place_result.dart';
 import '../../services/saved_places.dart';
+import 'package:provider/provider.dart';
+import '../../controllers/account_controller.dart';
 import '../place_search_page.dart';
 
 class SavedPlacesBar extends StatefulWidget {
@@ -17,6 +19,20 @@ class _SavedPlacesBarState extends State<SavedPlacesBar> {
   Map<String, PlaceResult> places = {};
   bool busy = true;
   String? error;
+  String? _settingsStamp;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final account = context.watch<AccountController?>();
+    final stamp = '${account?.localGeneration}:${account?.settingsRevision}';
+    if (_settingsStamp != null && _settingsStamp != stamp) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) load();
+      });
+    }
+    _settingsStamp = stamp;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -39,7 +55,8 @@ class _SavedPlacesBarState extends State<SavedPlacesBar> {
     setState(() => busy = true);
     try {
       final place = await Navigator.of(context).push<PlaceResult>(
-          MaterialPageRoute(builder: (_) => const PlaceSearchPage()));
+        MaterialPageRoute(builder: (_) => const PlaceSearchPage()),
+      );
       if (place == null || !mounted) return;
       await store.save(slot, place);
       if (mounted) {
@@ -59,47 +76,55 @@ class _SavedPlacesBarState extends State<SavedPlacesBar> {
   Widget build(BuildContext context) {
     final en = AppText.of(context).isEnglish;
     final names = en ? ['Home', 'Work', 'School'] : ['家', '公司', '学校'];
-    return Column(children: [
-      CupertinoListSection.insetGrouped(children: [
-        for (var i = 0; i < SavedPlaces.slots.length; i++)
-          CupertinoListTile(
-            leading: Icon(
-                [
-                  CupertinoIcons.house,
-                  CupertinoIcons.briefcase,
-                  CupertinoIcons.book,
-                ][i],
-                color: CupertinoColors.activeBlue),
-            title: Text(names[i]),
-            subtitle: Text(
-              places[SavedPlaces.slots[i]]?.name ?? (en ? 'Not set' : '未设置'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            onTap: busy
-                ? null
-                : () {
-                    final place = places[SavedPlaces.slots[i]];
-                    if (place == null) {
-                      edit(SavedPlaces.slots[i]);
-                    } else {
-                      widget.onSelected(place);
-                    }
-                  },
-            trailing: CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: busy ? null : () => edit(SavedPlaces.slots[i]),
-              child: Text(en ? 'Edit' : '修改'),
+    return Column(
+      children: [
+        CupertinoListSection.insetGrouped(
+          children: [
+            for (var i = 0; i < SavedPlaces.slots.length; i++)
+              CupertinoListTile(
+                leading: Icon(
+                  [
+                    CupertinoIcons.house,
+                    CupertinoIcons.briefcase,
+                    CupertinoIcons.book,
+                  ][i],
+                  color: CupertinoColors.activeBlue,
+                ),
+                title: Text(names[i]),
+                subtitle: Text(
+                  places[SavedPlaces.slots[i]]?.name ??
+                      (en ? 'Not set' : '未设置'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: busy
+                    ? null
+                    : () {
+                        final place = places[SavedPlaces.slots[i]];
+                        if (place == null) {
+                          edit(SavedPlaces.slots[i]);
+                        } else {
+                          widget.onSelected(place);
+                        }
+                      },
+                trailing: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: busy ? null : () => edit(SavedPlaces.slots[i]),
+                  child: Text(en ? 'Edit' : '修改'),
+                ),
+              ),
+          ],
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              en
+                  ? 'Could not load or save address. Please try again.'
+                  : '地址读取或保存失败，请重试。',
             ),
           ),
-      ]),
-      if (error != null)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Text(en
-              ? 'Could not load or save address. Please try again.'
-              : '地址读取或保存失败，请重试。'),
-        ),
-    ]);
+      ],
+    );
   }
 }

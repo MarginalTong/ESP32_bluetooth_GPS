@@ -21,6 +21,7 @@ import '../services/route_alignment.dart';
 import '../services/route_preference.dart';
 import '../services/valhalla_directions_service.dart';
 import '../services/waypoint_plan.dart';
+import '../services/settings_store.dart';
 
 enum NavPhase { idle, routing, navigating, paused, arrived, error }
 
@@ -63,25 +64,34 @@ class NavigationController extends ChangeNotifier {
   // The obsolete testUnlock field is deliberately ignored.
   static const _preferencesKey = 'route_preferences_test_v1';
 
-  Future<void> savePreferences(
-      {required bool highways,
-      required bool tolls,
-      required bool ferries,
-      bool tunnels = false}) async {
+  Future<void> savePreferences({
+    required bool highways,
+    required bool tolls,
+    required bool ferries,
+    bool tunnels = false,
+  }) async {
     if (!canEditPreferences) throw StateError('Navigation is active');
     final store = _preferences ?? await SharedPreferences.getInstance();
-    final saved = await store.setString(
+    await SettingsStore.edit(store, () async {
+      if (!canEditPreferences) throw StateError('Navigation is active');
+      final saved = await store.setString(
         _preferencesKey,
         jsonEncode({
           'highways': highways,
           'tolls': tolls,
           'ferries': ferries,
           'tunnels': tunnels,
-        }));
-    if (!saved) throw StateError('Preferences could not be saved');
-    if (_disposed) return;
-    updatePreferences(
-        highways: highways, tolls: tolls, ferries: ferries, tunnels: tunnels);
+        }),
+      );
+      if (!saved) throw StateError('Preferences could not be saved');
+      if (_disposed) return;
+      updatePreferences(
+        highways: highways,
+        tolls: tolls,
+        ferries: ferries,
+        tunnels: tunnels,
+      );
+    });
   }
 
   final NavigationBlePort ble;
@@ -93,11 +103,12 @@ class NavigationController extends ChangeNotifier {
       !_previewingRoute &&
       (_phase == NavPhase.idle || _phase == NavPhase.error);
 
-  void updatePreferences(
-      {required bool highways,
-      required bool tolls,
-      required bool ferries,
-      bool tunnels = false}) {
+  void updatePreferences({
+    required bool highways,
+    required bool tolls,
+    required bool ferries,
+    bool tunnels = false,
+  }) {
     if (!canEditPreferences) return;
     avoidHighways = highways;
     avoidTolls = tolls;

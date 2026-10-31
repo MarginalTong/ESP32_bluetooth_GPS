@@ -21,7 +21,7 @@ abstract interface class AccountBackend {
   Future<void> resetPassword(String email, String code, String password);
   Future<void> signOut();
   Future<AccountData> download();
-  Future<int> upload(AccountData data, int revision);
+  Future<int> upload(AccountData data, int revision, {String? expectedUser});
   Future<void> deleteAccount();
 }
 

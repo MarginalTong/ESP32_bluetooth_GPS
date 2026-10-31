@@ -6,18 +6,20 @@ import '../services/account_backend.dart';
 import '../services/local_account_data.dart';
 import 'navigation_controller.dart';
 
-/// Cloud operations are explicit and do not participate in GPS/BLE processing.
+/// Account/session ownership stays separate from background settings sync.
 class AccountController extends ChangeNotifier {
   AccountController(this.backend, this.local);
   final AccountBackend backend;
   final LocalAccountData local;
   StreamSubscription<AccountUser?>? _authSubscription;
   NavigationController? _navigation;
+  bool _lastCanModify = true, _settingsPending = false;
   AccountUser? _user;
   AccountUser? get user => _user;
   bool busy = false;
   bool _reconciling = false, _disposed = false;
   int localGeneration = 0;
+  int settingsRevision = 0;
   String? error;
   DateTime? lastSync;
   bool get available => backend.available;
@@ -49,11 +51,43 @@ class AccountController extends ChangeNotifier {
     if (identical(_navigation, navigation)) return;
     _navigation?.removeListener(_navigationChanged);
     _navigation = navigation;
+    _lastCanModify = canModify;
     navigation.addListener(_navigationChanged);
   }
 
   void _navigationChanged() {
     if (canModify && !busy) unawaited(_reconcile());
+    if (canModify && _settingsPending) {
+      _settingsPending = false;
+      settingsDidSync();
+    }
+    if (_lastCanModify != canModify) {
+      _lastCanModify = canModify;
+      _notify();
+    }
+  }
+
+  void settingsDidSync() {
+    if (!canModify) {
+      _settingsPending = true;
+      return;
+    }
+    final p = local.capture().preferences;
+    final nav = _navigation;
+    if (nav != null &&
+        (nav.avoidHighways != (p['avoid_highways'] == true) ||
+            nav.avoidTolls != (p['avoid_tolls'] == true) ||
+            nav.avoidFerries != (p['avoid_ferries'] == true) ||
+            nav.avoidTunnels != (p['avoid_tunnels'] == true))) {
+      nav.updatePreferences(
+        highways: p['avoid_highways'] == true,
+        tolls: p['avoid_tolls'] == true,
+        ferries: p['avoid_ferries'] == true,
+        tunnels: p['avoid_tunnels'] == true,
+      );
+    }
+    settingsRevision++;
+    _notify();
   }
 
   void _notify() {

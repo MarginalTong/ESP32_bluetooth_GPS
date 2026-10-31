@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/navigation_controller.dart';
+import '../controllers/account_controller.dart';
 import '../controllers/rider_map_controller.dart';
 import '../l10n/app_text.dart';
 import '../models/lat_lng.dart';
@@ -37,6 +38,7 @@ class _HomePageState extends State<HomePage> {
   PlaceResult? _destination;
   String _mapStyle = 'standard';
   bool _showTraffic = false;
+  int _settingsRevision = -1;
   final _guidance = VoiceGuidancePlanner();
   NavigationController? _voiceNav;
   bool _voiceEnabled = false;
@@ -97,6 +99,15 @@ class _HomePageState extends State<HomePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final revision = context.watch<AccountController?>()?.settingsRevision ?? 0;
+    if (_settingsRevision != revision) {
+      if (_settingsRevision >= 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _loadMapSettings();
+        });
+      }
+      _settingsRevision = revision;
+    }
     final nav = context.read<NavigationController>();
     if (identical(nav, _voiceNav)) return;
     _voiceNav?.removeListener(_announce);

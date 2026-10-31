@@ -6,6 +6,9 @@ import '../l10n/app_text.dart';
 import '../models/place_result.dart';
 import 'widgets/saved_places_bar.dart';
 import 'navio_theme.dart';
+import '../services/settings_store.dart';
+import 'package:provider/provider.dart';
+import '../controllers/account_controller.dart';
 
 class MapSettingsPage extends StatefulWidget {
   const MapSettingsPage({super.key});
@@ -21,6 +24,20 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
   String style = 'standard';
   bool traffic = false;
   bool loaded = false;
+  String? _loadedActor;
+  String? _settingsStamp;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final account = context.watch<AccountController?>();
+    final stamp = '${account?.localGeneration}:${account?.settingsRevision}';
+    if (_settingsStamp != null && _settingsStamp != stamp) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _load();
+      });
+    }
+    _settingsStamp = stamp;
+  }
 
   @override
   void initState() {
@@ -32,6 +49,7 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
+      _loadedActor = prefs.getString(SettingsStore.activeKey);
       final saved = prefs.getString(MapSettingsPage.styleKey);
       style =
           {'standard', 'standard_dark', 'hybrid', 'satellite'}.contains(saved)
@@ -46,8 +64,16 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
     final previous = style;
     setState(() => style = value);
     final prefs = await SharedPreferences.getInstance();
-    if (!await prefs.setString(MapSettingsPage.styleKey, value) && mounted) {
-      setState(() => style = previous);
+    try {
+      await SettingsStore.edit(prefs, () async {
+        if (!await prefs.setString(MapSettingsPage.styleKey, value)) {
+          throw StateError('Save failed');
+        }
+      }, expectedActor: _loadedActor);
+    } catch (_) {
+      if (mounted) {
+        setState(() => style = previous);
+      }
     }
   }
 
@@ -55,8 +81,16 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
     final previous = traffic;
     setState(() => traffic = value);
     final prefs = await SharedPreferences.getInstance();
-    if (!await prefs.setBool(MapSettingsPage.trafficKey, value) && mounted) {
-      setState(() => traffic = previous);
+    try {
+      await SettingsStore.edit(prefs, () async {
+        if (!await prefs.setBool(MapSettingsPage.trafficKey, value)) {
+          throw StateError('Save failed');
+        }
+      }, expectedActor: _loadedActor);
+    } catch (_) {
+      if (mounted) {
+        setState(() => traffic = previous);
+      }
     }
   }
 

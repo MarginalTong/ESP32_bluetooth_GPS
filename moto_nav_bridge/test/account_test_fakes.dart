@@ -82,9 +82,16 @@ class FakeAccountBackend implements AccountBackend {
   }
 
   @override
-  Future<int> upload(AccountData data, int revision) async {
+  Future<int> upload(
+    AccountData data,
+    int revision, {
+    String? expectedUser,
+  }) async {
     await uploadGate?.future;
     check();
+    if (expectedUser != null && user?.id != expectedUser) {
+      throw const AccountFailure('session');
+    }
     if (revision != cloud.revision) throw const AccountFailure('conflict');
     uploads++;
     cloud = AccountData(
