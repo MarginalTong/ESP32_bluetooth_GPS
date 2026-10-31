@@ -7,19 +7,17 @@ import 'package:flutter/foundation.dart';
 
 import '../l10n/app_text.dart';
 import '../models/lat_lng.dart';
-import '../models/place_result.dart';
 import '../models/road_segment.dart';
-import '../services/nearby_places.dart';
 import '../models/nav_state.dart';
 import '../models/device_direction.dart';
 import '../models/route_candidate.dart';
+import '../models/place_result.dart';
 import '../services/directions_exception.dart';
 import '../services/location_service.dart';
 import '../services/navigation_ports.dart';
 import '../services/navigation_engine.dart';
 import '../services/side_road_service.dart';
 import '../services/route_alignment.dart';
-import '../services/voice_navigation_query.dart';
 import '../services/route_preference.dart';
 import '../services/valhalla_directions_service.dart';
 import '../services/waypoint_plan.dart';
@@ -125,21 +123,6 @@ class NavigationController extends ChangeNotifier {
     };
   }
 
-  /// Place search needs a measured location, not a valid turn announcement.
-  /// These are different safety checks: a stationary phone can stop receiving
-  /// stream callbacks while the active route itself remains valid.
-  LatLng? get voiceSearchOrigin {
-    if (_disposed ||
-        _phase != NavPhase.navigating ||
-        _destination == null ||
-        _rerouting ||
-        _awaitingValidRoute) {
-      return null;
-    }
-    final fix = _latestPosition;
-    return _usableVoiceFix(fix) ? fix : null;
-  }
-
   bool _usableVoiceFix(LatLng? value) =>
       value is NavigationFix &&
       value.accuracy.isFinite &&
@@ -147,79 +130,6 @@ class NavigationController extends ChangeNotifier {
       value.accuracy <= 50 &&
       DateTime.now().difference(value.timestamp).abs() <
           const Duration(seconds: 45);
-
-  /// Refresh only when the navigation stream has gone quiet. A one-shot fix
-  /// is never used to advance a maneuver or silently replace the route.
-  Future<LatLng?> refreshVoiceSearchOrigin() async {
-    final existing = voiceSearchOrigin;
-    if (existing != null) return existing;
-    if (_disposed ||
-        _phase != NavPhase.navigating ||
-        _destination == null ||
-        _rerouting ||
-        _awaitingValidRoute) {
-      return null;
-    }
-    final destination = _destination;
-    try {
-      final measured =
-          await _location.currentPosition().timeout(const Duration(seconds: 8));
-      if (_disposed ||
-          _phase != NavPhase.navigating ||
-          !identical(destination, _destination) ||
-          _rerouting ||
-          _awaitingValidRoute ||
-          !_usableVoiceFix(measured)) {
-        return null;
-      }
-      // A newer stream fix wins; do not overwrite it with an older snapshot.
-      final latest = _latestPosition;
-      if (latest is NavigationFix &&
-          latest.timestamp.isAfter((measured as NavigationFix).timestamp)) {
-        return voiceSearchOrigin;
-      }
-      _latestPosition = measured;
-      return measured;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<List<NearbyChoice>> rankNearbyPlaces(List<PlaceResult> places,
-      LatLng origin, bool Function() isCurrent) async {
-    final destination = _destination;
-    bool valid() =>
-        !_disposed &&
-        isCurrent() &&
-        identical(destination, _destination) &&
-        voiceSearchOrigin != null &&
-        origin.distanceTo(voiceSearchOrigin!) <= 250;
-    final ranked = <NearbyChoice>[];
-    for (final place in places.take(5)) {
-      if (!valid()) return const [];
-      try {
-        final routes = await _directions
-            .fetchRoutes(origin: origin, destination: place.location)
-            .timeout(const Duration(seconds: 8));
-        if (!valid()) return const [];
-        final usable = routes
-            .where((r) =>
-                r.steps.isNotEmpty &&
-                r.steps.last.end.distanceTo(place.location) <= 200 &&
-                !RouteAlignment.conflictsWithCourse(r, origin) &&
-                !NavigationEngine(r.steps).isOffRoute(origin) &&
-                r.expectedTravelTimeSeconds != null &&
-                r.expectedTravelTimeSeconds! > 0)
-            .toList();
-        if (usable.isEmpty) continue;
-        final route =
-            usable[preferredRouteIndex(usable, avoidEarlyUTurns: true)];
-        ranked.add(NearbyChoice(place, route.expectedTravelTimeSeconds!));
-      } catch (_) {/* Unreachable or timed out: never invent an ETA. */}
-    }
-    ranked.sort((a, b) => a.seconds.compareTo(b.seconds));
-    return valid() ? ranked : const [];
-  }
 
   late final RouteProvider _rerouteDirections;
   final PositionProvider _location;
@@ -290,26 +200,16 @@ class NavigationController extends ChangeNotifier {
 
   NavigationEngine? _engine;
   int get voiceStepIndex => _engine?.currentStepIndex ?? 0;
-  int? get voiceRemainingSeconds {
-    final position = _latestPosition;
-    final route = selectedRoute;
-    if (_disposed ||
-        _phase != NavPhase.navigating ||
-        _rerouting ||
-        _awaitingValidRoute ||
-        position is! NavigationFix ||
-        route == null ||
-        !position.accuracy.isFinite ||
-        position.accuracy < 0 ||
-        position.accuracy > 75 ||
-        DateTime.now().difference(position.timestamp).abs() >=
-            const Duration(seconds: 60)) {
-      return null;
-    }
-    return estimateRemainingRouteSeconds(route, position, voiceStepIndex,
-        maxDistanceMeters: (position.accuracy * 2).clamp(25, 120).toDouble());
+
+  /// The newest stream fix, for voice timing (speed, accuracy); null when the
+  /// position carries no fix details.
+  NavigationFix? get voiceFix {
+    final fix = _latestPosition;
+    return fix is NavigationFix ? fix : null;
   }
 
+  /// The last reroute attempt failed and an automatic retry is pending.
+  bool get rerouteFailed => _rerouteFailure != null;
   StreamSubscription<LatLng>? _posSub;
   Timer? _gpsRestartTimer;
   Timer? _heartbeatTimer;
@@ -400,8 +300,6 @@ class NavigationController extends ChangeNotifier {
     if (event == 'tap_received' ||
         event == 'region_changed' ||
         const {
-          'route_preview_started',
-          'route_preview_stopped',
           'fit_skipped_active_gesture',
           'fit_requested',
         }.contains(event) ||
@@ -409,28 +307,14 @@ class NavigationController extends ChangeNotifier {
         // The map reset gesture recognizers UIKit left stuck.
         RegExp(r'^recognizers_reset reason=(sequence_end|missed_touch) '
                 r'count=\d{1,3} states=[0-9/,]{1,300}$')
+            .hasMatch(event) ||
+        event == 'view_recreate' ||
+        RegExp(r'^gate_reattach count=\d{1,3}$').hasMatch(event) ||
+        // Which touch-gate recognizer holds a touch the map never received.
+        RegExp(r'^touch_gate observer=\d/\d{1,2} '
+                r'ancestors=[0-9A-Za-z_:/,|]{1,600}$')
             .hasMatch(event)) {
       _log('map $event');
-    }
-  }
-
-  void recordAgentDiagnostic(String event) {
-    if (const {
-      'opened',
-      'closed',
-      'wake_started',
-      'wake_stopped',
-      'wake_paused_background',
-      'wake_paused_interruption',
-      'wake_paused_route',
-      'wake_resume_foreground',
-      'wake_resume_interruption',
-      'wake_resume_route',
-      'wake_listening_en',
-      'wake_listening_zh',
-      'wake_unavailable'
-    }.contains(event)) {
-      _log('agent $event phase=${_phase.name}');
     }
   }
 
@@ -495,6 +379,13 @@ class NavigationController extends ChangeNotifier {
   List<RoadSegment> _lastAppliedSideRoads = const [];
 
   static const int _offRouteSamplesBeforeReroute = 2;
+  // Recent stream fixes, oldest first. A bike that has not moved cannot have
+  // left the route: an off-route fix then is GPS drift (indoors, beside tall
+  // buildings, waiting at lights), and rerouting from it cannot succeed.
+  final List<NavigationFix> _recentFixes = [];
+  static const int _recentFixLimit = 20;
+  static const Duration _stationaryEvidence = Duration(seconds: 20);
+  static const double _movingSpeedMetersPerSecond = 2.0;
   static const Duration _startMatchGrace = Duration(seconds: 15);
   DateTime? _lastAcceptedFixAt;
   static const Duration _minRerouteInterval = Duration(seconds: 10);
@@ -695,6 +586,8 @@ class NavigationController extends ChangeNotifier {
         return;
       }
       _lastAcceptedFixAt = pos.timestamp;
+      _recentFixes.add(pos);
+      if (_recentFixes.length > _recentFixLimit) _recentFixes.removeAt(0);
     }
     _latestPosition = pos;
 
@@ -772,6 +665,14 @@ class NavigationController extends ChangeNotifier {
         _error = null;
       }
       return false;
+    }
+
+    if (pos is NavigationFix && _isStationary(pos)) {
+      if (_offRouteSamples > 0 || !_awaitingValidRoute) {
+        _log('off_route_ignored_while_stationary ${_fixDetails(pos)}');
+      }
+      _offRouteSamples = 0;
+      return _awaitingValidRoute;
     }
 
     // The first stream fix can differ from the fix used to request the route.
@@ -933,6 +834,24 @@ class NavigationController extends ChangeNotifier {
     } finally {
       if (_rerouteRequestId == requestId) _rerouting = false;
     }
+  }
+
+  /// Whether every fix of the last [_stationaryEvidence] lies within the two
+  /// fixes' combined accuracy of [pos]. The stream only reports moves over
+  /// its distance filter, so an older fix still marks where a still bike was.
+  bool _isStationary(NavigationFix pos) {
+    if (pos.speed.isFinite && pos.speed >= _movingSpeedMetersPerSecond) {
+      return false;
+    }
+    for (final fix in _recentFixes.reversed) {
+      if (!fix.timestamp.isBefore(pos.timestamp)) continue;
+      final radius = math.max(pos.accuracy + fix.accuracy, 20.0);
+      if (pos.distanceTo(fix) > radius) return false;
+      if (pos.timestamp.difference(fix.timestamp) >= _stationaryEvidence) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool _isCurrentReroute(
@@ -1303,20 +1222,31 @@ class NavigationController extends ChangeNotifier {
   }
 
   Future<void> stopNavigation() async {
-    await _clearNavigationState(sendStopToDevice: false);
+    await _clearNavigationState();
   }
 
   /// Fully end the current trip. This is intentionally stronger than [pause]:
   /// it clears route/navigation state and can release the BLE link so the next
   /// session starts from a clean scan/connect cycle.
   Future<void> endNavigation({bool disconnectDevice = true}) async {
-    await _clearNavigationState(sendStopToDevice: true);
-    if (disconnectDevice) {
+    // Clear the phone's trip first. A stalled BLE write must never leave the
+    // End navigation button apparently unresponsive.
+    await _clearNavigationState();
+    bool stopDelivered = false;
+    try {
+      stopDelivered = await ble.send(NavState.ended)
+          .timeout(const Duration(seconds: 2));
+    } catch (error) {
+      _log('stop_write_failed type=${error.runtimeType}');
+    }
+    // If STOP could not reach the display, drop the link so it cannot keep
+    // showing an obsolete live turn as though the phone were still guiding.
+    if (disconnectDevice || !stopDelivered) {
       await ble.disconnect();
     }
   }
 
-  Future<void> _clearNavigationState({required bool sendStopToDevice}) async {
+  Future<void> _clearNavigationState() async {
     _gpsRestartTimer?.cancel();
     _gpsRestartTimer = null;
     _stopHeartbeat();
@@ -1328,14 +1258,12 @@ class NavigationController extends ChangeNotifier {
     }
     await _posSub?.cancel();
     _posSub = null;
-    if (sendStopToDevice) {
-      await ble.send(NavState.stopped);
-    }
     _engine = null;
     _current = null;
     _lastReliableNavState = null;
     _origin = null;
     _latestPosition = null;
+    _recentFixes.clear();
     _destination = null;
     _waypointPlan = WaypointPlan(const []);
     _routeOptions = const [];

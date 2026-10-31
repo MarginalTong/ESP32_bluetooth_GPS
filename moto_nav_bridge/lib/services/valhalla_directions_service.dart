@@ -317,6 +317,8 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
           distanceMeters: (length * metersPerUnit).round(),
           geometry: List.unmodifiable(shape.sublist(begin, end + 1)),
           rawManeuver: 'valhalla:$type',
+          roundaboutExitCount: _exitCount(maneuver['roundabout_exit_count']),
+          streetName: _streetName(maneuver['street_names']),
           waypointIndex: end == shape.length - 1 ? waypointIndex : null,
         ),
       );
@@ -469,6 +471,22 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
       throw const FormatException();
     }
     return output;
+  }
+
+  /// Optional voice details: an unusable value is dropped, never guessed, and
+  /// never rejects an otherwise valid route.
+  static int? _exitCount(dynamic value) =>
+      value is int && value >= 1 && value <= 20 ? value : null;
+
+  static String? _streetName(dynamic value) {
+    if (value is! List || value.isEmpty || value.first is! String) return null;
+    final name = (value.first as String).trim();
+    if (name.isEmpty ||
+        name.length > 40 ||
+        name.codeUnits.any((unit) => unit < 0x20 || unit == 0x7f)) {
+      return null;
+    }
+    return name;
   }
 
   static Map<String, dynamic> _object(dynamic value) {

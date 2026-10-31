@@ -46,6 +46,13 @@ void main() {
     );
   });
 
+  test('end-of-trip packet is not throttled after a STOP', () {
+    final th = SendThrottle();
+    th.markSent(NavState.stopped, t0);
+    expect(th.shouldSend(NavState.ended,
+        t0.add(const Duration(milliseconds: 10))), isTrue);
+  });
+
   test('heartbeat: sends after the min interval even with no change', () {
     final th = SendThrottle(minInterval: const Duration(seconds: 1));
     final state = s(DeviceDirection.up, 500);

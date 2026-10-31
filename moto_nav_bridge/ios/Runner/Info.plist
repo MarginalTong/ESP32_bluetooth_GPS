@@ -39,10 +39,6 @@
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Connect to your NAVIO motorcycle navigation display over Bluetooth.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Use the microphone for voice commands and optional navigation-only wake listening. 用于语音指令及你主动开启的导航期间唤醒监听。</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Recognize the wake phrase on this device during navigation. 导航期间仅在本机识别唤醒词，不上传待命音频。</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Connect to your NAVIO motorcycle navigation display over Bluetooth.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

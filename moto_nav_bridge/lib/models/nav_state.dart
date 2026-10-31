@@ -13,10 +13,13 @@ class NavState {
     this.routePreviewPoints = const [],
     this.sideRoadPreviewPoints = const [],
     this.rerouting = false,
+    this.tripEnded = false,
   });
 
   final DeviceDirection direction;
   final bool rerouting;
+  /// Signed end-of-trip marker; unlike STOP, it returns the display to NAVIO.
+  final bool tripEnded;
   static const recalculating = NavState(
       direction: DeviceDirection.stop, distanceMeters: 0, rerouting: true);
 
@@ -39,10 +42,13 @@ class NavState {
   /// A safe idle/paused state (matches the firmware's STOP icon).
   static const NavState stopped =
       NavState(direction: DeviceDirection.stop, distanceMeters: 0);
+  static const NavState ended = NavState(
+      direction: DeviceDirection.stop, distanceMeters: 0, tripEnded: true);
 
   Map<String, dynamic> toJson() => {
         'dir': direction.wire,
         'dist': distanceMeters,
+        if (tripEnded) 'end': true,
         if (rerouting) 'rerouting': true,
         if (routePreviewPoints.isNotEmpty) 'P': routePreviewPoints,
         if (sideRoadPreviewPoints.isNotEmpty) 'R': sideRoadPreviewPoints,
@@ -57,6 +63,7 @@ class NavState {
     final buffer = StringBuffer(
       '{"dir":"${direction.wire}","dist":$distanceMeters',
     );
+    if (tripEnded) buffer.write(',"end":true');
     if (points.isNotEmpty) {
       buffer.write(',"P":[${points.join(',')}]');
     }
@@ -74,9 +81,11 @@ class NavState {
     List<int>? routePreviewPoints,
     List<int>? sideRoadPreviewPoints,
     bool? rerouting,
+    bool? tripEnded,
   }) =>
       NavState(
         rerouting: rerouting ?? this.rerouting,
+        tripEnded: tripEnded ?? this.tripEnded,
         direction: direction ?? this.direction,
         distanceMeters: distanceMeters ?? this.distanceMeters,
         routePreviewPoints: routePreviewPoints ?? this.routePreviewPoints,
@@ -88,6 +97,7 @@ class NavState {
   bool operator ==(Object other) =>
       other is NavState &&
       other.rerouting == rerouting &&
+      other.tripEnded == tripEnded &&
       other.direction == direction &&
       other.distanceMeters == distanceMeters &&
       _listEquals(other.routePreviewPoints, routePreviewPoints) &&
@@ -97,6 +107,7 @@ class NavState {
   int get hashCode => Object.hash(
         direction,
         rerouting,
+        tripEnded,
         distanceMeters,
         Object.hashAll(routePreviewPoints),
         Object.hashAll(sideRoadPreviewPoints),

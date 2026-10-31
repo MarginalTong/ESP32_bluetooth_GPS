@@ -60,18 +60,19 @@ void main() {
     await tester.pump();
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-  testWidgets(
-      'start token reaches native map once without resending on rebuild',
+  testWidgets('a stuck native map is rebuilt as a new platform view',
       (tester) async {
-    final routes = List<RouteCandidate>.unmodifiable([candidate(0.001)]);
-    await tester.pumpWidget(map(routes));
-    await tester.pumpWidget(map(routes, animationId: 1));
+    await tester.pumpWidget(map(const []));
+    final before = tester.widget<UiKitView>(find.byType(UiKitView)).key;
+    const events = MethodChannel('moto_nav_bridge/navigation_map_events');
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        events.name,
+        events.codec.encodeMethodCall(
+            const MethodCall('recreateMapView', <String, Object?>{})),
+        (_) {});
     await tester.pump();
-    expect(updates, hasLength(1));
-    expect(updates.single.arguments['routeAnimationId'], 1);
-    await tester.pumpWidget(map(routes, animationId: 1));
-    await tester.pump();
-    expect(updates, hasLength(1));
+    final after = tester.widget<UiKitView>(find.byType(UiKitView)).key;
+    expect(after, isNot(before));
     await tester.pumpWidget(const SizedBox());
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
@@ -116,8 +117,7 @@ RouteCandidate candidate(double middleLongitude) => RouteCandidate(
     );
 
 Widget map(List<RouteCandidate> routes,
-        {int animationId = 0,
-        String style = 'standard',
+        {String style = 'standard',
         bool traffic = false}) =>
     MaterialApp(
         home: Scaffold(
@@ -125,7 +125,6 @@ Widget map(List<RouteCandidate> routes,
       origin: const LatLng(0, 0),
       destination: const LatLng(0.002, 0),
       routes: routes,
-      routeAnimationId: animationId,
       mapStyle: style,
       showTraffic: traffic,
     )));

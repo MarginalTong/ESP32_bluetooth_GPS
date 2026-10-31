@@ -53,9 +53,39 @@ class AppText {
 
   String get readyToGo => isEnglish ? 'Ready to go' : '准备出发';
   String get connectDevice => isEnglish ? 'Connect device' : '连接设备';
+  String get tapToConnect => isEnglish ? 'Tap to connect' : '点按连接导航屏';
+  String get connectingDisplay =>
+      isEnglish ? 'Connecting display' : '正在连接导航屏';
+  String get displayNotConnected =>
+      isEnglish ? 'Display not connected' : '导航屏未连接';
   String get searchingDevice => isEnglish ? 'Searching…' : '正在搜索设备…';
   String get connecting => isEnglish ? 'Connecting…' : '正在连接…';
   String get deviceConnected => isEnglish ? 'Device connected' : '设备已连接';
+  String get displayUpdateInterrupted =>
+      isEnglish ? 'Display update interrupted' : '屏幕更新中断';
+  String get reconnectDisplayHint => isEnglish
+      ? 'Reconnect the display'
+      : '请重新连接导航屏';
+  String get deviceConnectionIssue =>
+      isEnglish ? 'Display connection needs attention' : '导航屏连接需要检查';
+  /// "45 s" / "3 min" / "2 h" (English) or "45 秒" / "3 分钟" / "2 小时".
+  String _age(Duration age) {
+    if (age.inSeconds < 60) {
+      final s = age.inSeconds < 1 ? 1 : age.inSeconds;
+      return isEnglish ? '$s s' : '$s 秒';
+    }
+    if (age.inMinutes < 60) {
+      return isEnglish ? '${age.inMinutes} min' : '${age.inMinutes} 分钟';
+    }
+    return isEnglish ? '${age.inHours} h' : '${age.inHours} 小时';
+  }
+
+  String writeFailedAgo(Duration age) => isEnglish
+      ? 'Display write failed ${_age(age)} ago'
+      : '屏幕写入失败（${_age(age)}前）';
+  String get deviceDetailsHint => isEnglish
+      ? 'See My devices for details'
+      : '请在“我的设备”查看详情';
 
   String get mapPoint => isEnglish ? 'Map point' : '地图选点';
   String get destination => isEnglish ? 'Destination' : '目的地';

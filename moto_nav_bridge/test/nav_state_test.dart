@@ -19,6 +19,11 @@ void main() {
       expect(NavState.stopped.toWire(), '{"dir":"STOP","dist":0}');
     });
 
+    test('end of trip is distinct from a temporary STOP', () {
+      expect(NavState.ended.toWire(), '{"dir":"STOP","dist":0,"end":true}');
+      expect(NavState.ended, isNot(NavState.stopped));
+    });
+
     test('route preview serializes as compact p array', () {
       const s = NavState(
         direction: DeviceDirection.up,

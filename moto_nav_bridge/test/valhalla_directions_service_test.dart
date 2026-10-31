@@ -176,6 +176,25 @@ void main() {
     expect(parsed.polyline.last.longitude, 151.099);
   });
 
+  test('keeps the roundabout exit and street name for voice, drops bad values',
+      () {
+    final input = trip(turnType: 26);
+    final turn = ((input['legs'] as List).first['maneuvers'] as List)[1] as Map;
+    turn['roundabout_exit_count'] = 2;
+    turn['street_names'] = ['King Street', 'A1'];
+    var step = ValhallaDirectionsService.parseRoutesJson(
+            jsonEncode({'trip': input})).first.steps[1];
+    expect(step.roundaboutExitCount, 2);
+    expect(step.streetName, 'King Street');
+    expect(step.rawManeuver, 'valhalla:26');
+    turn['roundabout_exit_count'] = 0;
+    turn['street_names'] = ['bad\nname'];
+    step = ValhallaDirectionsService.parseRoutesJson(
+            jsonEncode({'trip': input})).first.steps[1];
+    expect(step.roundaboutExitCount, isNull);
+    expect(step.streetName, isNull);
+  });
+
   for (final entry in <int, DeviceDirection>{
     8: DeviceDirection.up,
     9: DeviceDirection.bearRight,

@@ -1,15 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import '../controllers/navigation_controller.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_text.dart';
+import '../config/app_brand.dart';
+import 'navio_theme.dart';
+import 'widgets/device_header.dart';
 import '../services/ble_service.dart';
 import 'device_pairing.dart';
 import 'widgets/account_button.dart';
-import 'navio_theme.dart';
-import 'widgets/device_header.dart';
-import '../config/app_brand.dart';
 
 class DevicesPage extends StatefulWidget {
   const DevicesPage({super.key});
@@ -71,6 +73,14 @@ class _DevicesPageState extends State<DevicesPage> {
   Future<void> _showDiagnostics() async {
     final en = AppText.of(context).isEnglish;
     final nav = context.read<NavigationController>();
+    final ble = context.read<BleService>();
+    // Both logs share UTC ISO-8601 timestamps, so text order is time order.
+    final log = ([
+      ...nav.diagnostics.split('\n'),
+      ...ble.diagnostics.split('\n'),
+    ]..removeWhere((line) => line.isEmpty)
+          ..sort())
+        .join('\n');
     await showCupertinoModalPopup<void>(
         context: context,
         builder: (dialog) => CupertinoActionSheet(
@@ -79,15 +89,14 @@ class _DevicesPageState extends State<DevicesPage> {
                   height: 220,
                   child: SingleChildScrollView(
                       child: SelectableText(
-                          nav.diagnostics.isEmpty
+                          log.isEmpty
                               ? (en ? 'No events recorded.' : '暂无记录。')
-                              : nav.diagnostics,
+                              : log,
                           style: const TextStyle(fontSize: 12)))),
               actions: [
                 CupertinoActionSheetAction(
                     onPressed: () async {
-                      await Clipboard.setData(
-                          ClipboardData(text: nav.diagnostics));
+                      await Clipboard.setData(ClipboardData(text: log));
                       if (dialog.mounted) Navigator.pop(dialog);
                     },
                     child: Text(en ? 'Copy log' : '复制日志')),
@@ -95,6 +104,7 @@ class _DevicesPageState extends State<DevicesPage> {
                     isDestructiveAction: true,
                     onPressed: () {
                       nav.clearDiagnostics();
+                      ble.clearDiagnostics();
                       Navigator.pop(dialog);
                     },
                     child: Text(en ? 'Clear log' : '清空日志')),
@@ -133,7 +143,12 @@ class _DevicesPageState extends State<DevicesPage> {
                 connectLabel: text.connectDevice,
                 onConnect: busy ? null : () => _run(() => connectDisplay(context, ble)),
               ),
-              if (_error != null || ble.lastError != null)
+              if (_error == null &&
+                  BleService.isWriteFailure(ble.lastError) &&
+                  ble.lastErrorAt != null)
+                _WriteFailureNotice(
+                    error: ble.lastError!, at: ble.lastErrorAt!)
+              else if (_error != null || ble.lastError != null)
                 Padding(
                     padding: const EdgeInsets.all(12),
                     child: Text(_error ?? ble.lastError!,
@@ -241,5 +256,52 @@ class _DeviceAction extends StatelessWidget {
         ],
       ]),
     );
+  }
+}
+
+/// A write failure with its age: red while recent, then grey, so an old
+/// failure is not mistaken for a broken link. Cleared by the next good write.
+class _WriteFailureNotice extends StatefulWidget {
+  const _WriteFailureNotice({required this.error, required this.at});
+
+  final String error;
+  final DateTime at;
+
+  @override
+  State<_WriteFailureNotice> createState() => _WriteFailureNoticeState();
+}
+
+class _WriteFailureNoticeState extends State<_WriteFailureNotice> {
+  late final Timer _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 5), (_) => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _tick.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final recent =
+        BleService.isRecentWriteFailure(widget.error, widget.at, now);
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(AppText.of(context).writeFailedAgo(now.difference(widget.at)),
+              style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: recent ? colors.error : colors.onSurfaceVariant)),
+          const SizedBox(height: 4),
+          Text(widget.error.substring(BleService.writeFailurePrefix.length).trim(),
+              style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
+        ]));
   }
 }

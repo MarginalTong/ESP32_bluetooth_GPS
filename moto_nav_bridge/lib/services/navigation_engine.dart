@@ -375,6 +375,9 @@ class NavigationEngine {
     if (preview == null) return const [];
 
     final candidates = <_SideRoadCandidate>[];
+    // One arm per junction and side: both ends of a road that curves back
+    // to the same side would otherwise draw the same ray twice.
+    final arms = <String>{};
     for (final road in _sideRoads) {
       final connection = _roadConnection(road, preview.nearby);
       if (connection == null ||
@@ -404,24 +407,32 @@ class NavigationEngine {
                   branchVector.dy * branchVector.dy),
         );
         if (denominator == 0) continue;
-        final crossingSin = (routeVector.dx * branchVector.dy -
-                    routeVector.dy * branchVector.dx)
-                .abs() /
-            denominator;
+        final cross = routeVector.dx * branchVector.dy -
+            routeVector.dy * branchVector.dx;
+        final crossingSin = cross.abs() / denominator;
         if (crossingSin < sideRoadMinimumCrossingSin) continue;
 
         final a = preview.screenPoint(connection.routePoint);
-        // The BLE segment describes a direction, not the measured length of
-        // the side road. Avoid clamping a distant endpoint to the source-map
-        // edge: that used to distort the ray and vary its apparent length.
-        final branchLength = math.sqrt(branchVector.dx * branchVector.dx +
-            branchVector.dy * branchVector.dy);
+        // A schematic junction: every arm is drawn at right angles to the
+        // route, on the side the real road leaves it. The real angle is not
+        // shown; only roads that genuinely cross the route qualify (above).
+        // The BLE segment describes a direction, not the side road's length.
+        final routeLength = math.sqrt(
+            routeVector.dx * routeVector.dx + routeVector.dy * routeVector.dy);
+        final rightSide = cross < 0;
+        final side = rightSide ? 1.0 : -1.0;
+        // (lateral, forward) of the route turned 90° towards that side.
+        final perpendicular = (
+          dx: side * routeVector.dy / routeLength,
+          dy: -side * routeVector.dx / routeLength,
+        );
+        if (!arms.add('${a.x ~/ 20},${a.y ~/ 20},$rightSide')) continue;
         const reach = _sideRoadDirectionPreviewUnits * previewResolution;
         final b = (
-          x: (a.x + branchVector.dx / branchLength * reach)
+          x: (a.x + perpendicular.dx * reach)
               .round()
               .clamp(0, 127 * previewResolution),
-          y: (a.y - branchVector.dy / branchLength * reach)
+          y: (a.y - perpendicular.dy * reach)
               .round()
               .clamp(0, 63 * previewResolution),
         );

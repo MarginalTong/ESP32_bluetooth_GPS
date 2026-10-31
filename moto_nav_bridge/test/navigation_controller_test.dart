@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:moto_nav_bridge/controllers/navigation_controller.dart';
 import 'package:moto_nav_bridge/models/device_direction.dart';
 import 'package:moto_nav_bridge/models/lat_lng.dart';
-import 'package:moto_nav_bridge/models/place_result.dart';
 import 'package:moto_nav_bridge/models/nav_state.dart';
 import 'package:moto_nav_bridge/models/road_segment.dart';
 import 'package:moto_nav_bridge/models/route_candidate.dart';
@@ -81,17 +80,31 @@ void main() {
     expect(controller.diagnostics, isNot(contains('whatever')));
   });
 
-  test('map diagnostics retain camera and preview events, not arbitrary data',
+  test('touch-gate recovery steps are logged', () {
+    controller.recordMapDiagnostic('gate_reattach count=12');
+    controller.recordMapDiagnostic('view_recreate');
+    controller.recordMapDiagnostic('gate_reattach count=x');
+    expect(controller.diagnostics, contains('map gate_reattach count=12'));
+    expect(controller.diagnostics, contains('map view_recreate'));
+    expect(controller.diagnostics, isNot(contains('count=x')));
+  });
+
+  test('touch-gate diagnostics are logged in their fixed format only', () {
+    controller.recordMapDiagnostic('touch_gate observer=5/0 ancestors='
+        'FlutterDelayingGestureRecognizer:3/0/1,ForwardingGestureRecognizer:5/0/1|none');
+    controller.recordMapDiagnostic('touch_gate observer=5/0 ancestors=a b');
+    expect(controller.diagnostics,
+        contains('map touch_gate observer=5/0 ancestors=FlutterDelaying'));
+    expect(controller.diagnostics, isNot(contains('ancestors=a b')));
+  });
+
+  test('map diagnostics retain camera events, not arbitrary data',
       () {
     controller.recordMapDiagnostic('fit_requested');
     controller.recordMapDiagnostic('fit_skipped_active_gesture');
-    controller.recordMapDiagnostic('route_preview_started');
-    controller.recordMapDiagnostic('route_preview_stopped');
     controller.recordMapDiagnostic('private_location=123');
     expect(controller.diagnostics, contains('map fit_requested'));
     expect(controller.diagnostics, contains('map fit_skipped_active_gesture'));
-    expect(controller.diagnostics, contains('map route_preview_started'));
-    expect(controller.diagnostics, contains('map route_preview_stopped'));
     expect(controller.diagnostics, isNot(contains('private_location')));
   });
 
@@ -137,51 +150,6 @@ void main() {
           distanceMeters: 333),
     ])
   ];
-
-  test('nearby ranking uses route time without changing active navigation',
-      () async {
-    final deferred = await prepareDestinationChange();
-    const far = LatLng(.004, 0);
-    final ranking = controller.rankNearbyPlaces(const [
-      PlaceResult(name: 'BP near', address: '', location: newDestination),
-      PlaceResult(name: 'BP far', address: '', location: far),
-    ], controller.voiceSearchOrigin!, () => true);
-    await pumpEventQueue();
-    deferred.requests.last.complete([
-      RouteCandidate(
-          steps: newRoutes.first.steps, expectedTravelTimeSeconds: 300)
-    ]);
-    await pumpEventQueue();
-    deferred.requests.last.complete(const [
-      RouteCandidate(steps: [
-        RouteStep(
-            direction: DeviceDirection.up,
-            start: p0,
-            end: far,
-            distanceMeters: 444)
-      ], expectedTravelTimeSeconds: 120)
-    ]);
-    final result = await ranking;
-    expect(result.first.place.name, 'BP far');
-    expect(result.first.seconds, 120);
-    expect(controller.destination, same(p2));
-  });
-  test('cancelled nearby ranking discards late results', () async {
-    final deferred = await prepareDestinationChange();
-    var current = true;
-    final ranking = controller.rankNearbyPlaces(
-        const [PlaceResult(name: 'BP', address: '', location: newDestination)],
-        controller.voiceSearchOrigin!,
-        () => current);
-    await pumpEventQueue();
-    current = false;
-    deferred.requests.last.complete([
-      RouteCandidate(
-          steps: newRoutes.first.steps, expectedTravelTimeSeconds: 100)
-    ]);
-    expect(await ranking, isEmpty);
-    expect(controller.destination, same(p2));
-  });
 
   test('destination replacement commits only after valid new route succeeds',
       () async {
@@ -648,18 +616,6 @@ void main() {
     expect(controller.current?.rerouting, isFalse);
   });
 
-  test('voice place search refreshes a quiet stream independently of turn',
-      () async {
-    await controller.startNavigation(p2);
-    expect(controller.voiceSearchOrigin, isNull);
-    positions.current = NavigationFix(p0.latitude, p0.longitude,
-        heading: -1, accuracy: 8, speed: 0, timestamp: DateTime.now());
-    final origin = await controller.refreshVoiceSearchOrigin();
-    expect(origin, isA<NavigationFix>());
-    expect(controller.voiceSearchOrigin, same(origin));
-    expect(routes.fetchCount, 1);
-  });
-
   test('reroute failure keeps cached map but withdraws old turn and distance',
       () async {
     routes = FakeRoutes(mainRoute, throwAfterInitialRoute: true);
@@ -784,6 +740,64 @@ void main() {
     expect(routes.lastOrigin, offRoute);
     expect(controller.phase, NavPhase.navigating);
     expect(ble.sent.last.direction, DeviceDirection.right);
+  });
+
+  group('off-route while stationary', () {
+    // The stream rejects fixes more than 10 s from now, so 20 s of history is
+    // built from timestamps on either side of a short real delay.
+    NavigationFix drift(LatLng at, Duration offset, {double speed = -1}) =>
+        NavigationFix(at.latitude, at.longitude,
+            heading: -1,
+            accuracy: 30,
+            speed: speed,
+            timestamp: DateTime.now().add(offset));
+    const nearby = LatLng(0.0005, 0.0021); // ~15 m from offRoute
+
+    test('indoor drift beside the route does not reroute', () async {
+      await controller.startNavigation(p2);
+      positions.emit(drift(offRoute, const Duration(milliseconds: -9500)));
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      positions.emit(drift(nearby, const Duration(milliseconds: 9500)));
+      await pumpEventQueue();
+      positions.emit(drift(offRoute, const Duration(milliseconds: 9600)));
+      await pumpEventQueue(times: 10);
+
+      expect(routes.fetchCount, 1);
+      expect(controller.diagnostics, isNot(contains('reroute_start')));
+      expect(controller.diagnostics,
+          contains('off_route_ignored_while_stationary'));
+      expect(controller.current?.rerouting, isNot(true));
+    });
+
+    test('leaving the route still reroutes when speed is unknown', () async {
+      await controller.startNavigation(p2);
+      positions.emit(drift(p0, const Duration(milliseconds: -9500)));
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      positions.emit(drift(offRoute, const Duration(milliseconds: 9500)));
+      await pumpEventQueue();
+      positions.emit(drift(offRoute, const Duration(milliseconds: 9600)));
+      await pumpEventQueue(times: 10);
+
+      expect(routes.fetchCount, 2);
+      expect(controller.diagnostics, contains('reroute_start'));
+    });
+
+    test('a moving fix is never treated as stationary', () async {
+      await controller.startNavigation(p2);
+      positions.emit(drift(offRoute, const Duration(milliseconds: -9500)));
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      positions.emit(
+          drift(nearby, const Duration(milliseconds: 9500), speed: 5));
+      await pumpEventQueue();
+      positions.emit(
+          drift(offRoute, const Duration(milliseconds: 9600), speed: 5));
+      await pumpEventQueue(times: 10);
+
+      expect(routes.fetchCount, 2);
+    });
   });
 
   test('selecting an alternate route switches engine and sends new instruction',
@@ -1077,11 +1091,11 @@ void main() {
     expect(controller.origin, isNull);
     expect(controller.current, isNull);
     expect(controller.routeOptions, isEmpty);
-    expect(ble.sent, [NavState.stopped]);
+    expect(ble.sent, [NavState.ended]);
     expect(ble.disconnectCount, 0);
   });
 
-  test('endNavigation clears route state, sends STOP, and disconnects BLE',
+  test('endNavigation clears route state, sends END, and disconnects BLE',
       () async {
     await controller.startNavigation(p2);
 
@@ -1091,7 +1105,36 @@ void main() {
     expect(controller.destination, isNull);
     expect(controller.origin, isNull);
     expect(controller.current, isNull);
-    expect(ble.sent, [NavState.stopped]);
+    expect(ble.sent, [NavState.ended]);
+    expect(ble.disconnectCount, 1);
+  });
+
+  test('end navigation clears phone state before a slow BLE STOP completes',
+      () async {
+    await controller.startNavigation(p2);
+    final stopGate = Completer<bool>();
+    ble.sendGate = stopGate;
+
+    final ending = controller.endNavigation(disconnectDevice: false);
+    await pumpEventQueue();
+    expect(controller.phase, NavPhase.idle);
+    expect(controller.destination, isNull);
+    expect(ble.disconnectCount, 0);
+
+    stopGate.complete(true);
+    await ending;
+    expect(ble.disconnectCount, 0);
+  });
+
+  test('failed STOP disconnects display instead of leaving stale guidance',
+      () async {
+    await controller.startNavigation(p2);
+    ble.sendResult = false;
+
+    await controller.endNavigation(disconnectDevice: false);
+
+    expect(controller.phase, NavPhase.idle);
+    expect(ble.sent.last, NavState.ended);
     expect(ble.disconnectCount, 1);
   });
 }
@@ -1159,11 +1202,14 @@ const alternateTurn = LatLng(0.001, -0.001);
 class FakeBle implements NavigationBlePort {
   final sent = <NavState>[];
   int disconnectCount = 0;
+  bool sendResult = true;
+  Completer<bool>? sendGate;
 
   @override
   Future<bool> send(NavState state) async {
     sent.add(state);
-    return true;
+    final gate = sendGate;
+    return gate == null ? sendResult : await gate.future;
   }
 
   @override

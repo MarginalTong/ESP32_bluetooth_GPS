@@ -293,6 +293,40 @@ void main() {
     expect(roads[3], inInclusiveRange(20, 340));
   });
 
+  test('oblique side roads are drawn at right angles to the route', () {
+    // Crosses the northbound route at about 37°.
+    final roads = NavigationEngine(
+      route(),
+      sideRoads: const [
+        RoadSegment(
+            start: LatLng(0.0002, -0.0004), end: LatLng(0.0008, 0.0004)),
+      ],
+    ).update(p0).sideRoadPreviewPoints;
+    expect(roads, hasLength(8));
+    final arms = [
+      for (var i = 0; i < roads.length; i += 4)
+        (dx: roads[i + 2] - roads[i], dy: roads[i + 3] - roads[i + 1])
+    ];
+    for (final arm in arms) {
+      expect(arm.dy.abs(), lessThanOrEqualTo(1)); // horizontal on screen
+      expect(arm.dx.abs(), inInclusiveRange(99, 101));
+    }
+    // One arm to each side, as the real road leaves both sides.
+    expect(arms.map((a) => a.dx.sign).toSet(), {-1, 1});
+  });
+
+  test('two roads leaving the same side of a junction draw one arm', () {
+    final roads = NavigationEngine(
+      route(),
+      sideRoads: const [
+        RoadSegment(start: LatLng(0.0005, 0), end: LatLng(0.0005, 0.0004)),
+        RoadSegment(start: LatLng(0.0005, 0), end: LatLng(0.0008, 0.0004)),
+      ],
+    ).update(p0).sideRoadPreviewPoints;
+    expect(roads, hasLength(4));
+    expect(roads[2] - roads[0], greaterThan(0));
+  });
+
   test('side-road direction does not depend on the real road length', () {
     List<int> preview(double halfWidth) => NavigationEngine(
           route(),

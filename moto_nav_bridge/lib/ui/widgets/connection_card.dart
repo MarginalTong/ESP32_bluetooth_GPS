@@ -17,6 +17,13 @@ class ConnectionCard extends StatelessWidget {
     final busy = ble.state == BleConnectionState.scanning ||
         ble.state == BleConnectionState.connecting ||
         ble.state == BleConnectionState.awaitingBoot;
+    // An old write failure is history, not the link's current state.
+    final writeFailed = !busy &&
+        BleService.isRecentWriteFailure(
+            ble.lastError, ble.lastErrorAt, DateTime.now());
+    final hasError = !busy &&
+        ble.lastError != null &&
+        (writeFailed || !BleService.isWriteFailure(ble.lastError));
     final colors = Theme.of(context).colorScheme;
 
     return GlassPanel(
@@ -48,7 +55,15 @@ class ConnectionCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      text.readyToGo,
+                      hasError
+                          ? (writeFailed
+                              ? text.displayUpdateInterrupted
+                              : text.deviceConnectionIssue)
+                          : connected
+                              ? text.readyToGo
+                              : busy
+                                  ? text.connectingDisplay
+                                  : text.tapToConnect,
                       textAlign: TextAlign.start,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
@@ -58,14 +73,16 @@ class ConnectionCard extends StatelessWidget {
                     Text(
                       busy
                           ? _label(context, ble.state)
-                          : ble.lastError ?? _label(context, ble.state),
+                          : hasError
+                              ? (writeFailed
+                                  ? text.reconnectDisplayHint
+                                  : text.deviceDetailsHint)
+                              : _label(context, ble.state),
                       textAlign: TextAlign.start,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: busy || ble.lastError == null
-                                ? colors.onSurfaceVariant
-                                : colors.error,
+                            color: colors.onSurfaceVariant,
                           ),
                     ),
                   ],
@@ -91,12 +108,12 @@ class ConnectionCard extends StatelessWidget {
   String _label(BuildContext context, BleConnectionState state) {
     final text = AppText.of(context);
     return switch (state) {
-      BleConnectionState.idle => text.connectDevice,
+      BleConnectionState.idle => text.displayNotConnected,
       BleConnectionState.scanning => text.searchingDevice,
       BleConnectionState.connecting => text.connecting,
       BleConnectionState.awaitingBoot => text.pressBoot,
       BleConnectionState.connected => text.deviceConnected,
-      BleConnectionState.disconnected => text.connectDevice,
+      BleConnectionState.disconnected => text.displayNotConnected,
     };
   }
 }

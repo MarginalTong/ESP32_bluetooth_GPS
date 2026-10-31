@@ -19,6 +19,12 @@ class LayoutBle extends ChangeNotifier implements BleService {
   @override
   String? get lastError => null;
   @override
+  DateTime? get lastErrorAt => null;
+  @override
+  String get diagnostics => '';
+  @override
+  void clearDiagnostics() {}
+  @override
   NavState? get lastSent => null;
   @override
   Future<bool> send(NavState state) async => true;
@@ -27,6 +33,35 @@ class LayoutBle extends ChangeNotifier implements BleService {
 }
 
 void main() {
+  for (final style in ['standard', 'standard_dark', 'hybrid', 'satellite']) {
+    testWidgets('map settings button matches $style map', (tester) async {
+      SharedPreferences.setMockInitialValues({'map_style_v1': style});
+      final ble = LayoutBle();
+      final positions = FakePositions(current: p0);
+      final nav = NavigationController(
+          ble: ble,
+          directions: FakeRoutes(mainRoute),
+          location: positions,
+          sideRoads: FakeSideRoads());
+      await tester.pumpWidget(MultiProvider(providers: [
+        ChangeNotifierProvider<BleService>.value(value: ble),
+        ChangeNotifierProvider.value(value: nav),
+      ], child: const MaterialApp(home: HomePage())));
+      await tester.pumpAndSettle();
+      final dark = style != 'standard';
+      final background = tester.widget<Material>(
+          find.byKey(const ValueKey('map-settings-button-background')));
+      final icon = tester.widget<Icon>(find.byIcon(Icons.settings_outlined));
+      expect(background.color,
+          dark ? const Color(0xff121820) : isNot(const Color(0xff121820)));
+      expect(icon.color, dark ? Colors.white : isNull);
+      await tester.pumpWidget(const SizedBox());
+      nav.dispose();
+      ble.dispose();
+      await positions.close();
+    });
+  }
+
   testWidgets('small map settings entry updates the visible map style',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -56,24 +91,14 @@ void main() {
     await positions.close();
   });
 
-  testWidgets('starting a trip arms wake automatically and hides manual items',
+  testWidgets('starting a trip asks nothing; the button only toggles guidance',
       (tester) async {
-    SharedPreferences.setMockInitialValues({
-      'voice_agent_route_access_v1': true,
-      'voice_wake_auto_consent_v1': true,
-    });
+    SharedPreferences.setMockInitialValues({});
     const channel = MethodChannel('moto_nav_bridge/voice');
     final calls = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
         (call) async {
       calls.add(call.method);
-      if (call.method == 'loadVoiceCredentials') {
-        return {
-          'endpoint': 'https://nav.williamligallery.uk/v1/voice',
-          'token': 'x' * 32,
-        };
-      }
-      if (call.method == 'startWake') return true;
       return null;
     });
     final ble = LayoutBle();
@@ -95,14 +120,18 @@ void main() {
     await tester.ensureVisible(find.text(text.startNavigation));
     await tester.tap(find.text(text.startNavigation));
     await tester.pumpAndSettle();
-    expect(calls, contains('startWake'));
     expect(nav.phase, NavPhase.navigating);
-    await tester.tap(find.byIcon(Icons.auto_awesome_rounded));
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(calls, isNot(contains('startWake')));
+    expect(calls, isNot(contains('loadVoiceCredentials')));
+    expect(find.byIcon(Icons.auto_awesome_rounded), findsNothing);
+    await tester.tap(find.byIcon(Icons.volume_off_rounded));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Enable voice wake'), findsNothing);
-    expect(find.textContaining('开启语音唤醒'), findsNothing);
-    expect(find.textContaining('Repeat instruction'), findsNothing);
-    expect(find.textContaining('重复播报指令'), findsNothing);
+    expect(find.byIcon(Icons.volume_up_rounded), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.volume_up_rounded));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.volume_off_rounded), findsOneWidget);
+    expect(calls, contains('stop'));
     await tester.pumpWidget(const SizedBox());
     nav.dispose();
     ble.dispose();

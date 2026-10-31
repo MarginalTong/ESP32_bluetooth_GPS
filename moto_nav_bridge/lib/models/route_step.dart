@@ -12,6 +12,8 @@ class RouteStep {
     required this.distanceMeters,
     List<LatLng>? geometry,
     this.rawManeuver,
+    this.roundaboutExitCount,
+    this.streetName,
     this.waypointIndex,
   }) : geometry = geometry ?? const [];
 
@@ -30,8 +32,15 @@ class RouteStep {
   /// to [start] -> [end].
   final List<LatLng> geometry;
 
-  /// The original provider maneuver identifier, kept for debugging/telemetry.
+  /// The original provider maneuver identifier (`valhalla:<type>`). Voice
+  /// guidance reads the maneuver kind from it; other providers leave it null.
   final String? rawManeuver;
+
+  /// For a roundabout entry, which exit to take, as the provider reported it.
+  final int? roundaboutExitCount;
+
+  /// The road this step follows after its maneuver, as the provider named it.
+  final String? streetName;
 
   /// Intermediate stop reached at this segment end, relative to this request.
   final int? waypointIndex;

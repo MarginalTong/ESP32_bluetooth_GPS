@@ -58,6 +58,40 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   String? _lastError;
   String? get lastError => _lastError;
 
+  /// When [lastError] was set; null when there is none.
+  DateTime? _lastErrorAt;
+  DateTime? get lastErrorAt => _lastErrorAt;
+
+  /// Prefix of [lastError] after a navigation write was not acknowledged.
+  static const String writeFailurePrefix = 'Write failed:';
+
+  /// A failed write is reported as current only this long. The message stays
+  /// (with its age) until a later write succeeds, but an old failure must not
+  /// look like the link is broken now.
+  static const Duration recentWriteFailure = Duration(seconds: 30);
+  Timer? _writeFailureFade;
+
+  static bool isWriteFailure(String? error) =>
+      error?.startsWith(writeFailurePrefix) ?? false;
+
+  /// Whether [error] is a write failure from within [recentWriteFailure].
+  /// An unknown time counts as recent.
+  static bool isRecentWriteFailure(String? error, DateTime? at, DateTime now) =>
+      isWriteFailure(error) &&
+      (at == null || now.difference(at) < recentWriteFailure);
+
+  /// Per-write timing, for the diagnostics log: payload size, negotiated MTU,
+  /// whether the payload needed a long (prepared) write, and how long the
+  /// display took to acknowledge it. Never contains the payload itself.
+  final List<String> _diagnostics = [];
+  String get diagnostics => _diagnostics.join('\n');
+  void clearDiagnostics() => _diagnostics.clear();
+
+  void _log(String event) {
+    _diagnostics.add('${DateTime.now().toUtc().toIso8601String()} ble $event');
+    if (_diagnostics.length > 200) _diagnostics.removeAt(0);
+  }
+
   NavState? _lastSent;
   NavState? get lastSent => _lastSent;
 
@@ -132,6 +166,8 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     }
     _state = s;
     _lastError = error;
+    _lastErrorAt = error == null ? null : DateTime.now();
+    _writeFailureFade?.cancel();
     notifyListeners();
   }
 
@@ -364,6 +400,12 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
           jsonDecode(utf8.decode(await pairing.read())) as Map<String, dynamic>;
       final first = await status();
       final identity = first['id'] as String;
+      // A small uptime after a dropped link means the display restarted.
+      final boot = first['boot'];
+      final up = first['up'];
+      if (boot is String && up is int) {
+        _log('device boot=${boot.replaceAll(RegExp(r'[^a-z_]'), '')} up=${up}s');
+      }
       // New every connection; without it this is pre-signing firmware.
       final nonce = PacketSigner.parseHex(first['s'], PacketSigner.nonceBytes);
       if (nonce == null) {
@@ -546,21 +588,37 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         );
       }
 
+      final bytes = utf8.encode(wire);
+      final mtu = _device?.mtuNow ?? 0;
+      final timing = 'bytes=${bytes.length} mtu=$mtu '
+          'long=${mtu > 0 && bytes.length > mtu - 3}';
+      final elapsed = Stopwatch()..start();
       try {
         await _characteristic!.write(
-          utf8.encode(wire),
+          bytes,
           withoutResponse: BleConstants.writeWithoutResponse,
           allowLongWrite: BleConstants.allowLongWrite,
         );
+        _log('write ok $timing ms=${elapsed.elapsedMilliseconds}');
         _throttle.markSent(state, now);
         _lastSent = state;
         _lastError = null;
+        _lastErrorAt = null;
+        _writeFailureFade?.cancel();
         notifyListeners();
       } catch (e) {
+        _log('write failed $timing ms=${elapsed.elapsedMilliseconds} '
+            'type=${e.runtimeType}');
         // Preserve the newest unsent instruction for the reconnect flush.
         _pendingState ??= state;
         _pendingStateAt ??= now;
-        _lastError = 'Write failed: $e';
+        _lastError = '$writeFailurePrefix $e';
+        _lastErrorAt = DateTime.now();
+        // Let listeners show the failure as old once it stops being recent.
+        _writeFailureFade?.cancel();
+        _writeFailureFade = Timer(recentWriteFailure, () {
+          if (!_disposed) notifyListeners();
+        });
         if (kDebugMode) debugPrint(_lastError);
         notifyListeners();
         return false;
@@ -588,6 +646,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     _disposed = true;
     _maintainConnection = false;
     _reconnectTimer?.cancel();
+    _writeFailureFade?.cancel();
     _scanSub?.cancel();
     _connSub?.cancel();
     _adapterSub?.cancel();

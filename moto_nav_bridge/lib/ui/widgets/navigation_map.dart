@@ -16,7 +16,6 @@ class NavigationMap extends StatefulWidget {
     this.routes = const [],
     this.riders = const [],
     this.selectedRouteIndex = 0,
-    this.routeAnimationId = 0,
     this.mapStyle = 'standard',
     this.showTraffic = false,
     this.onRouteSelected,
@@ -39,8 +38,6 @@ class NavigationMap extends StatefulWidget {
   final List<RiderPresence> riders;
   final int selectedRouteIndex;
 
-  /// Increment to replay the selected route from origin to destination.
-  final int routeAnimationId;
   final String mapStyle;
   final bool showTraffic;
   final ValueChanged<int>? onRouteSelected;
@@ -122,6 +119,11 @@ class _NavigationMapState extends State<NavigationMap> {
   Future<void> _handleMapEvent(MethodCall call) async {
     final args = Map<Object?, Object?>.from(call.arguments as Map);
     switch (call.method) {
+      case 'recreateMapView':
+        // The native map stopped receiving touches and could not be reset:
+        // a new view starts with clean gesture recognizers.
+        if (mounted) setState(() => _viewGeneration++);
+        return;
       case 'mapDiagnostic':
         final event = args['event'];
         if (event is String) widget.onDiagnostic?.call(event);
@@ -180,9 +182,10 @@ class _NavigationMapState extends State<NavigationMap> {
     );
   }
 
-  String get _viewKey {
-    return 'navigation-map';
-  }
+  int _viewGeneration = 0;
+
+  String get _viewKey => 'navigation-map-$_viewGeneration';
+
 
   String _updateKeyFor(NavigationMap map) {
     final o = map.origin;
@@ -196,7 +199,6 @@ class _NavigationMapState extends State<NavigationMap> {
       AppText.system.languageCode,
       map.onMapPointSelected != null,
       map.selectedRouteIndex,
-      map.routeAnimationId,
       map.mapStyle,
       map.showTraffic,
       map.contentPadding,
@@ -220,7 +222,6 @@ class _NavigationMapState extends State<NavigationMap> {
         'paddingRight': widget.contentPadding.right,
         'languageCode': AppText.system.languageCode,
         'selectedRouteIndex': widget.selectedRouteIndex,
-        'routeAnimationId': widget.routeAnimationId,
         'mapStyle': widget.mapStyle,
         'showTraffic': widget.showTraffic,
         'mapPointSelectionEnabled': widget.onMapPointSelected != null,
