@@ -10,6 +10,10 @@ These are explicit user preferences for this repository:
 - Preserve pre-existing edits and staged changes. Commit explicit paths for
   the current task; do not absorb unrelated work into a checkpoint.
 - Do not automatically push, merge, reset, or discard changes.
+- For App changes, default to local tests and static analysis. Do not routinely
+  build for or install/launch on the user's phone. Request fresh confirmation
+  when device validation is needed; earlier installation approval is not a
+  standing authorization for later changes.
 
 ## Firmware development
 
