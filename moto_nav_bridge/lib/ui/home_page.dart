@@ -20,6 +20,7 @@ import '../services/voice_navigation_query.dart';
 import '../services/voice_trip_access.dart';
 import 'place_search_page.dart';
 import 'map_settings_page.dart';
+import 'navio_theme.dart';
 import 'route_preferences_page.dart';
 import 'waypoint_editor_page.dart';
 import 'voice_test_page.dart';
@@ -656,35 +657,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         nav.phase == NavPhase.paused ||
         nav.phase == NavPhase.arrived;
     return Scaffold(
-      floatingActionButton: Material(
-        color: const Color(0xFF1668C9),
-        elevation: 4,
-        shape: const CircleBorder(),
-        child: PopupMenuButton<_AgentAction>(
-          tooltip: _wakeEnabled && _wakeState.startsWith('listening')
-              ? (AppText.of(context).isEnglish
-                  ? 'Voice agent listening for wake phrase'
-                  : '语音 Agent 正在等待唤醒词')
-              : (AppText.of(context).isEnglish ? 'Voice agent' : '语音 Agent'),
-          icon: const Icon(Icons.auto_awesome_rounded, color: Colors.white),
-          onSelected: _handleAgentAction,
-          itemBuilder: (context) {
-            final en = AppText.of(context).isEnglish;
-            return [
-              PopupMenuItem(
-                  value: _AgentAction.open,
-                  child: Text(en ? 'Talk to Agent' : '与 Agent 对话')),
-              PopupMenuItem(
-                  value: _AgentAction.guidance,
-                  child: Text(_voiceEnabled
-                      ? (en ? 'Turn off guidance voice' : '关闭导航播报')
-                      : (en ? 'Turn on guidance voice' : '开启导航播报'))),
-            ];
-          },
-        ),
-      ),
       body: LayoutBuilder(builder: (context, constraints) {
         final landscape = constraints.maxWidth > constraints.maxHeight;
+        final darkMapControls = _mapStyle != 'standard';
         final safe = MediaQuery.paddingOf(context);
         final panelWidth = landscape ? 320.0 : constraints.maxWidth - 32;
         // Reserve space for native map attribution and route framing.
@@ -694,7 +669,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           16,
           safe.bottom + (landscape ? 40 : 230),
         );
-        return Stack(
+        return Theme(
+          data: darkMapControls ? NavioTheme.dark() : NavioTheme.light(),
+          child: Builder(builder: (context) => Stack(
           children: [
             Positioned.fill(
               child: NavigationMap(
@@ -722,7 +699,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               child: const ConnectionCard(),
             ),
             Positioned(
-              top: safe.top + 108,
+              top: safe.top + 92,
               right: 16,
               child: Material(
                 color: Theme.of(context)
@@ -730,7 +707,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     .surface
                     .withValues(alpha: 0.88),
                 shape: const CircleBorder(),
-                elevation: 2,
+                elevation: 1,
                 child: IconButton(
                   onPressed: _openMapSettings,
                   tooltip:
@@ -741,11 +718,42 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               ),
             ),
-            Positioned(top: safe.top + 164, right: 16,
+            Positioned(top: safe.top + 148, right: 16,
                 child: RiderMapButton(dark: _mapStyle != 'standard')),
             Positioned(
+              top: safe.top + 204,
+              right: 16,
+              child: Material(
+        color: darkMapControls ? const Color(0xff121820) : const Color(0xff007aff),
+        elevation: 1,
+        shape: const CircleBorder(),
+        child: PopupMenuButton<_AgentAction>(
+          tooltip: _wakeEnabled && _wakeState.startsWith('listening')
+              ? (AppText.of(context).isEnglish
+                  ? 'Voice agent listening for wake phrase'
+                  : '语音 Agent 正在等待唤醒词')
+              : (AppText.of(context).isEnglish ? 'Voice agent' : '语音 Agent'),
+          icon: const Icon(Icons.auto_awesome_rounded, color: Colors.white),
+          onSelected: _handleAgentAction,
+          itemBuilder: (context) {
+            final en = AppText.of(context).isEnglish;
+            return [
+              PopupMenuItem(
+                  value: _AgentAction.open,
+                  child: Text(en ? 'Talk to Agent' : '与 Agent 对话')),
+              PopupMenuItem(
+                  value: _AgentAction.guidance,
+                  child: Text(_voiceEnabled
+                      ? (en ? 'Turn off guidance voice' : '关闭导航播报')
+                      : (en ? 'Turn on guidance voice' : '开启导航播报'))),
+            ];
+          },
+        ),
+      ),
+            ),
+            Positioned(
               left: 16,
-              bottom: safe.bottom + 36,
+              bottom: safe.bottom + 24,
               width: panelWidth,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
@@ -799,6 +807,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
             ),
           ],
+        )),
         );
       }),
     );
@@ -830,7 +839,7 @@ class _DestinationPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = AppText.of(context);
     return GlassPanel(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -856,25 +865,26 @@ class _DestinationPanel extends StatelessWidget {
             ),
           InkWell(
             onTap: onChoose,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(12),
             child: SizedBox(
               width: double.infinity,
               child: Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
                 child: Row(
                   children: [
                     const Icon(Icons.search_rounded),
                     const SizedBox(width: 12),
                     Expanded(
                       child: destination == null
-                          ? Text(text.searchPlaceAddressBusiness)
+                          ? Text(text.searchPlaceAddressBusiness,
+                              style: Theme.of(context).textTheme.titleMedium)
                           : Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   destination!.name,
-                                  style: Theme.of(context).textTheme.titleSmall,
+                                  style: Theme.of(context).textTheme.titleMedium,
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
@@ -900,10 +910,16 @@ class _DestinationPanel extends StatelessWidget {
                 ? (waypointCount == 0 ? 'Add stops' : 'Edit stops ($waypointCount)')
                 : (waypointCount == 0 ? '添加途经点' : '编辑途经点（$waypointCount）')),
           ),
-          SizedBox(
+          if (destination == null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 2, 4, 4),
+              child: Text(!canStart ? text.connectNavScreenFirst : text.chooseDestinationFirst,
+                  style: Theme.of(context).textTheme.bodySmall),
+            )
+          else SizedBox(
             width: double.infinity,
             height: 48,
-            child: TextButton.icon(
+            child: FilledButton.icon(
               onPressed: canStart && destination != null && !previewingRoute ? onStart : null,
               icon: const Icon(Icons.navigation_rounded),
               label: Text(

@@ -16,7 +16,8 @@ class InstructionCard extends StatelessWidget {
     final nav = context.watch<NavigationController>();
     final sent = context.watch<BleService>().lastSent;
     final state = nav.current ?? sent;
-    final active = nav.phase == NavPhase.navigating ||
+    final active =
+        nav.phase == NavPhase.navigating ||
         nav.phase == NavPhase.paused ||
         nav.phase == NavPhase.arrived;
     return GlassPanel(
@@ -48,25 +49,30 @@ class _ActiveInstruction extends StatelessWidget {
               ? text.rerouting
               : _instruction(text, state.direction),
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Icon(state.rerouting ? Icons.sync : _icon(state.direction),
-                size: 48),
+            Icon(
+              state.rerouting ? Icons.sync : _icon(state.direction),
+              size: 44,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             const SizedBox(width: 16),
             Flexible(
-                child: Text(
-              state.rerouting ? '…' : distance,
-              textAlign: TextAlign.right,
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -1.5,
-                  ),
-            )),
+              child: Text(
+                state.rerouting ? '…' : distance,
+                textAlign: TextAlign.right,
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                  fontSize: 40,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -1.2,
+                ),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -74,8 +80,8 @@ class _ActiveInstruction extends StatelessWidget {
           state.rerouting
               ? text.rerouting
               : state.direction == DeviceDirection.arrived
-                  ? text.destinationReached
-                  : text.nextTurn,
+              ? text.destinationReached
+              : text.nextTurn,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
@@ -103,9 +109,9 @@ class _WaitingInstruction extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           text.connectDeviceAndEnterDestination,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
         ),
       ],
     );
@@ -125,12 +131,12 @@ String _instruction(AppText text, DeviceDirection direction) =>
     };
 
 IconData _icon(DeviceDirection direction) => switch (direction) {
-      DeviceDirection.up => Icons.straight_rounded,
-      DeviceDirection.left => Icons.turn_left_rounded,
-      DeviceDirection.right => Icons.turn_right_rounded,
-      DeviceDirection.bearLeft => Icons.turn_slight_left_rounded,
-      DeviceDirection.bearRight => Icons.turn_slight_right_rounded,
-      DeviceDirection.uturn => Icons.u_turn_left_rounded,
-      DeviceDirection.stop => Icons.stop_circle_outlined,
-      DeviceDirection.arrived => Icons.sports_score_rounded,
-    };
+  DeviceDirection.up => Icons.straight_rounded,
+  DeviceDirection.left => Icons.turn_left_rounded,
+  DeviceDirection.right => Icons.turn_right_rounded,
+  DeviceDirection.bearLeft => Icons.turn_slight_left_rounded,
+  DeviceDirection.bearRight => Icons.turn_slight_right_rounded,
+  DeviceDirection.uturn => Icons.u_turn_left_rounded,
+  DeviceDirection.stop => Icons.stop_circle_outlined,
+  DeviceDirection.arrived => Icons.sports_score_rounded,
+};

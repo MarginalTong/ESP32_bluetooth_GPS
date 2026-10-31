@@ -37,50 +37,52 @@ abstract final class NavioTheme {
             ? const Color(0xf01c1c1e)
             : const Color(0xf7f2f2f7),
       ),
-      textTheme: base.textTheme.copyWith(
-        headlineLarge: TextStyle(
-          fontSize: 34,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -.8,
-          color: ink,
-        ),
-        headlineMedium: TextStyle(
-          fontSize: 28,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -.6,
-          color: ink,
-        ),
-        titleLarge: TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -.4,
-          color: ink,
-        ),
-        titleMedium: TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -.3,
-          color: ink,
-        ),
-        titleSmall: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-          color: ink,
-        ),
-        bodyLarge: TextStyle(fontSize: 17, letterSpacing: -.3, color: ink),
-        bodyMedium: TextStyle(fontSize: 15, letterSpacing: -.2, color: ink),
-        bodySmall: TextStyle(fontSize: 13, color: secondary),
-        labelLarge: const TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -.3,
-        ),
-        labelMedium: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: secondary,
-        ),
-      ),
+      textTheme: base.textTheme
+          .copyWith(
+            headlineLarge: TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -.8,
+              color: ink,
+            ),
+            headlineMedium: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -.6,
+              color: ink,
+            ),
+            titleLarge: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -.4,
+              color: ink,
+            ),
+            titleMedium: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -.3,
+              color: ink,
+            ),
+            titleSmall: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: ink,
+            ),
+            bodyLarge: TextStyle(fontSize: 17, letterSpacing: -.3, color: ink),
+            bodyMedium: TextStyle(fontSize: 15, letterSpacing: -.2, color: ink),
+            bodySmall: TextStyle(fontSize: 13, color: secondary),
+            labelLarge: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -.3,
+            ),
+            labelMedium: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: secondary,
+            ),
+          )
+          .apply(fontFamily: '.SF Pro Text'),
       appBarTheme: AppBarTheme(
         backgroundColor: dark ? Colors.black : const Color(0xfff2f2f7),
         foregroundColor: ink,
@@ -114,13 +116,21 @@ abstract final class NavioTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(
+            fontFamily: '.SF Pro Text',
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           minimumSize: const Size(44, 44),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+          textStyle: const TextStyle(
+            fontFamily: '.SF Pro Text',
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ),
       dividerTheme: DividerThemeData(
@@ -185,5 +195,20 @@ class SettingsIcon extends StatelessWidget {
       borderRadius: BorderRadius.circular(7),
     ),
     child: Icon(icon, size: 19, color: Colors.white),
+  );
+}
+
+class SectionLabel extends StatelessWidget {
+  const SectionLabel(this.label, {super.key});
+  final String label;
+  @override
+  Widget build(BuildContext context) => Text(
+    label,
+    style: TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w400,
+      letterSpacing: .1,
+      color: CupertinoColors.secondaryLabel.resolveFrom(context),
+    ),
   );
 }

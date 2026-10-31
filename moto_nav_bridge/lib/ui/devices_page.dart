@@ -7,6 +7,8 @@ import '../l10n/app_text.dart';
 import '../services/ble_service.dart';
 import 'device_pairing.dart';
 import 'widgets/account_button.dart';
+import 'navio_theme.dart';
+import 'widgets/device_header.dart';
 import '../config/app_brand.dart';
 
 class DevicesPage extends StatefulWidget {
@@ -112,86 +114,25 @@ class _DevicesPageState extends State<DevicesPage> {
         ble.state == BleConnectionState.connecting ||
         ble.state == BleConnectionState.awaitingBoot;
     final connected = ble.state == BleConnectionState.connected;
-    return CupertinoPageScaffold(
-      backgroundColor: const Color(0xfff2f2f7),
+    return NavioPage(
       child: CustomScrollView(slivers: [
         CupertinoSliverNavigationBar(
           largeTitle: Text(text.myDevices),
           trailing: const AccountButton(),
-          backgroundColor: const Color(0xf5f2f2f7),
+          backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(context),
           border: null,
         ),
         SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
             sliver: SliverList.list(children: [
-              DecoratedBox(
-                  decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24)),
-                  child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 28),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Center(
-                              child: Container(
-                            width: 112,
-                            height: 76,
-                            decoration: BoxDecoration(
-                              color: const Color(0xff20242c),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                  color: const Color(0xff424955), width: 5),
-                              boxShadow: const [
-                                BoxShadow(
-                                    color: Color(0x18000000),
-                                    blurRadius: 20,
-                                    offset: Offset(0, 8))
-                              ],
-                            ),
-                            child: const Icon(Icons.turn_right_rounded,
-                                size: 46, color: Colors.white),
-                          )),
-                          const SizedBox(height: 24),
-                          Text(
-                              ble.boundIdentity == null
-                                  ? text.noBoundDevice
-                                  : AppBrand.displayName(ble.boundIdentity!),
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xff1c1c1e),
-                                  letterSpacing: -.4)),
-                          const SizedBox(height: 8),
-                          Text(
-                              connected
-                                  ? text.deviceConnected
-                                  : busy
-                                      ? text.connecting
-                                      : text.connectDevice,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 15,
-                                  color: connected
-                                      ? const Color(0xff248a3d)
-                                      : const Color(0xff636366))),
-                          if (busy)
-                            const Padding(
-                                padding: EdgeInsets.only(top: 16),
-                                child: CupertinoActivityIndicator()),
-                          if (!connected)
-                            Padding(
-                                padding: const EdgeInsets.only(top: 20),
-                                child: CupertinoButton.filled(
-                                    onPressed: busy
-                                        ? null
-                                        : () => _run(
-                                            () => connectDisplay(context, ble)),
-                                    child: Text(text.connectDevice))),
-                        ],
-                      ))),
+              DeviceHeader(
+                name: ble.boundIdentity == null ? text.noBoundDevice : AppBrand.displayName(ble.boundIdentity!),
+                status: connected ? text.deviceConnected : busy ? text.connecting : text.displayNotConnected,
+                connected: connected,
+                busy: busy,
+                connectLabel: text.connectDevice,
+                onConnect: busy ? null : () => _run(() => connectDisplay(context, ble)),
+              ),
               if (_error != null || ble.lastError != null)
                 Padding(
                     padding: const EdgeInsets.all(12),
@@ -201,8 +142,8 @@ class _DevicesPageState extends State<DevicesPage> {
               const SizedBox(height: 28),
               DecoratedBox(
                   decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18)),
+                      color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+                      borderRadius: BorderRadius.circular(12)),
                   child: Column(children: [
                     _DeviceAction(
                         icon: Icons.bluetooth_disabled,
@@ -226,8 +167,8 @@ class _DevicesPageState extends State<DevicesPage> {
               const SizedBox(height: 20),
               DecoratedBox(
                   decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18)),
+                      color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+                      borderRadius: BorderRadius.circular(12)),
                   child: _DeviceAction(
                       icon: Icons.link_off_rounded,
                       title: text.forgetDevice,
@@ -239,10 +180,10 @@ class _DevicesPageState extends State<DevicesPage> {
               Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: Text(text.bindingScope,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 13,
                           height: 1.4,
-                          color: Color(0xff636366)))),
+                          color: CupertinoColors.secondaryLabel.resolveFrom(context)))),
               const SizedBox(height: 20),
               _DeviceAction(
                   icon: Icons.receipt_long_outlined,
@@ -272,26 +213,26 @@ class _DeviceAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = onTap == null
-        ? const Color(0xff8e8e93)
+        ? CupertinoColors.tertiaryLabel.resolveFrom(context)
         : destructive
             ? const Color(0xffff3b30)
-            : const Color(0xff007aff);
+            : CupertinoColors.label.resolveFrom(context);
     return CupertinoButton(
       padding: const EdgeInsets.all(16),
       onPressed: onTap,
       child: Row(children: [
-        Icon(icon, size: 23, color: color),
+        SettingsIcon(icon, color: destructive ? CupertinoColors.systemRed : onTap == null ? CupertinoColors.systemGrey : CupertinoColors.systemBlue),
         const SizedBox(width: 14),
         Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(title,
               style: TextStyle(
-                  fontSize: 17, color: color, fontWeight: FontWeight.w500)),
+                  fontSize: 17, color: color, fontWeight: FontWeight.w400)),
           const SizedBox(height: 5),
           Text(subtitle,
-              style: const TextStyle(
-                  fontSize: 13, height: 1.35, color: Color(0xff636366))),
+              style: TextStyle(
+                  fontSize: 13, height: 1.35, color: CupertinoColors.secondaryLabel.resolveFrom(context))),
         ])),
         if (!destructive) ...[
           const SizedBox(width: 8),

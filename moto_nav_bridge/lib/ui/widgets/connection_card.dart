@@ -35,29 +35,21 @@ class ConnectionCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: connected
-                      ? const Color(0xff5ee6a8)
+                      ? const Color(0xff34c759)
                       : busy
                           ? colors.primary
                           : colors.outline,
-                  boxShadow: connected
-                      ? const [
-                          BoxShadow(
-                            color: Color(0x665ee6a8),
-                            blurRadius: 10,
-                          ),
-                        ]
-                      : null,
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       text.readyToGo,
-                      textAlign: TextAlign.center,
+                      textAlign: TextAlign.start,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
@@ -67,10 +59,10 @@ class ConnectionCard extends StatelessWidget {
                       busy
                           ? _label(context, ble.state)
                           : ble.lastError ?? _label(context, ble.state),
-                      textAlign: TextAlign.center,
+                      textAlign: TextAlign.start,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: busy || ble.lastError == null
                                 ? colors.onSurfaceVariant
                                 : colors.error,
@@ -87,7 +79,7 @@ class ConnectionCard extends StatelessWidget {
               else
                 Icon(
                   connected ? Icons.bluetooth_connected : Icons.bluetooth,
-                  color: connected ? const Color(0xff5ee6a8) : colors.outline,
+                  color: colors.onSurfaceVariant,
                 ),
             ],
           ),

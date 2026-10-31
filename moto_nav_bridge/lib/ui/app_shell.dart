@@ -46,7 +46,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
     context.read<RiderMapController?>()?.setVisibility(
-        foreground: _foreground, mapVisible: _selected == 0);
+      foreground: _foreground,
+      mapVisible: _selected == 0,
+    );
   }
 
   @override
@@ -66,39 +68,52 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final text = AppText.of(context);
     final account = context.watch<AccountController?>();
-    final darkBar = _mapStyle != 'standard';
+    final darkBar =
+        _mapStyle != 'standard' ||
+        Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      body: IndexedStack(index: _selected, children: [
-        HomePage(
+      body: IndexedStack(
+        index: _selected,
+        children: [
+          HomePage(
             key: ValueKey(account?.localGeneration ?? 0),
             onMapStyleChanged: (style) {
               if (mounted && style != _mapStyle) {
                 setState(() => _mapStyle = style);
               }
-            }),
-        const DevicesPage(),
-      ]),
+            },
+          ),
+          const DevicesPage(),
+        ],
+      ),
       bottomNavigationBar: CupertinoTabBar(
-        backgroundColor:
-            darkBar ? const Color(0xff121820) : const Color(0xf5fafafa),
-        activeColor:
-            darkBar ? const Color(0xff74b5ff) : const Color(0xff007aff),
-        inactiveColor:
-            darkBar ? const Color(0xff8996a8) : const Color(0xff8e8e93),
+        backgroundColor: darkBar
+            ? const Color(0xff121820)
+            : const Color(0xf5fafafa),
+        activeColor: darkBar
+            ? const Color(0xff74b5ff)
+            : const Color(0xff007aff),
+        inactiveColor: darkBar
+            ? const Color(0xff8996a8)
+            : const Color(0xff8e8e93),
         currentIndex: _selected,
         onTap: (value) {
           setState(() => _selected = value);
           context.read<RiderMapController?>()?.setVisibility(
-              foreground: _foreground, mapVisible: value == 0);
+            foreground: _foreground,
+            mapVisible: value == 0,
+          );
         },
         items: [
           BottomNavigationBarItem(
-              icon: const Icon(CupertinoIcons.map),
-              activeIcon: const Icon(CupertinoIcons.map_fill),
-              label: text.mapTab),
+            icon: const Icon(CupertinoIcons.map),
+            activeIcon: const Icon(CupertinoIcons.map_fill),
+            label: text.mapTab,
+          ),
           BottomNavigationBarItem(
-              icon: const Icon(CupertinoIcons.device_phone_portrait),
-              label: text.myDevices),
+            icon: const Icon(CupertinoIcons.device_phone_portrait),
+            label: text.myDevices,
+          ),
         ],
       ),
     );
