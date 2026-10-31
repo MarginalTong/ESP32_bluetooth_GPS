@@ -127,7 +127,7 @@ class _DevicesPageState extends State<DevicesPage> {
             sliver: SliverList.list(children: [
               DeviceHeader(
                 name: ble.boundIdentity == null ? text.noBoundDevice : AppBrand.displayName(ble.boundIdentity!),
-                status: connected ? text.deviceConnected : busy ? text.connecting : text.displayNotConnected,
+                status: connected ? text.deviceConnected : busy ? text.connecting : (text.isEnglish ? 'Not connected' : '未连接'),
                 connected: connected,
                 busy: busy,
                 connectLabel: text.connectDevice,

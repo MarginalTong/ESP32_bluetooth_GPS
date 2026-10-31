@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_text.dart';
@@ -114,8 +115,10 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       });
       return;
     }
-    _debounce =
-        Timer(const Duration(milliseconds: 250), () => _complete(value));
+    _debounce = Timer(
+      const Duration(milliseconds: 250),
+      () => _complete(value),
+    );
   }
 
   Future<void> _complete(String value) async {
@@ -175,8 +178,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
         _results = results;
         _suggestions = const [];
         if (results.isEmpty) {
-          _error =
-              showErrorWhenEmpty ? AppText.of(context).noMatchingPlaces : null;
+          _error = showErrorWhenEmpty
+              ? AppText.of(context).noMatchingPlaces
+              : null;
         }
       });
     } catch (e) {
@@ -187,11 +191,11 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
         final english = AppText.of(context).isEnglish;
         _error = LocationLinkParser.accepts(query)
             ? (english
-                ? 'Could not resolve this location link. Check the link or search by name/address. Only supported HTTPS map links are accepted.'
-                : '无法解析此位置链接。请检查链接，或改用名称、地址搜索；仅支持指定地图域名的 HTTPS 链接。')
+                  ? 'Could not resolve this location link. Check the link or search by name/address. Only supported HTTPS map links are accepted.'
+                  : '无法解析此位置链接。请检查链接，或改用名称、地址搜索；仅支持指定地图域名的 HTTPS 链接。')
             : (showErrorWhenEmpty
-                ? AppText.of(context).noMatchingPlaces
-                : null);
+                  ? AppText.of(context).noMatchingPlaces
+                  : null);
       });
     }
   }
@@ -221,20 +225,24 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
     if (place.resolutionStatus != null) {
       final english = AppText.of(context).isEnglish;
       final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-                title: Text(english ? 'Confirm destination' : '确认目的地'),
-                content: Text(
-                    '${place.name}\n${place.address}\n\n${place.resolutionStatus == 'viewport' ? (english ? 'This is the map view centre, not a verified place. Check the pin on the map before navigating.' : '这是地图视角中心，不是已验证的地点。请在地图上检查位置后再开始导航。') : (english ? 'Check this destination on the map before starting navigation.' : '请在地图上确认此目的地后再开始导航。')}'),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: Text(english ? 'Cancel' : '取消')),
-                  TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: Text(english ? 'Show on map' : '在地图上查看'))
-                ],
-              ));
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(english ? 'Confirm destination' : '确认目的地'),
+          content: Text(
+            '${place.name}\n${place.address}\n\n${place.resolutionStatus == 'viewport' ? (english ? 'This is the map view centre, not a verified place. Check the pin on the map before navigating.' : '这是地图视角中心，不是已验证的地点。请在地图上检查位置后再开始导航。') : (english ? 'Check this destination on the map before starting navigation.' : '请在地图上确认此目的地后再开始导航。')}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(english ? 'Cancel' : '取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(english ? 'Show on map' : '在地图上查看'),
+            ),
+          ],
+        ),
+      );
       if (confirmed != true || !mounted) return;
     }
     try {
@@ -258,10 +266,17 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   Widget build(BuildContext context) {
     final text = AppText.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(text.searchDestination)),
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      appBar: AppBar(
+        title: Text(text.searchDestination),
+        leading: CupertinoNavigationBarBackButton(
+          onPressed: () => Navigator.maybePop(context),
+        ),
+      ),
       body: Column(
         children: [
-          Padding(
+          Container(
+            color: Theme.of(context).scaffoldBackgroundColor,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: TextField(
               controller: _controller,
@@ -271,7 +286,14 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: text.enterPlaceAddressBusiness,
-                prefixIcon: const Icon(Icons.search_rounded),
+                prefixIcon: Icon(
+                  CupertinoIcons.search,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 suffixIcon: IconButton(
                   tooltip: text.isEnglish ? 'Paste location link' : '粘贴位置链接',
                   icon: const Icon(Icons.content_paste_rounded),
@@ -296,60 +318,61 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               ),
             ),
           Expanded(
-            child: _results.isEmpty &&
+            child:
+                _results.isEmpty &&
                     _suggestions.isEmpty &&
                     !_loading &&
                     _error == null
                 ? _history.isEmpty
-                    ? const _SearchHint()
-                    : _SearchHistoryList(
-                        places: _history,
-                        onSelect: _selectPlace,
-                        onClear: _clearHistory,
-                      )
+                      ? const _SearchHint()
+                      : _SearchHistoryList(
+                          places: _history,
+                          onSelect: _selectPlace,
+                          onClear: _clearHistory,
+                        )
                 : _suggestions.isNotEmpty
-                    ? ListView.separated(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: _suggestions.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final suggestion = _suggestions[index];
-                          return ListTile(
-                            leading: const Icon(Icons.search_rounded),
-                            title: Text(suggestion.title),
-                            subtitle: suggestion.subtitle.isEmpty
-                                ? null
-                                : Text(
-                                    suggestion.subtitle,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                            trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: _resolving
-                                ? null
-                                : () => _selectSuggestion(suggestion),
-                          );
-                        },
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: _results.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final place = _results[index];
-                          return ListTile(
-                            leading: const Icon(Icons.location_on_outlined),
-                            title: Text(place.name),
-                            subtitle: Text(
-                              place.address,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: () => _selectPlace(place),
-                          );
-                        },
-                      ),
+                ? ListView.separated(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: _suggestions.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final suggestion = _suggestions[index];
+                      return ListTile(
+                        leading: const _PlaceIcon(CupertinoIcons.search),
+                        title: Text(suggestion.title),
+                        subtitle: suggestion.subtitle.isEmpty
+                            ? null
+                            : Text(
+                                suggestion.subtitle,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: _resolving
+                            ? null
+                            : () => _selectSuggestion(suggestion),
+                      );
+                    },
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: _results.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final place = _results[index];
+                      return ListTile(
+                        leading: const _PlaceIcon(CupertinoIcons.map_pin),
+                        title: Text(place.name),
+                        subtitle: Text(
+                          place.address,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _selectPlace(place),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -387,10 +410,7 @@ class _SearchHistoryList extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
-                TextButton(
-                  onPressed: onClear,
-                  child: Text(text.clear),
-                ),
+                TextButton(onPressed: onClear, child: Text(text.clear)),
               ],
             ),
           );
@@ -398,7 +418,7 @@ class _SearchHistoryList extends StatelessWidget {
 
         final place = places[index - 1];
         return ListTile(
-          leading: const Icon(Icons.history_rounded),
+          leading: const _PlaceIcon(CupertinoIcons.clock),
           title: Text(place.name),
           subtitle: place.address.isEmpty
               ? null
@@ -425,22 +445,42 @@ class _SearchHint extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.travel_explore_rounded,
-            size: 64,
-            color: Theme.of(context).colorScheme.primary,
-          ),
+          const _PlaceIcon(CupertinoIcons.search, size: 56),
           const SizedBox(height: 14),
-          Text(text.whereTo),
+          Text(text.whereTo, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 6),
-          Text(
-            text.searchExamples,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              text.searchExamples,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _PlaceIcon extends StatelessWidget {
+  const _PlaceIcon(this.icon, {this.size = 36});
+  final IconData icon;
+  final double size;
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: .08),
+      borderRadius: BorderRadius.circular(size * .28),
+    ),
+    child: Icon(
+      icon,
+      size: size * .52,
+      color: Theme.of(context).colorScheme.primary,
+    ),
+  );
 }

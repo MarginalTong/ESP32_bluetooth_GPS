@@ -12,22 +12,16 @@ class ProfileAvatarEditor extends StatelessWidget {
     final en = AppText.of(context).isEnglish;
     final avatar = controller.avatar;
     return Container(
-      margin: const EdgeInsets.only(bottom: 18),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(
-          context,
-        ),
-        borderRadius: BorderRadius.circular(24),
-      ),
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Column(
         children: [
           Semantics(
             label: en ? 'Profile photo' : '个人头像',
             child: ClipOval(
               child: SizedBox(
-                width: 88,
-                height: 88,
+                width: 80,
+                height: 80,
                 child: avatar == null
                     ? ColoredBox(
                         color: CupertinoColors.activeBlue.withValues(alpha: .1),
@@ -110,6 +104,7 @@ class ProfileAvatarEditor extends StatelessWidget {
                     avatar == null
                         ? (en ? 'Choose photo' : '设置头像')
                         : (en ? 'Change photo' : '更换头像'),
+                    style: const TextStyle(fontSize: 15),
                   ),
                 ),
                 if (avatar != null)

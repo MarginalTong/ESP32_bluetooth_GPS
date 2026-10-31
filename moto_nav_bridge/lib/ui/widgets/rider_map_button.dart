@@ -14,7 +14,7 @@ class RiderMapButton extends StatelessWidget {
     return Material(
       color: dark ? const Color(0xff121820) : Colors.white,
       shape: const CircleBorder(),
-      elevation: 2,
+      elevation: 1,
       child: IconButton(
         tooltip: en ? 'Sydney riders' : '悉尼骑友',
         icon: Icon(
@@ -24,6 +24,9 @@ class RiderMapButton extends StatelessWidget {
         onPressed: () => showModalBottomSheet<void>(
           context: context,
           isScrollControlled: true,
+          useSafeArea: true,
+          showDragHandle: true,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           builder: (_) => ChangeNotifierProvider.value(
             value: riders,
             child: const _RiderSettings(),
@@ -67,7 +70,7 @@ class _RiderSettings extends StatelessWidget {
                         : '请先在 My devices 登录账号。',
                   ),
                 ),
-              SwitchListTile(
+              SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 title: Text(en ? 'Show riders' : '显示骑友'),
                 subtitle: Text(
@@ -76,7 +79,7 @@ class _RiderSettings extends StatelessWidget {
                 value: riders.viewing,
                 onChanged: riders.signedIn ? riders.setViewing : null,
               ),
-              SwitchListTile(
+              SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 title: Text(
                   en ? 'Share my position during navigation' : '导航期间共享我的位置',

@@ -82,10 +82,13 @@ class _PairingSheetState extends State<_PairingSheet>
         await Future<void>.delayed(const Duration(milliseconds: 950));
         if (mounted) Navigator.of(context).pop();
       } else {
-        setState(() => _error = widget.ble.lastError ??
-            (AppText.of(context).isEnglish
-                ? 'Could not connect. Please try again.'
-                : '连接失败，请重试。'));
+        setState(
+          () => _error =
+              widget.ble.lastError ??
+              (AppText.of(context).isEnglish
+                  ? 'Could not connect. Please try again.'
+                  : '连接失败，请重试。'),
+        );
       }
     } catch (_) {
       if (mounted) {
@@ -130,41 +133,42 @@ class _PairingSheetState extends State<_PairingSheet>
           final title = _success
               ? text.deviceConnected
               : waiting
-                  ? text.pressBoot
-                  : choosing
-                      ? text.selectDisplay
-                      : _error != null
-                          ? (text.isEnglish
-                              ? 'Connection interrupted'
-                              : '连接未完成')
-                          : widget.ble.state == BleConnectionState.scanning
-                              ? text.searchingDevice
-                              : text.connecting;
+              ? text.pressBoot
+              : choosing
+              ? text.selectDisplay
+              : _error != null
+              ? (text.isEnglish ? 'Connection interrupted' : '连接未完成')
+              : widget.ble.state == BleConnectionState.scanning
+              ? text.searchingDevice
+              : text.connecting;
           final subtitle = _success
               ? (text.isEnglish
-                  ? 'This display is now saved on your phone.'
-                  : '这块屏幕已保存到你的手机。')
+                    ? 'This display is now saved on your phone.'
+                    : '这块屏幕已保存到你的手机。')
               : waiting
-                  ? text.bootHint
-                  : choosing
-                      ? (text.isEnglish
-                          ? 'Choose the screen in front of you.'
-                          : '请选择你面前的那块屏幕。')
-                      : _error ??
-                          (text.isEnglish
-                              ? 'Bring your display near this iPhone.'
-                              : '请将导航屏靠近手机。');
+              ? text.bootHint
+              : choosing
+              ? (text.isEnglish
+                    ? 'Choose the screen in front of you.'
+                    : '请选择你面前的那块屏幕。')
+              : _error ??
+                    (text.isEnglish
+                        ? 'Bring your display near this iPhone.'
+                        : '请将导航屏靠近手机。');
           return Container(
             margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
             padding: const EdgeInsets.fromLTRB(24, 10, 24, 24),
             decoration: BoxDecoration(
-              color: const Color(0xfff9fafc),
-              borderRadius: BorderRadius.circular(34),
+              color: CupertinoColors.systemGroupedBackground.resolveFrom(
+                context,
+              ),
+              borderRadius: BorderRadius.circular(28),
               boxShadow: const [
                 BoxShadow(
-                    color: Color(0x29000000),
-                    blurRadius: 34,
-                    offset: Offset(0, -10))
+                  color: Color(0x29000000),
+                  blurRadius: 34,
+                  offset: Offset(0, -10),
+                ),
               ],
             ),
             child: SafeArea(
@@ -185,37 +189,51 @@ class _PairingSheetState extends State<_PairingSheet>
                     child: CupertinoButton(
                       padding: EdgeInsets.zero,
                       onPressed: _close,
-                      child: const Icon(CupertinoIcons.xmark_circle_fill,
-                          color: Color(0xffa8adb7), size: 27),
+                      child: const Icon(
+                        CupertinoIcons.xmark_circle_fill,
+                        color: Color(0xffa8adb7),
+                        size: 27,
+                      ),
                     ),
                   ),
                   _DisplayAnimation(pulse: _pulse, success: _success),
                   const SizedBox(height: 12),
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 280),
-                    child: Text(title,
-                        key: ValueKey(title),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            fontSize: 23,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.6,
-                            color: Color(0xff1c2230))),
+                    child: Text(
+                      title,
+                      key: ValueKey(title),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 23,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.6,
+                        color: CupertinoColors.label.resolveFrom(context),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 6),
-                  Text(subtitle,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          fontSize: 14,
-                          height: 1.35,
-                          color: Color(0xff626a78))),
+                  Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.35,
+                      color: CupertinoColors.secondaryLabel.resolveFrom(
+                        context,
+                      ),
+                    ),
+                  ),
                   if (_selectedName != null) ...[
                     const SizedBox(height: 8),
-                    Text(_selectedName!,
-                        style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xff4465a4))),
+                    Text(
+                      _selectedName!,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xff4465a4),
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 22),
                   if (choosing)
@@ -229,34 +247,53 @@ class _PairingSheetState extends State<_PairingSheet>
                           final result = _candidates[index];
                           return CupertinoButton(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                            color: Colors.white,
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            color: CupertinoColors
+                                .secondarySystemGroupedBackground
+                                .resolveFrom(context),
                             borderRadius: BorderRadius.circular(18),
                             onPressed: () => _select(result),
-                            child: Row(children: [
-                              const Icon(CupertinoIcons.device_phone_portrait,
-                                  color: Color(0xff2776d9)),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(_displayName(result),
-                                        style: const TextStyle(
-                                            color: Color(0xff1c2230),
-                                            fontWeight: FontWeight.w600)),
-                                    Text(result.device.remoteId.str,
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  CupertinoIcons.device_phone_portrait,
+                                  color: Color(0xff2776d9),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _displayName(result),
+                                        style: TextStyle(
+                                          color: CupertinoColors.label
+                                              .resolveFrom(context),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        result.device.remoteId.str,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Color(0xff8c94a1))),
-                                  ],
+                                          fontSize: 11,
+                                          color: Color(0xff8c94a1),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const Icon(CupertinoIcons.chevron_right,
-                                  size: 16, color: Color(0xff8c94a1)),
-                            ]),
+                                const Icon(
+                                  CupertinoIcons.chevron_right,
+                                  size: 16,
+                                  color: Color(0xff8c94a1),
+                                ),
+                              ],
+                            ),
                           );
                         },
                       ),
@@ -290,60 +327,65 @@ class _DisplayAnimation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 190,
-        height: 150,
-        child: AnimatedBuilder(
-          animation: pulse,
-          builder: (context, _) => Stack(
-            alignment: Alignment.center,
-            children: [
-              Transform.scale(
-                scale: 0.88 + pulse.value * 0.25,
-                child: Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(colors: [
-                      const Color(0xff70aeff)
-                          .withValues(alpha: 0.25 - pulse.value * 0.13),
-                      const Color(0xff70aeff).withValues(alpha: 0),
-                    ]),
-                  ),
+    width: 190,
+    height: 150,
+    child: AnimatedBuilder(
+      animation: pulse,
+      builder: (context, _) => Stack(
+        alignment: Alignment.center,
+        children: [
+          Transform.scale(
+            scale: 0.88 + pulse.value * 0.25,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(
+                      0xff70aeff,
+                    ).withValues(alpha: 0.25 - pulse.value * 0.13),
+                    const Color(0xff70aeff).withValues(alpha: 0),
+                  ],
                 ),
               ),
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xffedf5ff),
-                  border: Border.all(color: const Color(0xffd5e8ff), width: 1),
-                ),
-              ),
-              Container(
-                width: 87,
-                height: 87,
-                decoration: BoxDecoration(
-                    color: const Color(0xff1e2735),
-                    borderRadius: BorderRadius.circular(25),
-                    border:
-                        Border.all(color: const Color(0xff647285), width: 4),
-                    boxShadow: const [
-                      BoxShadow(
-                          color: Color(0x39092c58),
-                          blurRadius: 17,
-                          offset: Offset(0, 9))
-                    ]),
-                child: Icon(
-                    success
-                        ? CupertinoIcons.check_mark
-                        : CupertinoIcons.location_north_fill,
-                    color: Colors.white,
-                    size: 34),
-              ),
-            ],
+            ),
           ),
-        ),
-      );
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xffedf5ff),
+              border: Border.all(color: const Color(0xffd5e8ff), width: 1),
+            ),
+          ),
+          Container(
+            width: 87,
+            height: 87,
+            decoration: BoxDecoration(
+              color: const Color(0xff1e2735),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xff647285), width: 4),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x39092c58),
+                  blurRadius: 17,
+                  offset: Offset(0, 9),
+                ),
+              ],
+            ),
+            child: Icon(
+              success
+                  ? CupertinoIcons.check_mark
+                  : CupertinoIcons.location_north_fill,
+              color: Colors.white,
+              size: 34,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }

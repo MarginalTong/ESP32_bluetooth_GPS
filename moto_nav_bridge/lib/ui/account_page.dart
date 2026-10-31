@@ -5,6 +5,7 @@ import '../controllers/account_controller.dart';
 import '../l10n/app_text.dart';
 import 'widgets/google_sign_in_button.dart';
 import 'widgets/profile_avatar_editor.dart';
+import 'navio_theme.dart';
 
 enum _AccountForm { login, register, verify, recovery }
 
@@ -328,7 +329,7 @@ class _AccountPageState extends State<AccountPage> {
                 title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 30,
+                  fontSize: 28,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -.8,
                   color: CupertinoColors.label.resolveFrom(context),
@@ -576,181 +577,228 @@ class _AccountPageState extends State<AccountPage> {
     final account = context.watch<AccountController>();
     final canAct = account.available && account.ready;
     final loggedIn = account.user != null;
-    // This route is also pushed by MaterialApp. CupertinoPageScaffold does not
-    // supply a body DefaultTextStyle, so otherwise plain text inherits Material's
-    // red/yellow-underlined diagnostic fallback rather than an iOS body style.
-    return DefaultTextStyle(
-      style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
-        inherit: false,
-        color: CupertinoColors.label.resolveFrom(context),
-        decoration: TextDecoration.none,
+    return NavioPage(
+      navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
+        middle: Text(t('NAVIO Account', 'NAVIO 账号')),
       ),
-      child: CupertinoPageScaffold(
-        backgroundColor: CupertinoColors.systemGroupedBackground,
-        navigationBar: CupertinoNavigationBar(
-          transitionBetweenRoutes: false,
-          middle: Text(t('NAVIO Account', 'NAVIO 账号')),
-        ),
-        child: SafeArea(
-          child: ListView(
-            key: ValueKey('account:$loggedIn'),
-            padding: const EdgeInsets.all(20),
-            children: [
-              if (!account.available)
-                Text(
+      child: SafeArea(
+        child: ListView(
+          key: ValueKey('account:$loggedIn'),
+          padding: const EdgeInsets.all(20),
+          children: [
+            if (!account.available)
+              Text(
+                t(
+                  'Account service is not configured in this build. Maps and Bluetooth still work.',
+                  '此版本尚未配置账号服务，地图与蓝牙仍可正常使用。',
+                ),
+              ),
+            if (!account.canModify)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
                   t(
-                    'Account service is not configured in this build. Maps and Bluetooth still work.',
-                    '此版本尚未配置账号服务，地图与蓝牙仍可正常使用。',
+                    'Account changes and cloud restore are paused during navigation.',
+                    '导航期间暂不切换账号或恢复云端资料。',
                   ),
                 ),
-              if (!account.canModify)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(
-                    t(
-                      'Account changes and cloud restore are paused during navigation.',
-                      '导航期间暂不切换账号或恢复云端资料。',
+              ),
+            if (account.busy && loggedIn)
+              const Center(child: CupertinoActivityIndicator()),
+            if (account.error != null && loggedIn)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  _error(account.error),
+                  style: const TextStyle(color: CupertinoColors.destructiveRed),
+                ),
+              ),
+            if (notice != null && loggedIn)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(notice!),
+              ),
+            if (loggedIn) ...[
+              const ProfileAvatarEditor(),
+              CupertinoListSection.insetGrouped(
+                margin: EdgeInsets.zero,
+                children: [
+                  CupertinoListTile(
+                    title: Text(
+                      account.user!.email.isEmpty
+                          ? 'Apple ID'
+                          : account.user!.email,
                     ),
-                  ),
-                ),
-              if (account.busy && loggedIn)
-                const Center(child: CupertinoActivityIndicator()),
-              if (account.error != null && loggedIn)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Text(
-                    _error(account.error),
-                    style: const TextStyle(
-                      color: CupertinoColors.destructiveRed,
-                    ),
-                  ),
-                ),
-              if (notice != null && loggedIn)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Text(notice!),
-                ),
-              if (loggedIn) ...[
-                const ProfileAvatarEditor(),
-                CupertinoListSection.insetGrouped(
-                  margin: EdgeInsets.zero,
-                  children: [
-                    CupertinoListTile(
-                      title: Text(
-                        account.user!.email.isEmpty
-                            ? 'Apple ID'
-                            : account.user!.email,
-                      ),
-                      subtitle: Text(
-                        t(
-                          'Signed in · display pairing stays on this phone',
-                          '已登录 · 小屏配对仍保存在本机',
-                        ),
+                    subtitle: Text(
+                      t(
+                        'Signed in · display pairing stays on this phone',
+                        '已登录 · 小屏配对仍保存在本机',
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Text(
+                  ),
+                ],
+              ),
+              CupertinoListSection.insetGrouped(
+                margin: const EdgeInsets.only(top: 24),
+                header: SectionLabel(t('CLOUD DATA', '云端资料')),
+                footer: Text(
                   t(
                     'Cloud sync is manual. Only saved addresses and preferences are included; BLE keys and location history are never uploaded.',
                     '云同步由你主动操作，仅包含常用地址和偏好设置，不上传蓝牙密钥或定位轨迹。',
                   ),
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                  ),
                 ),
-                const SizedBox(height: 12),
-                CupertinoButton.filled(
-                  onPressed: canAct
-                      ? () async {
-                          if (await _confirm(
-                            t('Upload to NAVIO cloud?', '上传到 NAVIO 云端？'),
-                            t(
-                              'Upload this account’s saved addresses and map/route preferences. This replaces its cloud copy.',
-                              '将当前账号的常用地址、地图与路线偏好上传，替换该账号的云端副本。',
-                            ),
-                          )) {
-                            await account.upload();
+                children: [
+                  _AccountAction(
+                    icon: CupertinoIcons.cloud_upload,
+                    title: t('Upload current settings', '上传当前资料'),
+                    onPressed: canAct
+                        ? () async {
+                            if (await _confirm(
+                              t('Upload to NAVIO cloud?', '上传到 NAVIO 云端？'),
+                              t(
+                                'Upload this account’s saved addresses and map/route preferences. This replaces its cloud copy.',
+                                '将当前账号的常用地址、地图与路线偏好上传，替换该账号的云端副本。',
+                              ),
+                            )) {
+                              await account.upload();
+                            }
                           }
-                        }
-                      : null,
-                  child: Text(t('Upload current settings', '上传当前资料')),
-                ),
-                CupertinoButton(
-                  onPressed: canAct
-                      ? () async {
-                          if (await _confirm(
-                            t('Restore cloud data?', '恢复云端资料？'),
-                            t(
-                              'Replace this account’s local addresses and preferences with its cloud copy.',
-                              '使用云端副本替换当前账号在本机的常用地址与偏好。',
-                            ),
-                          )) {
-                            await account.download();
+                        : null,
+                  ),
+                  _AccountAction(
+                    icon: CupertinoIcons.cloud_download,
+                    title: t('Restore from cloud', '从云端恢复'),
+                    onPressed: canAct
+                        ? () async {
+                            if (await _confirm(
+                              t('Restore cloud data?', '恢复云端资料？'),
+                              t(
+                                'Replace this account’s local addresses and preferences with its cloud copy.',
+                                '使用云端副本替换当前账号在本机的常用地址与偏好。',
+                              ),
+                            )) {
+                              await account.download();
+                            }
                           }
-                        }
-                      : null,
-                  child: Text(t('Restore from cloud', '从云端恢复')),
-                ),
-                CupertinoButton(
-                  onPressed: canAct
-                      ? () async {
-                          if (await _confirm(
-                            t('Import guest settings?', '导入游客资料？'),
-                            t(
-                              'Copy guest addresses and preferences to this account on this phone. Nothing is uploaded automatically.',
-                              '把本机游客地址与偏好复制到当前账号，不会自动上传。',
-                            ),
-                          )) {
-                            await account.importGuest();
+                        : null,
+                  ),
+                  _AccountAction(
+                    icon: CupertinoIcons.square_arrow_down,
+                    title: t('Import guest settings', '导入游客资料'),
+                    onPressed: canAct
+                        ? () async {
+                            if (await _confirm(
+                              t('Import guest settings?', '导入游客资料？'),
+                              t(
+                                'Copy guest addresses and preferences to this account on this phone. Nothing is uploaded automatically.',
+                                '把本机游客地址与偏好复制到当前账号，不会自动上传。',
+                              ),
+                            )) {
+                              await account.importGuest();
+                            }
                           }
-                        }
-                      : null,
-                  child: Text(t('Import guest settings', '导入游客资料')),
-                ),
-                if (account.lastSync != null)
-                  Text(
+                        : null,
+                  ),
+                ],
+              ),
+              if (account.lastSync != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Text(
                     t('Last sync: ', '上次同步：') +
                         account.lastSync!.toLocal().toString().split('.').first,
-                  ),
-                const SizedBox(height: 20),
-                CupertinoButton(
-                  onPressed: canAct ? account.signOut : null,
-                  child: Text(t('Sign out', '退出登录')),
-                ),
-                if (account.user!.apple)
-                  CupertinoButton(
-                    onPressed: canAct && account.appleAvailable
-                        ? account.signInApple
-                        : null,
-                    child: Text(t('Reauthorize Apple', '重新验证 Apple 授权')),
-                  ),
-                CupertinoButton(
-                  onPressed: canAct
-                      ? () async {
-                          if (await _confirm(
-                            t('Delete NAVIO account?', '删除 NAVIO 账号？'),
-                            t(
-                              'Permanently delete your account and its cloud addresses/preferences. Type DELETE. Guest data and Bluetooth pairing are separate.',
-                              '永久删除账号及其云端地址与偏好。输入 DELETE 确认。游客资料和蓝牙配对独立保留。',
-                            ),
-                            deleting: true,
-                          )) {
-                            await account.deleteAccount();
-                          }
-                        }
-                      : null,
-                  child: Text(
-                    t('Delete account', '删除账号'),
-                    style: const TextStyle(
-                      color: CupertinoColors.destructiveRed,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: CupertinoColors.secondaryLabel.resolveFrom(
+                        context,
+                      ),
                     ),
                   ),
                 ),
-              ] else if (account.available)
-                _signInForm(account, canAct),
-            ],
-          ),
+              CupertinoListSection.insetGrouped(
+                margin: const EdgeInsets.only(top: 24),
+                header: SectionLabel(t('ACCOUNT', '账号')),
+                children: [
+                  _AccountAction(
+                    icon: CupertinoIcons.square_arrow_right,
+                    title: t('Sign out', '退出登录'),
+                    onPressed: canAct ? account.signOut : null,
+                  ),
+                  if (account.user!.apple)
+                    _AccountAction(
+                      icon: CupertinoIcons.person_crop_circle_badge_checkmark,
+                      title: t('Reauthorize Apple', '重新验证 Apple 授权'),
+                      onPressed: canAct && account.appleAvailable
+                          ? account.signInApple
+                          : null,
+                    ),
+                  _AccountAction(
+                    icon: CupertinoIcons.trash,
+                    title: t('Delete account', '删除账号'),
+                    destructive: true,
+                    onPressed: canAct
+                        ? () async {
+                            if (await _confirm(
+                              t('Delete NAVIO account?', '删除 NAVIO 账号？'),
+                              t(
+                                'Permanently delete your account and its cloud addresses/preferences. Type DELETE. Guest data and Bluetooth pairing are separate.',
+                                '永久删除账号及其云端地址与偏好。输入 DELETE 确认。游客资料和蓝牙配对独立保留。',
+                              ),
+                              deleting: true,
+                            )) {
+                              await account.deleteAccount();
+                            }
+                          }
+                        : null,
+                  ),
+                ],
+              ),
+            ] else if (account.available)
+              _signInForm(account, canAct),
+          ],
         ),
       ),
     );
   }
+}
+
+class _AccountAction extends StatelessWidget {
+  const _AccountAction({
+    required this.icon,
+    required this.title,
+    this.onPressed,
+    this.destructive = false,
+  });
+  final IconData icon;
+  final String title;
+  final VoidCallback? onPressed;
+  final bool destructive;
+  @override
+  Widget build(BuildContext context) => CupertinoListTile(
+    leading: SettingsIcon(
+      icon,
+      color: destructive
+          ? CupertinoColors.systemRed
+          : CupertinoColors.systemBlue,
+    ),
+    title: Text(
+      title,
+      style: TextStyle(
+        fontSize: 16,
+        color: onPressed == null
+            ? CupertinoColors.tertiaryLabel.resolveFrom(context)
+            : destructive
+            ? CupertinoColors.systemRed
+            : CupertinoColors.label.resolveFrom(context),
+      ),
+    ),
+    trailing: const CupertinoListTileChevron(),
+    onTap: onPressed,
+  );
 }
