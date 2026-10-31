@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:moto_nav_bridge/controllers/account_controller.dart';
 import 'package:moto_nav_bridge/controllers/settings_sync_controller.dart';
+import 'package:moto_nav_bridge/l10n/app_text.dart';
 import 'package:moto_nav_bridge/models/account_data.dart';
 import 'package:moto_nav_bridge/models/settings_merge.dart';
 import 'package:moto_nav_bridge/models/place_result.dart';
@@ -21,10 +22,7 @@ AccountData settings({
   Map<String, PlaceResult> places = const {},
 }) => AccountData(
   revision: revision,
-  preferences: {
-    'map_style': style,
-    'avoid_tolls': tolls,
-  },
+  preferences: {'map_style': style, 'avoid_tolls': tolls},
   places: places,
 );
 void main() {
@@ -186,6 +184,33 @@ void main() {
       await sync.resolve(SettingsChoice.cloud);
       expect(account.local.capture().preferences['map_style'], 'satellite');
       expect(backend.cloud.preferences['avoid_tolls'], true);
+    },
+  );
+  test(
+    'voice and language upload, and a cloud change applies locally',
+    () async {
+      await login();
+      await SettingsStore.edit(prefs, () async {
+        await prefs.setBool(LocalAccountData.voiceKey, true);
+        await prefs.setString(LocalAccountData.languageKey, 'en');
+      });
+      await sync.flush();
+      expect(backend.cloud.preferences['voice_guidance'], true);
+      expect(backend.cloud.preferences['app_language'], 'en');
+
+      backend.cloud = AccountData(
+        revision: backend.cloud.revision + 1,
+        preferences: {
+          ...backend.cloud.preferences,
+          'voice_guidance': false,
+          'app_language': 'zh',
+        },
+      );
+      await sync.flush();
+      expect(prefs.getBool(LocalAccountData.voiceKey), false);
+      expect(prefs.getString(LocalAccountData.languageKey), 'zh');
+      expect(AppText.selected.value, AppLanguage.zh);
+      AppText.selected.value = AppLanguage.system;
     },
   );
   test(

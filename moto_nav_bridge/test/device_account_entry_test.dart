@@ -93,7 +93,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('rider@example.test'), findsOneWidget);
       final body = find.textContaining(
-        'Saved places and map/route preferences',
+        'Saved places, map/route preferences',
       );
       final style = DefaultTextStyle.of(tester.element(body)).style;
       expect(style.decoration, TextDecoration.none);

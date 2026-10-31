@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +13,8 @@ import '../models/device_direction.dart';
 import '../models/place_result.dart';
 import '../models/route_candidate.dart';
 import '../services/ble_service.dart';
+import '../services/local_account_data.dart';
+import '../services/settings_store.dart';
 import '../services/guidance/voice_guidance_planner.dart';
 import '../services/navigation_voice.dart';
 import 'place_search_page.dart';
@@ -60,7 +63,13 @@ class _HomePageState extends State<HomePage> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     final saved = prefs.getString(MapSettingsPage.styleKey);
+    final voice = prefs.getBool(LocalAccountData.voiceKey) ?? false;
+    if (voice != _voiceEnabled) {
+      _guidance.reset();
+      if (!voice) _silence();
+    }
     setState(() {
+      _voiceEnabled = voice;
       _mapStyle =
           {'standard', 'standard_dark', 'hybrid', 'satellite'}.contains(saved)
               ? saved!
@@ -84,8 +93,20 @@ class _HomePageState extends State<HomePage> {
     await nav.previewDestination(place.location, waypoints: nav.waypoints);
   }
 
+  Future<void> _saveGuidance(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    try {
+      await SettingsStore.edit(prefs, () async {
+        await prefs.setBool(LocalAccountData.voiceKey, enabled);
+      });
+    } catch (_) {
+      // The account changed meanwhile: this session keeps its own choice.
+    }
+  }
+
   void _toggleGuidance() {
     setState(() => _voiceEnabled = !_voiceEnabled);
+    unawaited(_saveGuidance(_voiceEnabled));
     _guidance.reset();
     if (_voiceEnabled) {
       _announce();

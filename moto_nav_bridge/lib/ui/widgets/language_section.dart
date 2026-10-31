@@ -1,9 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_text.dart';
+import '../../services/settings_store.dart';
 import '../navio_theme.dart';
 
-/// Device-local: the language is not part of the synced account settings.
+/// Saved with the account settings, so a signed-in choice follows the account.
 class LanguageSection extends StatelessWidget {
   const LanguageSection({super.key});
 
@@ -35,7 +36,9 @@ class LanguageSection extends StatelessWidget {
     if (choice == null) return;
     AppText.selected.value = choice;
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(AppLanguage.storageKey, choice.name);
+    await SettingsStore.edit(preferences, () async {
+      await preferences.setString(AppLanguage.storageKey, choice.name);
+    });
   }
 
   @override

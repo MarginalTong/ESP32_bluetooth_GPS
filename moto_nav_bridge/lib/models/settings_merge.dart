@@ -7,6 +7,7 @@ enum SettingsChoice { local, cloud }
 Map<String, Object?> settingsFields(AccountData data) => {
   for (final key in AccountData.boolKeys) key: data.preferences[key] == true,
   'map_style': data.preferences['map_style'] ?? 'standard',
+  'app_language': data.preferences['app_language'] ?? 'system',
   for (final slot in AccountData.slots)
     'place:$slot': data.places[slot] == null
         ? null
@@ -59,7 +60,7 @@ SettingsMerge mergeSettings(
       revision: cloud.revision,
       displayName: cloud.displayName,
       preferences: {
-        for (final key in [...AccountData.boolKeys, 'map_style'])
+        for (final key in [...AccountData.boolKeys, 'map_style', 'app_language'])
           key: merged[key]!,
       },
       places: {

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../l10n/app_text.dart';
 import '../models/account_data.dart';
 import '../models/place_result.dart';
 import '../models/settings_merge.dart';
@@ -15,6 +16,8 @@ class LocalAccountData {
   static const routeKey = 'route_preferences_test_v1';
   static const placesKey = 'saved_places_v1';
   static const styleKey = 'map_style_v1';
+  static const voiceKey = 'navio.voice_guidance';
+  static const languageKey = AppLanguage.storageKey;
   static const nameKey = 'navio.account.display_name';
   static const revisionKey = 'navio.account.revision';
   String? get activeId => preferences.getString(activeKey);
@@ -69,6 +72,10 @@ class LocalAccountData {
         'avoid_ferries': prefs['ferries'] == true,
         'avoid_tunnels': prefs['tunnels'] == true,
         'map_style': preferences.getString(styleKey) ?? 'standard',
+        'voice_guidance': preferences.getBool(voiceKey) ?? false,
+        'app_language': AppLanguage.fromStorage(
+          preferences.getString(languageKey),
+        ).name,
       },
     );
   }
@@ -101,6 +108,10 @@ class LocalAccountData {
     await _check(
       preferences.setString(styleKey, p['map_style'] as String? ?? 'standard'),
     );
+    await _check(preferences.setBool(voiceKey, p['voice_guidance'] == true));
+    final language = AppLanguage.fromStorage(p['app_language'] as String?);
+    await _check(preferences.setString(languageKey, language.name));
+    AppText.selected.value = language;
     await _check(preferences.setString(nameKey, data.displayName));
     await _check(preferences.setInt(revisionKey, data.revision));
   }

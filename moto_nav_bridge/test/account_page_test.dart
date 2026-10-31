@@ -72,7 +72,7 @@ void main() {
   ) async {
     await account.signIn('rider@example.test', 'password');
     await show(tester);
-    final label = find.textContaining('Saved places and map/route preferences');
+    final label = find.textContaining('Saved places, map/route preferences');
     final style = DefaultTextStyle.of(tester.element(label)).style;
     expect(style.decoration, TextDecoration.none);
     expect(style.fontSize, 17);

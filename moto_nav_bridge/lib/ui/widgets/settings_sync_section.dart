@@ -27,8 +27,8 @@ class SettingsSyncSection extends StatelessWidget {
       margin: const EdgeInsets.only(top: 16),
       footer: Text(
         en
-            ? 'Saved places and map/route preferences sync automatically. Bluetooth keys and location history stay off the cloud. Guest settings remain separate.'
-            : '常用地址、地图与路线偏好自动同步。不上传蓝牙密钥或定位轨迹，游客资料独立保留。',
+            ? 'Saved places, map/route preferences, voice and language sync automatically. Bluetooth keys and location history stay off the cloud. Guest settings remain separate.'
+            : '常用地址、地图与路线偏好、播报和语言自动同步。不上传蓝牙密钥或定位轨迹，游客资料独立保留。',
         style: TextStyle(
           fontSize: 12,
           height: 1.4,

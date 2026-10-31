@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:moto_nav_bridge/controllers/navigation_controller.dart';
 import 'package:moto_nav_bridge/services/ble_service.dart';
+import 'package:moto_nav_bridge/services/local_account_data.dart';
 import 'package:moto_nav_bridge/models/nav_state.dart';
 import 'package:moto_nav_bridge/l10n/app_text.dart';
 import 'package:moto_nav_bridge/ui/home_page.dart';
@@ -128,6 +129,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.volume_off_rounded));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.volume_up_rounded), findsOneWidget);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(LocalAccountData.voiceKey), isTrue);
     await tester.tap(find.byIcon(Icons.volume_up_rounded));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.volume_off_rounded), findsOneWidget);

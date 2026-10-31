@@ -1,6 +1,6 @@
 {
   "private": true,
   "type": "module",
-  "scripts": {"test": "node --experimental-strip-types --test --test-concurrency=1 account_schema.test.mjs account_actions.test.mjs rider_presence.test.mjs profile_avatars.test.mjs profile_names.test.mjs"},
+  "scripts": {"test": "node --experimental-strip-types --test --test-concurrency=1 account_schema.test.mjs account_actions.test.mjs rider_presence.test.mjs profile_avatars.test.mjs profile_names.test.mjs voice_language_settings.test.mjs"},
   "devDependencies": {"@electric-sql/pglite": "0.5.13"}
 }
