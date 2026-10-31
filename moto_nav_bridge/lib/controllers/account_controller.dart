@@ -24,12 +24,12 @@ class AccountController extends ChangeNotifier {
   bool get appleAvailable => backend.appleAvailable;
   bool get googleAvailable => backend.googleAvailable;
   bool get canModify => _navigation?.canEditPreferences ?? true;
-  bool get ready =>
+  bool get identityReady =>
       !busy &&
       !_reconciling &&
-      canModify &&
       backend.user?.id == local.activeId &&
       _user?.id == local.activeId;
+  bool get ready => identityReady && canModify;
 
   Future<void> initialize() async {
     await local.recover();
