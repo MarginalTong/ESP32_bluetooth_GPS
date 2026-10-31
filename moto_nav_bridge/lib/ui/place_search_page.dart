@@ -7,12 +7,17 @@ import 'package:flutter/services.dart';
 import '../l10n/app_text.dart';
 import '../models/place_result.dart';
 import '../services/apple_maps_service.dart';
+import '../services/saved_places.dart';
 import '../services/search_history_service.dart';
 import '../services/location_link_parser.dart';
 
 class PlaceSearchPage extends StatefulWidget {
-  const PlaceSearchPage({super.key, this.initialQuery});
+  const PlaceSearchPage({super.key, this.initialQuery, this.onSavedPlace});
   final String? initialQuery;
+
+  /// When set, saved places appear under the search box. It is called just
+  /// before the chosen place is returned, so the caller can start right away.
+  final ValueChanged<PlaceResult>? onSavedPlace;
 
   @override
   State<PlaceSearchPage> createState() => _PlaceSearchPageState();
@@ -307,6 +312,13 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               ),
             ),
           ),
+          if (widget.onSavedPlace != null && _controller.text.isEmpty)
+            _SavedPlaceShortcuts(
+              onSelect: (place) {
+                widget.onSavedPlace!(place);
+                Navigator.of(context).pop(place);
+              },
+            ),
           if (_loading || _resolving)
             const LinearProgressIndicator(minHeight: 2),
           if (_error != null)
@@ -375,6 +387,137 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// One tap on a saved place starts the trip; an unset one is set up first.
+class _SavedPlaceShortcuts extends StatefulWidget {
+  const _SavedPlaceShortcuts({required this.onSelect});
+  final ValueChanged<PlaceResult> onSelect;
+  @override
+  State<_SavedPlaceShortcuts> createState() => _SavedPlaceShortcutsState();
+}
+
+class _SavedPlaceShortcutsState extends State<_SavedPlaceShortcuts> {
+  final _store = SavedPlaces();
+  Map<String, PlaceResult> _places = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _store.load().then((places) {
+      if (mounted) setState(() => _places = places);
+    });
+  }
+
+  Future<void> _setUp(String slot) async {
+    final place = await Navigator.of(context).push<PlaceResult>(
+      MaterialPageRoute(builder: (_) => const PlaceSearchPage()),
+    );
+    if (place == null || !mounted) return;
+    try {
+      await _store.save(slot, place);
+    } catch (_) {
+      return; // Unsaved: the slot keeps offering to be set up.
+    }
+    if (mounted) setState(() => _places = {..._places, slot: place});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final en = AppText.of(context).isEnglish;
+    final labels = en ? ['Home', 'Work', 'School'] : ['家', '公司', '学校'];
+    const icons = [
+      CupertinoIcons.house_fill,
+      CupertinoIcons.briefcase_fill,
+      CupertinoIcons.book_fill,
+    ];
+    return Container(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+      child: Row(
+        children: [
+          for (var i = 0; i < SavedPlaces.slots.length; i++)
+            Expanded(
+              child: _SavedPlaceButton(
+                key: ValueKey('saved-place-${SavedPlaces.slots[i]}'),
+                icon: icons[i],
+                label: labels[i],
+                detail:
+                    _places[SavedPlaces.slots[i]]?.name ?? (en ? 'Add' : '添加'),
+                set: _places[SavedPlaces.slots[i]] != null,
+                onTap: () {
+                  final place = _places[SavedPlaces.slots[i]];
+                  if (place == null) {
+                    _setUp(SavedPlaces.slots[i]);
+                  } else {
+                    widget.onSelect(place);
+                  }
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SavedPlaceButton extends StatelessWidget {
+  const _SavedPlaceButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.detail,
+    required this.set,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String label, detail;
+  final bool set;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Column(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: set
+                    ? colors.primary
+                    : colors.primary.withValues(alpha: .1),
+              ),
+              child: Icon(
+                set ? icon : CupertinoIcons.plus,
+                size: 20,
+                color: set ? colors.onPrimary : colors.primary,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            Text(
+              detail,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
       ),
     );
   }

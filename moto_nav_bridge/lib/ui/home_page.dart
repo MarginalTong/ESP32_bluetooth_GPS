@@ -187,13 +187,22 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _chooseDestination() async {
+    var startNow = false;
     final place = await Navigator.of(context).push<PlaceResult>(
-      MaterialPageRoute(builder: (_) => const PlaceSearchPage()),
+      MaterialPageRoute(
+        builder: (_) => PlaceSearchPage(onSavedPlace: (_) => startNow = true),
+      ),
     );
     if (place != null && mounted) {
       setState(() => _destination = place);
       final nav = context.read<NavigationController>();
-      await nav.previewDestination(place.location, waypoints: nav.waypoints);
+      // Without a connected display the trip cannot start: show the route.
+      if (startNow &&
+          context.read<BleService>().state == BleConnectionState.connected) {
+        await nav.startNavigation(place.location, waypoints: nav.waypoints);
+      } else {
+        await nav.previewDestination(place.location, waypoints: nav.waypoints);
+      }
     }
   }
 
