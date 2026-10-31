@@ -7,7 +7,9 @@ import 'config/app_brand.dart';
 import 'config/account_config.dart';
 import 'controllers/account_controller.dart';
 import 'controllers/avatar_controller.dart';
+import 'controllers/profile_controller.dart';
 import 'services/avatar_backend.dart';
+import 'services/profile_backend.dart';
 import 'controllers/rider_map_controller.dart';
 import 'services/supabase_rider_backend.dart';
 import 'services/local_account_data.dart';
@@ -41,12 +43,18 @@ Future<void> main() async {
     account,
     SupabaseAvatarBackend(backend.client),
   );
+  final profile = ProfileController(
+    account,
+    SupabaseProfileBackend(backend.client),
+    preferences,
+  );
   runApp(
     NavioApp(
       preferences: preferences,
       account: account,
       riders: riders,
       avatars: avatars,
+      profile: profile,
     ),
   );
 }
@@ -58,11 +66,13 @@ class NavioApp extends StatelessWidget {
     this.account,
     this.riders,
     this.avatars,
+    this.profile,
   });
   final SharedPreferences? preferences;
   final AccountController? account;
   final RiderMapController? riders;
   final AvatarController? avatars;
+  final ProfileController? profile;
 
   NavigationController _navigation(BleService ble) {
     final nav = NavigationController(ble: ble, preferences: preferences);
@@ -79,6 +89,8 @@ class NavioApp extends StatelessWidget {
           ChangeNotifierProvider<AccountController>(create: (_) => account!),
         if (avatars != null)
           ChangeNotifierProvider<AvatarController>(create: (_) => avatars!),
+        if (profile != null)
+          ChangeNotifierProvider<ProfileController>(create: (_) => profile!),
         if (riders != null)
           ChangeNotifierProvider<RiderMapController>(create: (_) => riders!),
         ChangeNotifierProvider(create: (_) => BleService()),

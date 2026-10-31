@@ -3,10 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:moto_nav_bridge/controllers/account_controller.dart';
 import 'package:moto_nav_bridge/controllers/profile_controller.dart';
+import 'package:moto_nav_bridge/controllers/navigation_controller.dart';
 import 'package:moto_nav_bridge/models/account_profile.dart';
 import 'package:moto_nav_bridge/services/local_account_data.dart';
 import 'account_test_fakes.dart';
 import 'profile_test_fakes.dart';
+import 'navigation_controller_test.dart'
+    show FakeBle, FakeRoutes, FakePositions, FakeSideRoads, mainRoute, p0, p2;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -140,4 +143,34 @@ void main() {
     expect(reopened.error, 'unavailable');
     reopened.dispose();
   });
+  test(
+    'profile-only edits remain available without changing active navigation',
+    () async {
+      await login();
+      final positions = FakePositions(current: p0);
+      final nav = NavigationController(
+        ble: FakeBle(),
+        directions: FakeRoutes(mainRoute),
+        location: positions,
+        sideRoads: FakeSideRoads(),
+      );
+      account.bindNavigation(nav);
+      await nav.startNavigation(p2);
+      expect(
+        account.ready,
+        false,
+      ); // Account switching/settings remain blocked.
+      expect(profile.canEdit, true);
+      final generation = account.localGeneration;
+      expect(
+        await profile.rename('Rider on a trip', expectedRevision: 0),
+        true,
+      );
+      expect(nav.phase, NavPhase.navigating);
+      expect(account.localGeneration, generation);
+      await nav.stopNavigation();
+      nav.dispose();
+      await positions.close();
+    },
+  );
 }

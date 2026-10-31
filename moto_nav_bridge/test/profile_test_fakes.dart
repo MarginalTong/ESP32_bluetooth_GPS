@@ -31,8 +31,9 @@ class FakeProfileBackend implements ProfileBackend {
     if (renameGate != null) return renameGate!.future;
     final old = profiles[expectedUser]!;
     if (name == old.displayName && expectedRevision <= old.revision) return old;
-    if (expectedRevision != old.revision)
+    if (expectedRevision != old.revision) {
       throw const ProfileFailure('conflict');
+    }
     return profiles[expectedUser] = AccountProfile(name, old.revision + 1);
   }
 }

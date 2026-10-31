@@ -6,6 +6,7 @@ import '../l10n/app_text.dart';
 import 'widgets/google_sign_in_button.dart';
 import 'widgets/profile_avatar_editor.dart';
 import 'navio_theme.dart';
+import 'profile_name_page.dart';
 
 enum _AccountForm { login, register, verify, recovery }
 
@@ -580,7 +581,11 @@ class _AccountPageState extends State<AccountPage> {
     return NavioPage(
       navigationBar: CupertinoNavigationBar(
         transitionBetweenRoutes: false,
-        middle: Text(t('NAVIO Account', 'NAVIO 账号')),
+        middle: Text(
+          loggedIn
+              ? t('Personal profile', '个人资料')
+              : t('NAVIO Account', 'NAVIO 账号'),
+        ),
       ),
       child: SafeArea(
         child: ListView(
@@ -599,7 +604,7 @@ class _AccountPageState extends State<AccountPage> {
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Text(
                   t(
-                    'Account changes and cloud restore are paused during navigation.',
+                    'Switching accounts and cloud restore are paused during navigation.',
                     '导航期间暂不切换账号或恢复云端资料。',
                   ),
                 ),
@@ -624,6 +629,7 @@ class _AccountPageState extends State<AccountPage> {
               CupertinoListSection.insetGrouped(
                 margin: EdgeInsets.zero,
                 children: [
+                  const ProfileNameTile(),
                   CupertinoListTile(
                     title: Text(
                       account.user!.email.isEmpty
