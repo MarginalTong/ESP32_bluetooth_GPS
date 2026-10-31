@@ -37,7 +37,6 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   PlaceResult? _destination;
   String _mapStyle = 'standard';
-  bool _showTraffic = false;
   int _settingsRevision = -1;
   final _guidance = VoiceGuidancePlanner();
   NavigationController? _voiceNav;
@@ -66,7 +65,6 @@ class _HomePageState extends State<HomePage> {
           {'standard', 'standard_dark', 'hybrid', 'satellite'}.contains(saved)
               ? saved!
               : 'standard';
-      _showTraffic = prefs.getBool(MapSettingsPage.trafficKey) ?? false;
     });
     widget.onMapStyleChanged?.call(_mapStyle);
   }
@@ -263,7 +261,6 @@ class _HomePageState extends State<HomePage> {
                 routes: nav.routeOptions,
                 selectedRouteIndex: nav.selectedRouteIndex,
                 mapStyle: _mapStyle,
-                showTraffic: _showTraffic,
                 riders: riders?.viewing == true ? riders!.riders : const [],
                 onRouteSelected: nav.selectRoute,
                 onDiagnostic: nav.recordMapDiagnostic,

@@ -7,7 +7,7 @@ import 'package:moto_nav_bridge/ui/map_settings_page.dart';
 void main() {
   for (final en in [true, false]) {
     testWidgets(
-        'map style and traffic persist; saved places are available: $en',
+        'map style persists, traffic is gone, saved places are available: $en',
         (tester) async {
       SharedPreferences.setMockInitialValues({});
       tester.binding.platformDispatcher.localeTestValue =
@@ -22,19 +22,9 @@ void main() {
       expect(prefs.getString(MapSettingsPage.styleKey), 'standard_dark');
       await tester.tap(find.text(en ? 'Hybrid' : '混合'));
       await tester.pumpAndSettle();
-      final trafficSwitch = find.byType(CupertinoSwitch);
-      await tester.tap(trafficSwitch);
-      await tester.pumpAndSettle();
       expect(prefs.getString(MapSettingsPage.styleKey), 'hybrid');
-      expect(prefs.getBool(MapSettingsPage.trafficKey), isTrue);
-      await tester.tap(find.text(en ? 'Satellite' : '卫星'));
-      await tester.pumpAndSettle();
-      expect(tester.widget<CupertinoSwitch>(trafficSwitch).onChanged, isNull);
-      await tester.tap(find.text(en ? 'Hybrid' : '混合'));
-      await tester.pumpAndSettle();
-      await tester.pumpWidget(const MaterialApp(home: MapSettingsPage()));
-      await tester.pumpAndSettle();
-      expect(tester.widget<CupertinoSwitch>(trafficSwitch).value, isTrue);
+      expect(find.byType(CupertinoSwitch), findsNothing);
+      expect(find.text(en ? 'Show traffic' : '显示交通状况'), findsNothing);
     });
   }
 }

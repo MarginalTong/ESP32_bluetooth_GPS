@@ -17,7 +17,6 @@ class NavigationMap extends StatefulWidget {
     this.riders = const [],
     this.selectedRouteIndex = 0,
     this.mapStyle = 'standard',
-    this.showTraffic = false,
     this.onRouteSelected,
     this.onMapPointSelected,
     this.onDiagnostic,
@@ -39,7 +38,6 @@ class NavigationMap extends StatefulWidget {
   final int selectedRouteIndex;
 
   final String mapStyle;
-  final bool showTraffic;
   final ValueChanged<int>? onRouteSelected;
   final ValueChanged<LatLng>? onMapPointSelected;
   final ValueChanged<String>? onDiagnostic;
@@ -200,7 +198,6 @@ class _NavigationMapState extends State<NavigationMap> {
       map.onMapPointSelected != null,
       map.selectedRouteIndex,
       map.mapStyle,
-      map.showTraffic,
       map.contentPadding,
     ].join(':');
   }
@@ -223,7 +220,6 @@ class _NavigationMapState extends State<NavigationMap> {
         'languageCode': AppText.current.languageCode,
         'selectedRouteIndex': widget.selectedRouteIndex,
         'mapStyle': widget.mapStyle,
-        'showTraffic': widget.showTraffic,
         'mapPointSelectionEnabled': widget.onMapPointSelected != null,
         'routes': [
           for (var i = 0; i < widget.routes.length; i++)

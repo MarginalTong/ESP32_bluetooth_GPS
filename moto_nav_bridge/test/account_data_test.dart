@@ -44,7 +44,7 @@ void main() {
       },
       {
         ...data(),
-        'preferences': {'show_traffic': 'true'}
+        'preferences': {'avoid_tolls': 'true'}
       },
       {
         ...data(),

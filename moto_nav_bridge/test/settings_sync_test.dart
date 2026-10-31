@@ -18,14 +18,12 @@ AccountData settings({
   int revision = 0,
   String style = 'standard',
   bool tolls = false,
-  bool traffic = false,
   Map<String, PlaceResult> places = const {},
 }) => AccountData(
   revision: revision,
   preferences: {
     'map_style': style,
     'avoid_tolls': tolls,
-    'show_traffic': traffic,
   },
   places: places,
 );
@@ -179,7 +177,7 @@ void main() {
       await login();
       await editStyle('hybrid');
       await SettingsStore.edit(prefs, () async {
-        await prefs.setBool(LocalAccountData.trafficKey, true);
+        await prefs.setString(LocalAccountData.routeKey, '{"tolls":true}');
       });
       backend.cloud = settings(style: 'satellite', revision: 1);
       await sync.flush();
@@ -187,7 +185,7 @@ void main() {
       expect(backend.uploads, 0);
       await sync.resolve(SettingsChoice.cloud);
       expect(account.local.capture().preferences['map_style'], 'satellite');
-      expect(backend.cloud.preferences['show_traffic'], true);
+      expect(backend.cloud.preferences['avoid_tolls'], true);
     },
   );
   test(

@@ -15,7 +15,6 @@ class LocalAccountData {
   static const routeKey = 'route_preferences_test_v1';
   static const placesKey = 'saved_places_v1';
   static const styleKey = 'map_style_v1';
-  static const trafficKey = 'map_traffic_v1';
   static const nameKey = 'navio.account.display_name';
   static const revisionKey = 'navio.account.revision';
   String? get activeId => preferences.getString(activeKey);
@@ -70,7 +69,6 @@ class LocalAccountData {
         'avoid_ferries': prefs['ferries'] == true,
         'avoid_tunnels': prefs['tunnels'] == true,
         'map_style': preferences.getString(styleKey) ?? 'standard',
-        'show_traffic': preferences.getBool(trafficKey) ?? false,
       },
     );
   }
@@ -103,7 +101,6 @@ class LocalAccountData {
     await _check(
       preferences.setString(styleKey, p['map_style'] as String? ?? 'standard'),
     );
-    await _check(preferences.setBool(trafficKey, p['show_traffic'] == true));
     await _check(preferences.setString(nameKey, data.displayName));
     await _check(preferences.setInt(revisionKey, data.revision));
   }

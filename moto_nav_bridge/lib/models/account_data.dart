@@ -17,7 +17,6 @@ class AccountData {
     'avoid_tolls',
     'avoid_ferries',
     'avoid_tunnels',
-    'show_traffic'
   ];
 
   factory AccountData.fromCloud(Map<String, dynamic> value) {

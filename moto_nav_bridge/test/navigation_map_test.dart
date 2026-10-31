@@ -80,11 +80,11 @@ void main() {
       (tester) async {
     final routes = List<RouteCandidate>.unmodifiable([candidate(0.001)]);
     await tester.pumpWidget(map(routes));
-    await tester.pumpWidget(map(routes, style: 'hybrid', traffic: true));
+    await tester.pumpWidget(map(routes, style: 'hybrid'));
     await tester.pump();
     expect(updates, hasLength(1));
     expect(updates.single.arguments['mapStyle'], 'hybrid');
-    expect(updates.single.arguments['showTraffic'], isTrue);
+    expect(updates.single.arguments.containsKey('showTraffic'), isFalse);
     await tester.pumpWidget(const SizedBox());
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
@@ -117,8 +117,7 @@ RouteCandidate candidate(double middleLongitude) => RouteCandidate(
     );
 
 Widget map(List<RouteCandidate> routes,
-        {String style = 'standard',
-        bool traffic = false}) =>
+        {String style = 'standard'}) =>
     MaterialApp(
         home: Scaffold(
             body: NavigationMap(
@@ -126,5 +125,4 @@ Widget map(List<RouteCandidate> routes,
       destination: const LatLng(0.002, 0),
       routes: routes,
       mapStyle: style,
-      showTraffic: traffic,
     )));

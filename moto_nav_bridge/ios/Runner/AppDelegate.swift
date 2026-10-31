@@ -620,7 +620,6 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
   private var mapPointSelectionEnabled = false
   private var languageCode = "zh"
   private var mapStyle = "standard"
-  private var showsTraffic = false
   private let attributionButton = UIButton(type: .system)
   private var attributionURL: URL?
   private var attributionCollapseTimer: Timer?
@@ -733,27 +732,17 @@ private final class NavigationMapPlatformView: NSObject, FlutterPlatformView, MK
       bottom: max(42, args["paddingBottom"] as? Double ?? 42),
       right: max(28, args["paddingRight"] as? Double ?? 28))
     let nextMapStyle = args["mapStyle"] as? String ?? "standard"
-    let nextShowsTraffic = args["showTraffic"] as? Bool ?? false
-    if !animated || nextMapStyle != mapStyle || nextShowsTraffic != showsTraffic {
+    if !animated || nextMapStyle != mapStyle {
       mapStyle = nextMapStyle
-      showsTraffic = nextShowsTraffic
       mapView.overrideUserInterfaceStyle = mapStyle == "standard" ? .light : .dark
       let configuration: MKMapConfiguration
       switch mapStyle {
       case "hybrid":
-        let hybrid = MKHybridMapConfiguration()
-        hybrid.showsTraffic = showsTraffic
-        configuration = hybrid
+        configuration = MKHybridMapConfiguration()
       case "satellite":
         configuration = MKImageryMapConfiguration()
-      case "standard_dark":
-        let standard = MKStandardMapConfiguration()
-        standard.showsTraffic = showsTraffic
-        configuration = standard
       default:
-        let standard = MKStandardMapConfiguration()
-        standard.showsTraffic = showsTraffic
-        configuration = standard
+        configuration = MKStandardMapConfiguration()
       }
       mapView.preferredConfiguration = configuration
     }

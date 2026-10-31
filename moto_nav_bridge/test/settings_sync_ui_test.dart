@@ -125,7 +125,7 @@ void main() {
     (tester) async {
       await SettingsStore.edit(prefs, () async {
         await prefs.setString(LocalAccountData.styleKey, 'hybrid');
-        await prefs.setBool(LocalAccountData.trafficKey, true);
+        await prefs.setString(LocalAccountData.routeKey, '{"tolls":true}');
       });
       backend.cloud = const AccountData(
         revision: 1,
@@ -139,7 +139,7 @@ void main() {
       await tester.tap(find.text('Use cloud values for conflicts'));
       await tester.pumpAndSettle();
       expect(backend.cloud.preferences['map_style'], 'satellite');
-      expect(backend.cloud.preferences['show_traffic'], true);
+      expect(backend.cloud.preferences['avoid_tolls'], true);
       expect(sync.status, SettingsSyncStatus.synced);
       expect(tester.takeException(), isNull);
     },

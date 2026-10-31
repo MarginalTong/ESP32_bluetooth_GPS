@@ -14,7 +14,6 @@ class MapSettingsPage extends StatefulWidget {
   const MapSettingsPage({super.key});
 
   static const styleKey = 'map_style_v1';
-  static const trafficKey = 'map_traffic_v1';
 
   @override
   State<MapSettingsPage> createState() => _MapSettingsPageState();
@@ -22,7 +21,6 @@ class MapSettingsPage extends StatefulWidget {
 
 class _MapSettingsPageState extends State<MapSettingsPage> {
   String style = 'standard';
-  bool traffic = false;
   bool loaded = false;
   String? _loadedActor;
   String? _settingsStamp;
@@ -55,7 +53,6 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
           {'standard', 'standard_dark', 'hybrid', 'satellite'}.contains(saved)
           ? saved!
           : 'standard';
-      traffic = prefs.getBool(MapSettingsPage.trafficKey) ?? false;
       loaded = true;
     });
   }
@@ -73,23 +70,6 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
     } catch (_) {
       if (mounted) {
         setState(() => style = previous);
-      }
-    }
-  }
-
-  Future<void> _setTraffic(bool value) async {
-    final previous = traffic;
-    setState(() => traffic = value);
-    final prefs = await SharedPreferences.getInstance();
-    try {
-      await SettingsStore.edit(prefs, () async {
-        if (!await prefs.setBool(MapSettingsPage.trafficKey, value)) {
-          throw StateError('Save failed');
-        }
-      }, expectedActor: _loadedActor);
-    } catch (_) {
-      if (mounted) {
-        setState(() => traffic = previous);
       }
     }
   }
@@ -135,35 +115,6 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
                     en ? 'Aerial imagery without labels' : '不显示道路标注的航拍影像',
                   ),
                 ],
-              ),
-              CupertinoListSection.insetGrouped(
-                header: SectionLabel(en ? 'MAP DETAILS' : '地图信息'),
-                children: [
-                  CupertinoListTile(
-                    title: Text(en ? 'Show traffic' : '显示交通状况'),
-                    subtitle: Text(
-                      en
-                          ? 'Display only · Standard and Hybrid maps'
-                          : '仅供查看 · 适用于标准和混合地图',
-                    ),
-                    trailing: CupertinoSwitch(
-                      value: traffic,
-                      onChanged: style == 'satellite' ? null : _setTraffic,
-                    ),
-                  ),
-                ],
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(36, 0, 36, 4),
-                child: Text(
-                  en
-                      ? 'Traffic does not change navigation routes.'
-                      : '交通显示不会改变导航路线。',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: CupertinoColors.secondaryLabel,
-                  ),
-                ),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(36, 18, 36, 0),
