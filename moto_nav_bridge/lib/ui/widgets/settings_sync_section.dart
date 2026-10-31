@@ -37,6 +37,7 @@ class SettingsSyncSection extends StatelessWidget {
       ),
       children: [
         CupertinoListTile(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
           leading: Icon(
             status == SettingsSyncStatus.conflict
                 ? CupertinoIcons.exclamationmark_circle

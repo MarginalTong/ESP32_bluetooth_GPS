@@ -39,18 +39,24 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('profile-photo-button')));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Choose photo'));
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Use this profile photo?'), findsOneWidget);
       expect(backend.uploads, 0);
-      await tester.tap(find.text('Cancel'));
+      await tester.tap(find.widgetWithText(CupertinoDialogAction, 'Cancel'));
       await tester.pumpAndSettle();
       expect(backend.uploads, 0);
+      await tester.tap(find.byKey(const ValueKey('profile-photo-button')));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Choose photo'));
       await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(find.text('Use photo'));
       await tester.pumpAndSettle();
       expect(backend.uploads, 1);
+      await tester.tap(find.byKey(const ValueKey('profile-photo-button')));
+      await tester.pumpAndSettle();
       expect(find.text('Change photo'), findsOneWidget);
       await tester.tap(find.text('Remove photo'));
       await tester.pumpAndSettle();
@@ -58,6 +64,8 @@ void main() {
       await tester.tap(find.text('Remove'));
       await tester.pumpAndSettle();
       expect(backend.removals, 1);
+      await tester.tap(find.byKey(const ValueKey('profile-photo-button')));
+      await tester.pumpAndSettle();
       expect(find.text('Choose photo'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

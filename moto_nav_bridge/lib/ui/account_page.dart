@@ -627,26 +627,19 @@ class _AccountPageState extends State<AccountPage> {
               ),
             if (loggedIn) ...[
               const ProfileAvatarEditor(),
-              CupertinoListSection.insetGrouped(
-                margin: EdgeInsets.zero,
-                children: [
-                  const ProfileNameTile(),
-                  CupertinoListTile(
-                    title: Text(
-                      account.user!.email.isEmpty
-                          ? 'Apple ID'
-                          : account.user!.email,
-                    ),
-                    subtitle: Text(
-                      t(
-                        'Signed in · display pairing stays on this phone',
-                        '已登录 · 小屏配对仍保存在本机',
-                      ),
-                    ),
-                  ),
-                ],
+              const ProfileNameHeader(),
+              const SizedBox(height: 2),
+              Text(
+                account.user!.email.isEmpty ? 'Apple ID' : account.user!.email,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 15,
+                  color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                ),
               ),
-              const ProfilePhotoPrivacyNote(),
+              const SizedBox(height: 12),
               const SettingsSyncSection(),
               CupertinoListSection.insetGrouped(
                 margin: const EdgeInsets.only(top: 24),

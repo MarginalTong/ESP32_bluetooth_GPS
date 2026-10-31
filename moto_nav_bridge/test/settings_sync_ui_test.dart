@@ -83,19 +83,17 @@ void main() {
   }
 
   testWidgets(
-    'profile has compact unequal photo actions, name below the avatar, and no manual sync buttons',
+    'profile keeps photo actions in one sheet, name below the avatar, and no manual sync buttons',
     (tester) async {
       await show(tester);
-      final change = tester.widget<Text>(find.text('Change photo'));
-      final remove = tester.widget<Text>(find.text('Remove photo'));
-      expect(change.style!.fontSize, greaterThan(remove.style!.fontSize!));
-      expect(change.style!.fontWeight, FontWeight.w600);
-      expect(remove.style!.fontWeight, FontWeight.w400);
-      expect(
-        tester.getCenter(find.text('Remove photo')).dy -
-            tester.getCenter(find.text('Change photo')).dy,
-        lessThanOrEqualTo(48),
-      );
+      expect(find.text('Change photo'), findsNothing);
+      expect(find.text('Remove photo'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('profile-photo-button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Change photo'), findsOneWidget);
+      expect(find.text('Remove photo'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
       final avatar = find.byKey(const ValueKey('profile-photo-image'));
       final name = find.byKey(const ValueKey('profile-nickname-row'));
       expect(
@@ -106,7 +104,8 @@ void main() {
         tester.getTopLeft(name).dy - tester.getBottomLeft(avatar).dy,
         lessThan(130),
       );
-      expect(find.text('Name'), findsOneWidget);
+      expect(find.text('Name'), findsNothing);
+      expect(find.text('rider@example.test'), findsOneWidget);
       expect(find.text('Upload current settings'), findsNothing);
       expect(find.text('Restore from cloud'), findsNothing);
       expect(find.text('Import guest settings'), findsNothing);

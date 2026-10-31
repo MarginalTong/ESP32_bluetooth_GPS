@@ -6,69 +6,76 @@ import '../models/account_profile.dart';
 import '../l10n/app_text.dart';
 import 'navio_theme.dart';
 
-class ProfileNameTile extends StatelessWidget {
-  const ProfileNameTile({super.key});
+/// The name is the page's headline; tapping it opens the editor.
+class ProfileNameHeader extends StatelessWidget {
+  const ProfileNameHeader({super.key});
   @override
   Widget build(BuildContext context) {
     final profile = context.watch<ProfileController?>();
     if (profile == null) return const SizedBox.shrink();
     final en = AppText.of(context).isEnglish;
-    return CupertinoListTile(
-      key: const ValueKey('profile-nickname-row'),
-      title: Row(
-        children: [
-          SizedBox(
-            width: 76,
-            child: Text(
-              en ? 'Name' : '名字',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
+    final color = CupertinoColors.label.resolveFrom(context);
+    return Semantics(
+      button: true,
+      label: en ? 'Edit name' : '修改名字',
+      child: CupertinoButton(
+        key: const ValueKey('profile-nickname-row'),
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        minimumSize: const Size(44, 44),
+        onPressed: profile.busy
+            ? null
+            : profile.profile == null
+            ? profile.refresh
+            : profile.canEdit
+            ? () {
+                final initial = profile.profile;
+                final actor = context.read<AccountController>().user?.id;
+                final generation = profile.accountGeneration;
+                if (initial == null || actor == null || !profile.canEdit) {
+                  return;
+                }
+                Navigator.of(context).push(
+                  CupertinoPageRoute<void>(
+                    builder: (_) => ProfileNamePage(
+                      initial: initial,
+                      actor: actor,
+                      accountGeneration: generation,
+                    ),
+                  ),
+                );
+              }
+            : null,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Flexible(
+              child: Text(
+                profile.profile?.displayName ??
+                    (profile.busy
+                        ? (en ? 'Loading…' : '读取中…')
+                        : (en ? 'Tap to retry' : '点击重试')),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -.4,
+                  color: color,
+                ),
+              ),
+            ),
+            const SizedBox(width: 7),
+            if (profile.busy)
+              const CupertinoActivityIndicator(radius: 8)
+            else
+              Icon(
+                CupertinoIcons.pencil,
+                size: 18,
                 color: CupertinoColors.secondaryLabel.resolveFrom(context),
               ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              profile.profile?.displayName ??
-                  (profile.busy
-                      ? (en ? 'Loading…' : '读取中…')
-                      : (en ? 'Tap to retry' : '点击重试')),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w500,
-                color: CupertinoColors.label.resolveFrom(context),
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
-      trailing: profile.busy
-          ? const CupertinoActivityIndicator(radius: 8)
-          : const CupertinoListTileChevron(),
-      onTap: profile.busy
-          ? null
-          : profile.profile == null
-          ? profile.refresh
-          : profile.canEdit
-          ? () {
-              final initial = profile.profile;
-              final actor = context.read<AccountController>().user?.id;
-              final generation = profile.accountGeneration;
-              if (initial == null || actor == null || !profile.canEdit) return;
-              Navigator.of(context).push(
-                CupertinoPageRoute<void>(
-                  builder: (_) => ProfileNamePage(
-                    initial: initial,
-                    actor: actor,
-                    accountGeneration: generation,
-                  ),
-                ),
-              );
-            }
-          : null,
     );
   }
 }
