@@ -105,6 +105,13 @@ void main() {
         lessThan(130),
       );
       expect(find.text('Name'), findsNothing);
+      final language = tester.getCenter(find.text('Language')).dy;
+      final accountLabel = tester.getBottomLeft(find.text('ACCOUNT')).dy;
+      expect(language, lessThan(accountLabel));
+      expect(
+        tester.getTopLeft(find.text('Sign out')).dy - accountLabel,
+        lessThan(24),
+      );
       expect(find.text('rider@example.test'), findsOneWidget);
       expect(find.text('Upload current settings'), findsNothing);
       expect(find.text('Restore from cloud'), findsNothing);

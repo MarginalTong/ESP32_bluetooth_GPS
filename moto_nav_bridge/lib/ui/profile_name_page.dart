@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show Icons;
 import 'package:provider/provider.dart';
 import '../controllers/account_controller.dart';
 import '../controllers/profile_controller.dart';
@@ -68,10 +69,10 @@ class ProfileNameHeader extends StatelessWidget {
             if (profile.busy)
               const CupertinoActivityIndicator(radius: 8)
             else
-              Icon(
-                CupertinoIcons.pencil,
-                size: 18,
-                color: CupertinoColors.secondaryLabel.resolveFrom(context),
+              const Icon(
+                Icons.edit_rounded,
+                size: 24,
+                color: CupertinoColors.activeBlue,
               ),
           ],
         ),

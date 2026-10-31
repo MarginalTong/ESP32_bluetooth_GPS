@@ -39,7 +39,7 @@ class AppleMapsService {
   static const _channel = MethodChannel('moto_nav_bridge/apple_maps');
 
   Future<List<PlaceSuggestion>> complete(String query) async {
-    final text = AppText.system;
+    final text = AppText.current;
     final queryText = query.trim();
     if (queryText.length < 2) return const [];
     try {
@@ -60,7 +60,7 @@ class AppleMapsService {
 
   Future<List<PlaceResult>> search(String query,
       {LatLng? near, String? category}) async {
-    final text = AppText.system;
+    final text = AppText.current;
     final queryText = query.trim();
     if (queryText.isEmpty) return const [];
     try {
@@ -102,7 +102,7 @@ class AppleMapsService {
     required LatLng origin,
     required LatLng destination,
   }) async {
-    final text = AppText.system;
+    final text = AppText.current;
     try {
       final raw = await _channel.invokeListMethod<Object?>('drivingRoutes', {
         'originLatitude': origin.latitude,

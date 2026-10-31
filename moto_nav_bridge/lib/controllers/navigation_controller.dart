@@ -633,7 +633,7 @@ class NavigationController extends ChangeNotifier {
 
     if (engine.isFinished) {
       _set(NavPhase.arrived);
-    } else if (_error == AppText.system.gpsSignalLost) {
+    } else if (_error == AppText.current.gpsSignalLost) {
       _set(NavPhase.navigating);
     } else {
       notifyListeners();
@@ -650,7 +650,7 @@ class NavigationController extends ChangeNotifier {
   Future<bool> _maybeReroute(LatLng pos) async {
     final engine = _engine;
     final destination = _destination;
-    final text = AppText.system;
+    final text = AppText.current;
     if (engine == null || destination == null) return false;
     if (_rerouting) {
       _showRerouteNotice(text.rerouting);
@@ -1212,7 +1212,7 @@ class NavigationController extends ChangeNotifier {
     // Lost the GPS fix — tell the device to show STOP so the rider isn't given
     // a stale/misleading instruction.
     _current = NavState.stopped;
-    _set(NavPhase.navigating, error: AppText.system.gpsSignalLost);
+    _set(NavPhase.navigating, error: AppText.current.gpsSignalLost);
     ble.send(NavState.stopped);
     _scheduleGpsRestart();
   }

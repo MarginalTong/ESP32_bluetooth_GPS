@@ -17,11 +17,15 @@ import 'services/local_account_data.dart';
 import 'services/supabase_account_backend.dart';
 import 'services/ble_service.dart';
 import 'ui/app_shell.dart';
+import 'l10n/app_text.dart';
 import 'ui/navio_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final preferences = await SharedPreferences.getInstance();
+  AppText.selected.value = AppLanguage.fromStorage(
+    preferences.getString(AppLanguage.storageKey),
+  );
   SupabaseAccountBackend backend;
   try {
     backend = await SupabaseAccountBackend.initialize(
@@ -108,12 +112,14 @@ class NavioApp extends StatelessWidget {
           update: (ctx, ble, previous) => previous ?? _navigation(ble),
         ),
       ],
-      child: MaterialApp(
-        title: AppBrand.name,
-        theme: NavioTheme.light(),
-        darkTheme: NavioTheme.dark(),
-        debugShowCheckedModeBanner: false,
-        home: const AppShell(),
+      child: AppLanguageScope(
+        child: MaterialApp(
+          title: AppBrand.name,
+          theme: NavioTheme.light(),
+          darkTheme: NavioTheme.dark(),
+          debugShowCheckedModeBanner: false,
+          home: const AppShell(),
+        ),
       ),
     );
   }

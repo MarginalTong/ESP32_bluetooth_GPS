@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../controllers/account_controller.dart';
 import '../l10n/app_text.dart';
 import 'widgets/google_sign_in_button.dart';
+import 'widgets/language_section.dart';
 import 'widgets/profile_avatar_editor.dart';
 import 'widgets/settings_sync_section.dart';
 import 'navio_theme.dart';
@@ -641,9 +642,13 @@ class _AccountPageState extends State<AccountPage> {
               ),
               const SizedBox(height: 12),
               const SettingsSyncSection(),
+              const LanguageSection(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
+                child: SectionLabel(t('ACCOUNT', '账号')),
+              ),
               CupertinoListSection.insetGrouped(
-                margin: const EdgeInsets.only(top: 24),
-                header: SectionLabel(t('ACCOUNT', '账号')),
+                margin: EdgeInsets.zero,
                 children: [
                   _AccountAction(
                     icon: CupertinoIcons.square_arrow_right,
@@ -679,8 +684,10 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                 ],
               ),
-            ] else if (account.available)
-              _signInForm(account, canAct),
+            ] else ...[
+              if (account.available) _signInForm(account, canAct),
+              const LanguageSection(),
+            ],
           ],
         ),
       ),

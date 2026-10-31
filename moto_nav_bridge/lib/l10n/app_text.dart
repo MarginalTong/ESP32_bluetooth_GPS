@@ -2,6 +2,27 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 
+/// The in-app language choice; [system] follows the phone's language.
+enum AppLanguage {
+  system,
+  en,
+  zh;
+
+  static const storageKey = 'navio.app_language';
+
+  static AppLanguage fromStorage(String? value) =>
+      AppLanguage.values.firstWhere(
+        (language) => language.name == value,
+        orElse: () => AppLanguage.system,
+      );
+}
+
+/// Rebuilds everything that reads [AppText.of] when the language changes.
+class AppLanguageScope extends InheritedNotifier<ValueNotifier<AppLanguage>> {
+  AppLanguageScope({super.key, required super.child})
+    : super(notifier: AppText.selected);
+}
+
 class AppText {
   const AppText._(this.isEnglish);
 
@@ -10,14 +31,24 @@ class AppText {
   static const zh = AppText._(false);
   static const en = AppText._(true);
 
+  static final selected = ValueNotifier(AppLanguage.system);
+
   static AppText of(BuildContext context) {
-    final locale = View.maybeOf(context)?.platformDispatcher.locale ??
+    context.dependOnInheritedWidgetOfExactType<AppLanguageScope>();
+    final locale =
+        View.maybeOf(context)?.platformDispatcher.locale ??
         ui.PlatformDispatcher.instance.locale;
-    return fromLocale(locale);
+    return _resolve(locale);
   }
 
-  static AppText get system =>
-      fromLocale(ui.PlatformDispatcher.instance.locale);
+  /// For code without a BuildContext (services, native map arguments).
+  static AppText get current => _resolve(ui.PlatformDispatcher.instance.locale);
+
+  static AppText _resolve(ui.Locale locale) => switch (selected.value) {
+    AppLanguage.en => en,
+    AppLanguage.zh => zh,
+    AppLanguage.system => fromLocale(locale),
+  };
 
   static AppText fromLocale(ui.Locale locale) =>
       locale.languageCode.toLowerCase().startsWith('en') ? en : zh;
@@ -54,8 +85,7 @@ class AppText {
   String get readyToGo => isEnglish ? 'Ready to go' : '准备出发';
   String get connectDevice => isEnglish ? 'Connect device' : '连接设备';
   String get tapToConnect => isEnglish ? 'Tap to connect' : '点按连接导航屏';
-  String get connectingDisplay =>
-      isEnglish ? 'Connecting display' : '正在连接导航屏';
+  String get connectingDisplay => isEnglish ? 'Connecting display' : '正在连接导航屏';
   String get displayNotConnected =>
       isEnglish ? 'Display not connected' : '导航屏未连接';
   String get searchingDevice => isEnglish ? 'Searching…' : '正在搜索设备…';
@@ -63,11 +93,11 @@ class AppText {
   String get deviceConnected => isEnglish ? 'Device connected' : '设备已连接';
   String get displayUpdateInterrupted =>
       isEnglish ? 'Display update interrupted' : '屏幕更新中断';
-  String get reconnectDisplayHint => isEnglish
-      ? 'Reconnect the display'
-      : '请重新连接导航屏';
+  String get reconnectDisplayHint =>
+      isEnglish ? 'Reconnect the display' : '请重新连接导航屏';
   String get deviceConnectionIssue =>
       isEnglish ? 'Display connection needs attention' : '导航屏连接需要检查';
+
   /// "45 s" / "3 min" / "2 h" (English) or "45 秒" / "3 分钟" / "2 小时".
   String _age(Duration age) {
     if (age.inSeconds < 60) {
@@ -83,9 +113,8 @@ class AppText {
   String writeFailedAgo(Duration age) => isEnglish
       ? 'Display write failed ${_age(age)} ago'
       : '屏幕写入失败（${_age(age)}前）';
-  String get deviceDetailsHint => isEnglish
-      ? 'See My devices for details'
-      : '请在“我的设备”查看详情';
+  String get deviceDetailsHint =>
+      isEnglish ? 'See My devices for details' : '请在“我的设备”查看详情';
 
   String get mapPoint => isEnglish ? 'Map point' : '地图选点';
   String get destination => isEnglish ? 'Destination' : '目的地';
