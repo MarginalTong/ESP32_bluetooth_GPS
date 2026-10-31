@@ -96,7 +96,21 @@ class AppText {
   String get reconnectDisplayHint =>
       isEnglish ? 'Reconnect the display' : '请重新连接导航屏';
   String get deviceConnectionIssue =>
-      isEnglish ? 'Display connection needs attention' : '导航屏连接需要检查';
+      isEnglish ? 'Display problem' : '导航屏连接异常';
+  String get displayOffline => isEnglish ? 'Display offline' : '导航屏离线';
+  String get displayOfflineHint =>
+      isEnglish ? 'Turn it on and keep it nearby' : '请开机并靠近手机';
+  String get displayDisconnected =>
+      isEnglish ? 'Display disconnected' : '导航屏已断开';
+  String get displayDisconnectedHint =>
+      isEnglish ? 'Reconnecting automatically' : '正在自动重连';
+  String get bluetoothOff => isEnglish ? 'Bluetooth is off' : '蓝牙未开启';
+  String get bluetoothOffHint =>
+      isEnglish ? 'Turn it on to connect' : '打开蓝牙后即可连接';
+  String get pairDisplayAgain =>
+      isEnglish ? 'Pair display again' : '请重新配对导航屏';
+  String get pairDisplayAgainHint =>
+      isEnglish ? 'Tap, then press BOOT' : '点按后按屏幕上的 BOOT 键';
 
   /// "45 s" / "3 min" / "2 h" (English) or "45 秒" / "3 分钟" / "2 小时".
   String _age(Duration age) {

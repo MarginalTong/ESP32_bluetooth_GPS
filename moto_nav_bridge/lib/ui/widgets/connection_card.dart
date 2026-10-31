@@ -25,6 +25,11 @@ class ConnectionCard extends StatelessWidget {
         ble.lastError != null &&
         (writeFailed || !BleService.isWriteFailure(ble.lastError));
     final colors = Theme.of(context).colorScheme;
+    final issue = !hasError
+        ? null
+        : writeFailed
+            ? (text.displayUpdateInterrupted, text.reconnectDisplayHint)
+            : _issue(text, ble.lastError!);
 
     return GlassPanel(
       child: InkWell(
@@ -55,15 +60,15 @@ class ConnectionCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      hasError
-                          ? (writeFailed
-                              ? text.displayUpdateInterrupted
-                              : text.deviceConnectionIssue)
+                      issue != null
+                          ? issue.$1
                           : connected
                               ? text.readyToGo
                               : busy
                                   ? text.connectingDisplay
                                   : text.tapToConnect,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.start,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
@@ -73,11 +78,7 @@ class ConnectionCard extends StatelessWidget {
                     Text(
                       busy
                           ? _label(context, ble.state)
-                          : hasError
-                              ? (writeFailed
-                                  ? text.reconnectDisplayHint
-                                  : text.deviceDetailsHint)
-                              : _label(context, ble.state),
+                          : issue?.$2 ?? _label(context, ble.state),
                       textAlign: TextAlign.start,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -103,6 +104,26 @@ class ConnectionCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Short title and hint for a connection error; the raw text stays on the
+  /// device page. A "not selected" scan is not a fault, so it has no issue.
+  (String, String)? _issue(AppText text, String error) {
+    if (error.startsWith('No display selected')) return null;
+    if (error.startsWith('Bluetooth is')) {
+      return (text.bluetoothOff, text.bluetoothOffHint);
+    }
+    if (error.startsWith('Bound display is offline') ||
+        error.startsWith('Connect failed')) {
+      return (text.displayOffline, text.displayOfflineHint);
+    }
+    if (error.startsWith('BLE ')) {
+      return (text.displayDisconnected, text.displayDisconnectedHint);
+    }
+    if (error.startsWith('Display security')) {
+      return (text.pairDisplayAgain, text.pairDisplayAgainHint);
+    }
+    return (text.deviceConnectionIssue, text.deviceDetailsHint);
   }
 
   String _label(BuildContext context, BleConnectionState state) {

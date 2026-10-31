@@ -36,7 +36,71 @@ class WriteFailedBle extends LayoutBle {
   DateTime? get lastErrorAt => at;
 }
 
+class ErrorBle extends LayoutBle {
+  ErrorBle(this.message);
+  final String message;
+
+  @override
+  BleConnectionState get state => BleConnectionState.idle;
+
+  @override
+  String? get lastError => message;
+}
+
 void main() {
+  for (final (error, title, hint) in const [
+    (
+      'Bound display is offline. Other displays will not be connected.',
+      'Display offline',
+      'Turn it on and keep it nearby',
+    ),
+    (
+      'Connect failed: timeout',
+      'Display offline',
+      'Turn it on and keep it nearby',
+    ),
+    (
+      'BLE disconnected (8: timeout)',
+      'Display disconnected',
+      'Reconnecting automatically',
+    ),
+    (
+      'Bluetooth is off. Turn it on and reconnect.',
+      'Bluetooth is off',
+      'Turn it on to connect',
+    ),
+    (
+      'Display security was updated. Connect and press BOOT to pair again.',
+      'Pair display again',
+      'Tap, then press BOOT',
+    ),
+    (
+      'Cannot read saved display binding',
+      'Display problem',
+      'See My devices for details',
+    ),
+    (
+      'No display selected. Tap to scan again.',
+      'Tap to connect',
+      'Display not connected',
+    ),
+  ]) {
+    testWidgets('home card names the problem: $error', (tester) async {
+      tester.binding.platformDispatcher.localeTestValue = const Locale('en');
+      addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
+      final ble = ErrorBle(error);
+      await tester.pumpWidget(ChangeNotifierProvider<BleService>.value(
+          value: ble,
+          child: const MaterialApp(home: Scaffold(body: ConnectionCard()))));
+      expect(find.text(title), findsOneWidget);
+      expect(find.text(hint), findsOneWidget);
+      final shown = tester.widget<Text>(find.text(title));
+      expect(shown.maxLines, 1);
+      await tester.pumpWidget(const SizedBox());
+      ble.dispose();
+    });
+  }
+
   testWidgets('home card explains a write failure without showing raw BLE error',
       (tester) async {
     tester.binding.platformDispatcher.localeTestValue = const Locale('en');
