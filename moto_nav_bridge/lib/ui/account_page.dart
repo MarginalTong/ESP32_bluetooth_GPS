@@ -5,6 +5,7 @@ import '../controllers/account_controller.dart';
 import '../l10n/app_text.dart';
 import 'widgets/google_sign_in_button.dart';
 import 'widgets/profile_avatar_editor.dart';
+import 'widgets/settings_sync_section.dart';
 import 'navio_theme.dart';
 import 'profile_name_page.dart';
 
@@ -555,8 +556,8 @@ class _AccountPageState extends State<AccountPage> {
               const SizedBox(height: 8),
               Text(
                 t(
-                  'Guest navigation needs no account. Authentication is handled by Supabase. Saved addresses sync only when you choose.',
-                  '游客导航无需账号。账号验证由 Supabase 处理，常用地址仅在你主动同步时上传。',
+                  'Guest navigation needs no account. When signed in, your saved places and preferences sync automatically; guest settings remain separate.',
+                  '游客导航无需账号。登录后常用地址与偏好自动同步，游客资料独立保留。',
                 ),
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -645,88 +646,8 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                 ],
               ),
-              CupertinoListSection.insetGrouped(
-                margin: const EdgeInsets.only(top: 24),
-                header: SectionLabel(t('CLOUD DATA', '云端资料')),
-                footer: Text(
-                  t(
-                    'Cloud sync is manual. Only saved addresses and preferences are included; BLE keys and location history are never uploaded.',
-                    '云同步由你主动操作，仅包含常用地址和偏好设置，不上传蓝牙密钥或定位轨迹。',
-                  ),
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.4,
-                    color: CupertinoColors.secondaryLabel.resolveFrom(context),
-                  ),
-                ),
-                children: [
-                  _AccountAction(
-                    icon: CupertinoIcons.cloud_upload,
-                    title: t('Upload current settings', '上传当前资料'),
-                    onPressed: canAct
-                        ? () async {
-                            if (await _confirm(
-                              t('Upload to NAVIO cloud?', '上传到 NAVIO 云端？'),
-                              t(
-                                'Upload this account’s saved addresses and map/route preferences. This replaces its cloud copy.',
-                                '将当前账号的常用地址、地图与路线偏好上传，替换该账号的云端副本。',
-                              ),
-                            )) {
-                              await account.upload();
-                            }
-                          }
-                        : null,
-                  ),
-                  _AccountAction(
-                    icon: CupertinoIcons.cloud_download,
-                    title: t('Restore from cloud', '从云端恢复'),
-                    onPressed: canAct
-                        ? () async {
-                            if (await _confirm(
-                              t('Restore cloud data?', '恢复云端资料？'),
-                              t(
-                                'Replace this account’s local addresses and preferences with its cloud copy.',
-                                '使用云端副本替换当前账号在本机的常用地址与偏好。',
-                              ),
-                            )) {
-                              await account.download();
-                            }
-                          }
-                        : null,
-                  ),
-                  _AccountAction(
-                    icon: CupertinoIcons.square_arrow_down,
-                    title: t('Import guest settings', '导入游客资料'),
-                    onPressed: canAct
-                        ? () async {
-                            if (await _confirm(
-                              t('Import guest settings?', '导入游客资料？'),
-                              t(
-                                'Copy guest addresses and preferences to this account on this phone. Nothing is uploaded automatically.',
-                                '把本机游客地址与偏好复制到当前账号，不会自动上传。',
-                              ),
-                            )) {
-                              await account.importGuest();
-                            }
-                          }
-                        : null,
-                  ),
-                ],
-              ),
-              if (account.lastSync != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Text(
-                    t('Last sync: ', '上次同步：') +
-                        account.lastSync!.toLocal().toString().split('.').first,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: CupertinoColors.secondaryLabel.resolveFrom(
-                        context,
-                      ),
-                    ),
-                  ),
-                ),
+              const ProfilePhotoPrivacyNote(),
+              const SettingsSyncSection(),
               CupertinoListSection.insetGrouped(
                 margin: const EdgeInsets.only(top: 24),
                 header: SectionLabel(t('ACCOUNT', '账号')),

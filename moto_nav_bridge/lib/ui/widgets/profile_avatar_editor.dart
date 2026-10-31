@@ -12,14 +12,15 @@ class ProfileAvatarEditor extends StatelessWidget {
     final en = AppText.of(context).isEnglish;
     final avatar = controller.avatar;
     return Container(
-      margin: const EdgeInsets.only(bottom: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Column(
         children: [
           Semantics(
             label: en ? 'Profile photo' : '个人头像',
             child: ClipOval(
               child: SizedBox(
+                key: const ValueKey('profile-photo-image'),
                 width: 80,
                 height: 80,
                 child: avatar == null
@@ -48,10 +49,15 @@ class ProfileAvatarEditor extends StatelessWidget {
               child: CupertinoActivityIndicator(),
             )
           else
-            Wrap(
-              alignment: WrapAlignment.center,
+            Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 CupertinoButton(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  minimumSize: const Size(44, 44),
                   onPressed: controller.canEdit
                       ? () => controller.choose(
                           confirm: (jpeg) async =>
@@ -104,11 +110,19 @@ class ProfileAvatarEditor extends StatelessWidget {
                     avatar == null
                         ? (en ? 'Choose photo' : '设置头像')
                         : (en ? 'Change photo' : '更换头像'),
-                    style: const TextStyle(fontSize: 15),
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 if (avatar != null)
                   CupertinoButton(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    minimumSize: const Size(44, 44),
                     onPressed: controller.canEdit
                         ? () async {
                             final confirmed = await showCupertinoDialog<bool>(
@@ -143,23 +157,14 @@ class ProfileAvatarEditor extends StatelessWidget {
                     child: Text(
                       en ? 'Remove photo' : '移除头像',
                       style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
                         color: CupertinoColors.destructiveRed,
                       ),
                     ),
                   ),
               ],
             ),
-          Text(
-            en
-                ? 'Your photo is visible to signed-in riders only while you share your location. A small cropped copy is saved; the original photo is not uploaded.'
-                : '仅在共享位置时向已登录骑友展示头像。只保存裁剪后的小图，不上传原照片。',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.4,
-              color: CupertinoColors.secondaryLabel.resolveFrom(context),
-            ),
-          ),
           if (controller.error != null) ...[
             const SizedBox(height: 12),
             Semantics(
@@ -194,4 +199,22 @@ class ProfileAvatarEditor extends StatelessWidget {
       ),
     );
   }
+}
+
+class ProfilePhotoPrivacyNote extends StatelessWidget {
+  const ProfilePhotoPrivacyNote({super.key});
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+    child: Text(
+      AppText.of(context).isEnglish
+          ? 'Your photo is visible to signed-in riders only while you share your location. Only a small cropped copy is saved, not the original photo.'
+          : '仅在共享位置时向已登录骑友展示头像。只保存裁剪后的小图，不上传原照片。',
+      style: TextStyle(
+        fontSize: 12,
+        height: 1.4,
+        color: CupertinoColors.secondaryLabel.resolveFrom(context),
+      ),
+    ),
+  );
 }

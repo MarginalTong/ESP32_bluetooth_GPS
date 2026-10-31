@@ -15,17 +15,35 @@ class ProfileNameTile extends StatelessWidget {
     final en = AppText.of(context).isEnglish;
     return CupertinoListTile(
       key: const ValueKey('profile-nickname-row'),
-      leading: const SettingsIcon(CupertinoIcons.person),
-      title: Text(en ? 'Nickname' : '昵称'),
-      additionalInfo: Flexible(
-        child: Text(
-          profile.profile?.displayName ??
-              (profile.busy
-                  ? (en ? 'Loading…' : '读取中…')
-                  : (en ? 'Tap to retry' : '点击重试')),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+      title: Row(
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              en ? 'Name' : '名字',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+                color: CupertinoColors.secondaryLabel.resolveFrom(context),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              profile.profile?.displayName ??
+                  (profile.busy
+                      ? (en ? 'Loading…' : '读取中…')
+                      : (en ? 'Tap to retry' : '点击重试')),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w500,
+                color: CupertinoColors.label.resolveFrom(context),
+              ),
+            ),
+          ),
+        ],
       ),
       trailing: profile.busy
           ? const CupertinoActivityIndicator(radius: 8)

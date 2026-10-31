@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_text.dart';
 import '../services/ble_service.dart';
 import '../controllers/account_controller.dart';
+import '../controllers/settings_sync_controller.dart';
 import '../controllers/rider_map_controller.dart';
 import 'home_page.dart';
 import 'devices_page.dart';
@@ -45,6 +46,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
+    context.read<SettingsSyncController?>()?.setForeground(_foreground);
     context.read<RiderMapController?>()?.setVisibility(
       foreground: _foreground,
       mapVisible: _selected == 0,
@@ -98,6 +100,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             : const Color(0xff8e8e93),
         currentIndex: _selected,
         onTap: (value) {
+          if (value == 1) context.read<SettingsSyncController?>()?.request();
           setState(() => _selected = value);
           context.read<RiderMapController?>()?.setVisibility(
             foreground: _foreground,

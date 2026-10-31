@@ -55,11 +55,15 @@ void main() {
       await tap(tester, find.text('Sign in').last);
       await tester.pumpAndSettle();
       expect(find.text('rider@example.test'), findsOneWidget);
+      expect(find.text('Upload current settings'), findsNothing);
+      expect(find.text('Restore from cloud'), findsNothing);
+      expect(find.text('Import guest settings'), findsNothing);
       await tester.scrollUntilVisible(
-        find.text('Upload current settings'),
-        200,
+        find.text('Automatic sync'),
+        150,
+        scrollable: find.byType(Scrollable).first,
       );
-      expect(find.text('Upload current settings'), findsOneWidget);
+      expect(find.text('Automatic sync'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -68,7 +72,7 @@ void main() {
   ) async {
     await account.signIn('rider@example.test', 'password');
     await show(tester);
-    final label = find.textContaining('Cloud sync is manual');
+    final label = find.textContaining('Saved places and map/route preferences');
     final style = DefaultTextStyle.of(tester.element(label)).style;
     expect(style.decoration, TextDecoration.none);
     expect(style.fontSize, 17);

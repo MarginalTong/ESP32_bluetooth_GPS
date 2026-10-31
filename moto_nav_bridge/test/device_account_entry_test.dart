@@ -72,7 +72,10 @@ void main() {
       expect(tester.getCenter(button).dx, greaterThan(330));
       expect(tester.getCenter(button).dy, lessThan(80));
       expect(tester.getSize(button).width, greaterThanOrEqualTo(44));
-      expect(tester.getSize(find.byType(ProfileAvatarView)), const Size(36, 36));
+      expect(
+        tester.getSize(find.byType(ProfileAvatarView)),
+        const Size(36, 36),
+      );
       expect(find.textContaining('guest use still available'), findsNothing);
       await tester.tap(button);
       await tester.pumpAndSettle();
@@ -89,7 +92,9 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('device-account-button')));
       await tester.pumpAndSettle();
       expect(find.text('rider@example.test'), findsOneWidget);
-      final body = find.textContaining('Cloud sync is manual');
+      final body = find.textContaining(
+        'Saved places and map/route preferences',
+      );
       final style = DefaultTextStyle.of(tester.element(body)).style;
       expect(style.decoration, TextDecoration.none);
       expect(style.color, isNot(const Color(0xD0FF0000)));
