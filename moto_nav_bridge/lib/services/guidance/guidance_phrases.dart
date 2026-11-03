@@ -12,7 +12,9 @@ class GuidancePhrases {
   String distance(int meters) {
     if (meters >= 1000) {
       final km = (meters / 100).round() / 10;
-      final text = km == km.roundToDouble() ? km.toStringAsFixed(0) : km.toStringAsFixed(1);
+      final text = km == km.roundToDouble()
+          ? km.toStringAsFixed(0)
+          : km.toStringAsFixed(1);
       return english ? 'In $text kilometres, ' : '前方$text公里';
     }
     final rounded = meters < 100
@@ -24,8 +26,12 @@ class GuidancePhrases {
   /// The action alone, e.g. "左转" / "turn left". [direction] is what the
   /// display shows; [maneuver] adds detail only when it agrees with it.
   String action(DeviceDirection direction, GuidanceManeuver? maneuver) {
-    final m = maneuver != null && maneuver.direction == direction ? maneuver : null;
-    final left = direction == DeviceDirection.left || direction == DeviceDirection.bearLeft;
+    final m = maneuver != null && maneuver.direction == direction
+        ? maneuver
+        : null;
+    final left =
+        direction == DeviceDirection.left ||
+        direction == DeviceDirection.bearLeft;
     switch (m?.kind) {
       case ManeuverKind.sharpTurn:
         return english
@@ -66,16 +72,15 @@ class GuidancePhrases {
 
   /// The plain display direction, used when maneuver data is missing.
   String basic(DeviceDirection direction) => switch (direction) {
-        DeviceDirection.left => english ? 'turn left' : '左转',
-        DeviceDirection.right => english ? 'turn right' : '右转',
-        DeviceDirection.bearLeft => english ? 'bear left' : '向左前方行驶',
-        DeviceDirection.bearRight => english ? 'bear right' : '向右前方行驶',
-        DeviceDirection.uturn => english
-            ? 'make a U-turn only where permitted and safe'
-            : '在允许且安全的位置掉头',
-        DeviceDirection.arrived => english ? 'arrive at your destination' : '到达目的地',
-        _ => english ? 'continue straight' : '继续直行',
-      };
+    DeviceDirection.left => english ? 'turn left' : '左转',
+    DeviceDirection.right => english ? 'turn right' : '右转',
+    DeviceDirection.bearLeft => english ? 'bear left' : '向左前方行驶',
+    DeviceDirection.bearRight => english ? 'bear right' : '向右前方行驶',
+    DeviceDirection.uturn =>
+      english ? 'make a U-turn only where permitted and safe' : '在允许且安全的位置掉头',
+    DeviceDirection.arrived => english ? 'arrive at your destination' : '到达目的地',
+    _ => english ? 'continue straight' : '继续直行',
+  };
 
   /// "，进入人民路" / " onto King Street" for maneuvers that join a road.
   String onto(GuidanceManeuver? maneuver, DeviceDirection direction) {
@@ -100,7 +105,9 @@ class GuidancePhrases {
   String then(GuidanceManeuver next, double gapMeters) {
     final immediately = gapMeters <= 60;
     final action = this.action(next.direction, next);
-    if (english) return immediately ? ', then immediately $action' : ', then $action';
+    if (english) {
+      return immediately ? ', then immediately $action' : ', then $action';
+    }
     return immediately ? '，随后立即$action' : '，随后$action';
   }
 
@@ -111,9 +118,11 @@ class GuidancePhrases {
     return '${text[0].toUpperCase()}${text.substring(1)}.';
   }
 
-  String get rerouting => english ? 'Off route. Finding a new route.' : '已偏离路线，正在重新规划。';
-  String get rerouteFailed =>
-      english ? 'Could not find a new route yet. Retrying.' : '暂时无法重新规划路线，正在重试。';
+  String get rerouting =>
+      english ? 'Off route. Finding a new route.' : '已偏离路线，正在重新规划。';
+  String get rerouteFailed => english
+      ? 'Could not find a new route yet. Retrying.'
+      : '暂时无法重新规划路线，正在重试。';
   String get arrived => english ? 'You have arrived.' : '已到达目的地。';
   String get curves => english
       ? 'Series of sharp bends ahead. Watch the road.'
@@ -121,6 +130,11 @@ class GuidancePhrases {
 
   static String _ordinal(int n) {
     if (n % 100 >= 11 && n % 100 <= 13) return '${n}th';
-    return switch (n % 10) { 1 => '${n}st', 2 => '${n}nd', 3 => '${n}rd', _ => '${n}th' };
+    return switch (n % 10) {
+      1 => '${n}st',
+      2 => '${n}nd',
+      3 => '${n}rd',
+      _ => '${n}th',
+    };
   }
 }

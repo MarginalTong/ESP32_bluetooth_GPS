@@ -16,23 +16,20 @@ class AppleMapsException implements Exception {
 }
 
 class PlaceSuggestion {
-  const PlaceSuggestion({
-    required this.title,
-    required this.subtitle,
-  });
+  const PlaceSuggestion({required this.title, required this.subtitle});
 
   final String title;
   final String subtitle;
 
-  String get query => [title, subtitle]
-      .where((part) => part.trim().isNotEmpty)
-      .join(' ')
-      .trim();
+  String get query => [
+    title,
+    subtitle,
+  ].where((part) => part.trim().isNotEmpty).join(' ').trim();
 
   factory PlaceSuggestion.fromMap(Map<Object?, Object?> map) => PlaceSuggestion(
-        title: map['title'] as String? ?? '',
-        subtitle: map['subtitle'] as String? ?? '',
-      );
+    title: map['title'] as String? ?? '',
+    subtitle: map['subtitle'] as String? ?? '',
+  );
 }
 
 class AppleMapsService {
@@ -48,9 +45,11 @@ class AppleMapsService {
         'languageCode': text.languageCode,
       });
       return (raw ?? const [])
-          .map((item) => PlaceSuggestion.fromMap(
-                Map<Object?, Object?>.from(item! as Map),
-              ))
+          .map(
+            (item) => PlaceSuggestion.fromMap(
+              Map<Object?, Object?>.from(item! as Map),
+            ),
+          )
           .where((item) => item.title.trim().isNotEmpty)
           .toList(growable: false);
     } on PlatformException catch (e) {
@@ -58,8 +57,11 @@ class AppleMapsService {
     }
   }
 
-  Future<List<PlaceResult>> search(String query,
-      {LatLng? near, String? category}) async {
+  Future<List<PlaceResult>> search(
+    String query, {
+    LatLng? near,
+    String? category,
+  }) async {
     final text = AppText.current;
     final queryText = query.trim();
     if (queryText.isEmpty) return const [];
@@ -74,9 +76,10 @@ class AppleMapsService {
         },
       });
       return (raw ?? const [])
-          .map((item) => PlaceResult.fromMap(
-                Map<Object?, Object?>.from(item! as Map),
-              ))
+          .map(
+            (item) =>
+                PlaceResult.fromMap(Map<Object?, Object?>.from(item! as Map)),
+          )
           .toList(growable: false);
     } on PlatformException catch (e) {
       throw AppleMapsException(e.message ?? text.placeSearchFailed);
@@ -112,9 +115,11 @@ class AppleMapsService {
         'languageCode': text.languageCode,
       });
       final result = (raw ?? const [])
-          .map((item) => _routeCandidateFromMap(
-                Map<Object?, Object?>.from(item! as Map),
-              ))
+          .map(
+            (item) => _routeCandidateFromMap(
+              Map<Object?, Object?>.from(item! as Map),
+            ),
+          )
           .where((candidate) => candidate.steps.isNotEmpty)
           .toList(growable: false);
       if (result.isEmpty) {
@@ -128,8 +133,9 @@ class AppleMapsService {
 
   RouteCandidate _routeCandidateFromMap(Map<Object?, Object?> map) {
     final steps = (map['steps'] as List<Object?>? ?? const [])
-        .map((item) =>
-            _routeStepFromMap(Map<Object?, Object?>.from(item! as Map)))
+        .map(
+          (item) => _routeStepFromMap(Map<Object?, Object?>.from(item! as Map)),
+        )
         .toList(growable: false);
 
     return RouteCandidate(
@@ -141,14 +147,15 @@ class AppleMapsService {
   }
 
   RouteStep _routeStepFromMap(Map<Object?, Object?> map) {
-    final coordinates =
-        (map['coordinates'] as List<Object?>? ?? const []).map((item) {
-      final point = Map<Object?, Object?>.from(item! as Map);
-      return LatLng(
-        (point['latitude'] as num).toDouble(),
-        (point['longitude'] as num).toDouble(),
-      );
-    }).toList(growable: false);
+    final coordinates = (map['coordinates'] as List<Object?>? ?? const [])
+        .map((item) {
+          final point = Map<Object?, Object?>.from(item! as Map);
+          return LatLng(
+            (point['latitude'] as num).toDouble(),
+            (point['longitude'] as num).toDouble(),
+          );
+        })
+        .toList(growable: false);
 
     return RouteStep(
       direction: _direction(map['direction'] as String?),
@@ -167,11 +174,11 @@ class AppleMapsService {
   }
 
   DeviceDirection _direction(String? value) => switch (value) {
-        'LEFT' => DeviceDirection.left,
-        'RIGHT' => DeviceDirection.right,
-        'BEAR_LEFT' => DeviceDirection.bearLeft,
-        'BEAR_RIGHT' => DeviceDirection.bearRight,
-        'UTURN' => DeviceDirection.uturn,
-        _ => DeviceDirection.up,
-      };
+    'LEFT' => DeviceDirection.left,
+    'RIGHT' => DeviceDirection.right,
+    'BEAR_LEFT' => DeviceDirection.bearLeft,
+    'BEAR_RIGHT' => DeviceDirection.bearRight,
+    'UTURN' => DeviceDirection.uturn,
+    _ => DeviceDirection.up,
+  };
 }

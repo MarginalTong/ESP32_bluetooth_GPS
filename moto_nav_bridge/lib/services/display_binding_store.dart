@@ -36,8 +36,9 @@ class KeychainStringStore implements SecureStringStore {
 class AndroidSecureStringStore implements SecureStringStore {
   const AndroidSecureStringStore();
   static const _key = 'nav_display_binding';
-  static const _storage =
-      FlutterSecureStorage(aOptions: AndroidOptions(resetOnError: true));
+  static const _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(resetOnError: true),
+  );
 
   @override
   Future<String?> read() => _storage.read(key: _key);
@@ -75,12 +76,13 @@ class PreferencesStringStore implements SecureStringStore {
 /// SharedPreferences (where it would reach device backups) into [secure].
 class DisplayBindingStore {
   DisplayBindingStore({SecureStringStore? secure})
-      : _secure = secure ??
-            (Platform.isIOS
-                ? const KeychainStringStore()
-                : Platform.isAndroid
-                    ? const AndroidSecureStringStore()
-                    : const PreferencesStringStore());
+    : _secure =
+          secure ??
+          (Platform.isIOS
+              ? const KeychainStringStore()
+              : Platform.isAndroid
+              ? const AndroidSecureStringStore()
+              : const PreferencesStringStore());
 
   final SecureStringStore _secure;
 

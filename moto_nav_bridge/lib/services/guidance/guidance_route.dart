@@ -51,14 +51,14 @@ class GuidanceManeuver {
 
   /// Needs more context than a plain turn: announced a little earlier.
   bool get isComplex => const {
-        ManeuverKind.ramp,
-        ManeuverKind.rampStraight,
-        ManeuverKind.exit,
-        ManeuverKind.fork,
-        ManeuverKind.forkStraight,
-        ManeuverKind.merge,
-        ManeuverKind.roundaboutEnter,
-      }.contains(kind);
+    ManeuverKind.ramp,
+    ManeuverKind.rampStraight,
+    ManeuverKind.exit,
+    ManeuverKind.fork,
+    ManeuverKind.forkStraight,
+    ManeuverKind.merge,
+    ManeuverKind.roundaboutEnter,
+  }.contains(kind);
 }
 
 /// A run of at least two sharp bends close together, away from maneuvers.
@@ -98,9 +98,12 @@ class GuidanceRoute {
         alongMeters: along,
       ),
     ];
-    return GuidanceRoute._(List.unmodifiable(steps), List.unmodifiable(maneuvers),
-        List.unmodifiable(stepEndAlong),
-        List.unmodifiable(_findCurves(steps, maneuvers)));
+    return GuidanceRoute._(
+      List.unmodifiable(steps),
+      List.unmodifiable(maneuvers),
+      List.unmodifiable(stepEndAlong),
+      List.unmodifiable(_findCurves(steps, maneuvers)),
+    );
   }
 
   final List<RouteStep> steps;
@@ -111,11 +114,15 @@ class GuidanceRoute {
   /// The maneuver at the end of step [stepIndex] (the destination on the last
   /// step), or null for an index outside the route.
   GuidanceManeuver? upcoming(int stepIndex) =>
-      stepIndex >= 0 && stepIndex < maneuvers.length ? maneuvers[stepIndex] : null;
+      stepIndex >= 0 && stepIndex < maneuvers.length
+      ? maneuvers[stepIndex]
+      : null;
 
   /// The next announced maneuver after [m], with the road distance between
   /// them; silent maneuvers in between are skipped.
-  ({GuidanceManeuver maneuver, double gapMeters})? following(GuidanceManeuver m) {
+  ({GuidanceManeuver maneuver, double gapMeters})? following(
+    GuidanceManeuver m,
+  ) {
     for (var i = m.index; i < maneuvers.length; i++) {
       final next = maneuvers[i];
       if (next.index <= m.index || next.isSilent) continue;
@@ -173,11 +180,15 @@ class GuidanceRoute {
   static const double _maxPointSpacingMeters = 30;
 
   static List<CurveCluster> _findCurves(
-      List<RouteStep> steps, List<GuidanceManeuver> maneuvers) {
+    List<RouteStep> steps,
+    List<GuidanceManeuver> maneuvers,
+  ) {
     final points = <LatLng>[];
     for (final step in steps) {
       for (final point in step.geometry) {
-        if (points.isEmpty || points.last.distanceTo(point) > 0.5) points.add(point);
+        if (points.isEmpty || points.last.distanceTo(point) > 0.5) {
+          points.add(point);
+        }
       }
     }
     if (points.length < 3) return const [];
@@ -188,7 +199,7 @@ class GuidanceRoute {
     final total = along.last;
     final maneuverAlong = [
       for (final m in maneuvers)
-        if (!m.isSilent && m.kind != ManeuverKind.destination) m.alongMeters
+        if (!m.isSilent && m.kind != ManeuverKind.destination) m.alongMeters,
     ]..sort();
 
     // Binary search: a long route has thousands of samples and maneuvers.
@@ -219,9 +230,10 @@ class GuidanceRoute {
       final span = along[hi] - along[lo];
       final t = span > 0 ? ((s - along[lo]) / span).clamp(0.0, 1.0) : 0.0;
       return LatLng(
-          points[lo].latitude + (points[hi].latitude - points[lo].latitude) * t,
-          points[lo].longitude +
-              (points[hi].longitude - points[lo].longitude) * t);
+        points[lo].latitude + (points[hi].latitude - points[lo].latitude) * t,
+        points[lo].longitude +
+            (points[hi].longitude - points[lo].longitude) * t,
+      );
     }
 
     double maxSpacing(double from, double to) {
@@ -236,8 +248,16 @@ class GuidanceRoute {
     // Bends: stretches where the heading turns sharply within a short window.
     final bends = <(double, double)>[];
     double? bendStart;
-    for (var s = _halfWindowMeters; s <= total - _halfWindowMeters; s += _sampleMeters) {
-      final turn = _turnDegrees(at(s - _halfWindowMeters), at(s), at(s + _halfWindowMeters));
+    for (
+      var s = _halfWindowMeters;
+      s <= total - _halfWindowMeters;
+      s += _sampleMeters
+    ) {
+      final turn = _turnDegrees(
+        at(s - _halfWindowMeters),
+        at(s),
+        at(s + _halfWindowMeters),
+      );
       if (turn.abs() >= _sharpDegrees && !nearManeuver(s)) {
         bendStart ??= s;
       } else if (bendStart != null) {
@@ -251,7 +271,8 @@ class GuidanceRoute {
     var i = 0;
     while (i < bends.length) {
       var j = i;
-      while (j + 1 < bends.length && bends[j + 1].$1 - bends[j].$2 <= _clusterGapMeters) {
+      while (j + 1 < bends.length &&
+          bends[j + 1].$1 - bends[j].$2 <= _clusterGapMeters) {
         j++;
       }
       final start = bends[i].$1 - _halfWindowMeters;
@@ -267,8 +288,14 @@ class GuidanceRoute {
   /// Signed heading change a -> b -> c in degrees, on a local flat frame.
   static double _turnDegrees(LatLng a, LatLng b, LatLng c) {
     final scale = math.cos(b.latitude * math.pi / 180);
-    final h1 = math.atan2((b.longitude - a.longitude) * scale, b.latitude - a.latitude);
-    final h2 = math.atan2((c.longitude - b.longitude) * scale, c.latitude - b.latitude);
+    final h1 = math.atan2(
+      (b.longitude - a.longitude) * scale,
+      b.latitude - a.latitude,
+    );
+    final h2 = math.atan2(
+      (c.longitude - b.longitude) * scale,
+      c.latitude - b.latitude,
+    );
     var delta = (h2 - h1) * 180 / math.pi;
     while (delta > 180) {
       delta -= 360;

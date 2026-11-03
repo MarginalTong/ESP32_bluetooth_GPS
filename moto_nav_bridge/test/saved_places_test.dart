@@ -9,9 +9,15 @@ void main() {
   test('saved addresses persist and can be independently replaced', () async {
     SharedPreferences.setMockInitialValues({});
     const a = PlaceResult(
-        name: 'A', address: 'Address A', location: LatLng(-33, 151));
+      name: 'A',
+      address: 'Address A',
+      location: LatLng(-33, 151),
+    );
     const b = PlaceResult(
-        name: 'B', address: 'Address B', location: LatLng(-34, 150));
+      name: 'B',
+      address: 'Address B',
+      location: LatLng(-34, 150),
+    );
     for (final slot in SavedPlaces.slots) {
       await SavedPlaces().save(slot, a);
     }

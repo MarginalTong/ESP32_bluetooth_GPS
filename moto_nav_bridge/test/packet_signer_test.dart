@@ -16,14 +16,18 @@ void main() {
 
   test('matches the reference tag shared with the firmware', () {
     final signer = PacketSigner(key: key, sessionNonce: nonce);
-    expect(signer.sign('{"dir":"LEFT","dist":200}'),
-        '{"dir":"LEFT","dist":200,"n":1}|acdb15653d20ac00');
+    expect(
+      signer.sign('{"dir":"LEFT","dist":200}'),
+      '{"dir":"LEFT","dist":200,"n":1}|acdb15653d20ac00',
+    );
   });
 
   test('clock packets are signed the same way', () {
     final signer = PacketSigner(key: key, sessionNonce: nonce);
-    expect(signer.sign('{"clock":1761200000}'),
-        '{"clock":1761200000,"n":1}|2c663afa65eb024b');
+    expect(
+      signer.sign('{"clock":1761200000}'),
+      '{"clock":1761200000,"n":1}|2c663afa65eb024b',
+    );
   });
 
   test('the counter increases with every packet', () {
@@ -34,21 +38,31 @@ void main() {
 
   test('a different session nonce changes the tag', () {
     final other = Uint8List.fromList(List.generate(8, (i) => 0xb0 + i));
-    final a = PacketSigner(key: key, sessionNonce: nonce)
-        .sign('{"dir":"UP","dist":10}');
-    final b = PacketSigner(key: key, sessionNonce: other)
-        .sign('{"dir":"UP","dist":10}');
+    final a = PacketSigner(
+      key: key,
+      sessionNonce: nonce,
+    ).sign('{"dir":"UP","dist":10}');
+    final b = PacketSigner(
+      key: key,
+      sessionNonce: other,
+    ).sign('{"dir":"UP","dist":10}');
     expect(a.split('|').first, b.split('|').first);
     expect(a.split('|').last, isNot(b.split('|').last));
   });
 
   test('rejects malformed keys, nonces and bodies', () {
-    expect(() => PacketSigner(key: Uint8List(15), sessionNonce: nonce),
-        throwsArgumentError);
-    expect(() => PacketSigner(key: key, sessionNonce: Uint8List(7)),
-        throwsArgumentError);
-    expect(() => PacketSigner(key: key, sessionNonce: nonce).sign('[]'),
-        throwsArgumentError);
+    expect(
+      () => PacketSigner(key: Uint8List(15), sessionNonce: nonce),
+      throwsArgumentError,
+    );
+    expect(
+      () => PacketSigner(key: key, sessionNonce: Uint8List(7)),
+      throwsArgumentError,
+    );
+    expect(
+      () => PacketSigner(key: key, sessionNonce: nonce).sign('[]'),
+      throwsArgumentError,
+    );
   });
 
   test('the largest navigation packet fits the firmware limit', () {
@@ -59,10 +73,14 @@ void main() {
       direction: DeviceDirection.bearRight,
       distanceMeters: 9999,
       rerouting: true,
-      routePreviewPoints:
-          List.filled(NavigationEngine.routePreviewMaxPoints * 2, 1270),
-      sideRoadPreviewPoints:
-          List.filled(NavigationEngine.sideRoadPreviewMaxSegments * 4, 1270),
+      routePreviewPoints: List.filled(
+        NavigationEngine.routePreviewMaxPoints * 2,
+        1270,
+      ),
+      sideRoadPreviewPoints: List.filled(
+        NavigationEngine.sideRoadPreviewMaxSegments * 4,
+        1270,
+      ),
     );
     final signer = PacketSigner(key: key, sessionNonce: nonce);
     for (var i = 0; i < 999999; i++) {

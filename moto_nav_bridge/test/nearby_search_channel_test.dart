@@ -9,16 +9,20 @@ void main() {
     const channel = MethodChannel('moto_nav_bridge/apple_maps');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      expect(call.method, 'searchPlaces');
-      expect(call.arguments['latitude'], -33.0);
-      expect(call.arguments['longitude'], 151.0);
-      expect(call.arguments['category'], 'fuel');
-      expect(call.arguments['query'], 'BP petrol station');
-      return <Object>[];
-    });
+          expect(call.method, 'searchPlaces');
+          expect(call.arguments['latitude'], -33.0);
+          expect(call.arguments['longitude'], 151.0);
+          expect(call.arguments['category'], 'fuel');
+          expect(call.arguments['query'], 'BP petrol station');
+          return <Object>[];
+        });
     expect(
-        await AppleMapsService().search('BP petrol station',
-            near: const LatLng(-33, 151), category: 'fuel'),
-        isEmpty);
+      await AppleMapsService().search(
+        'BP petrol station',
+        near: const LatLng(-33, 151),
+        category: 'fuel',
+      ),
+      isEmpty,
+    );
   });
 }

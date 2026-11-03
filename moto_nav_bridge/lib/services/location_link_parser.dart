@@ -10,11 +10,11 @@ class LocationLinkException implements Exception {
 
 /// Only response headers are inspected. No map HTML is downloaded or scraped.
 class MapUrlResolver {
-  MapUrlResolver(
-      {http.Client Function()? clientFactory,
-      this.timeout = const Duration(seconds: 10),
-      this.maxRedirects = 5})
-      : _clientFactory = clientFactory ?? http.Client.new;
+  MapUrlResolver({
+    http.Client Function()? clientFactory,
+    this.timeout = const Duration(seconds: 10),
+    this.maxRedirects = 5,
+  }) : _clientFactory = clientFactory ?? http.Client.new;
   final http.Client Function() _clientFactory;
   final Duration timeout;
   final int maxRedirects;
@@ -32,7 +32,7 @@ class MapUrlResolver {
           'maps.google.com',
           'google.com.au',
           'www.google.com.au',
-          'maps.google.com.au'
+          'maps.google.com.au',
         }.contains(host) &&
         (host.startsWith('maps.') ||
             uri.path == '/maps' ||
@@ -49,8 +49,9 @@ class MapUrlResolver {
         if (!seen.add(uri.toString())) {
           throw const LocationLinkException('redirect');
         }
-        final response = await client
-            .send(http.Request('GET', uri)..followRedirects = false);
+        final response = await client.send(
+          http.Request('GET', uri)..followRedirects = false,
+        );
         await response.stream.listen((_) {}).cancel();
         if ({301, 302, 303, 307, 308}.contains(response.statusCode)) {
           final location = response.headers['location'];
@@ -82,11 +83,12 @@ class MapUrlResolver {
 
 class LocationLinkParser {
   LocationLinkParser({required this.geocode, MapUrlResolver? resolver})
-      : resolver = resolver ?? MapUrlResolver();
+    : resolver = resolver ?? MapUrlResolver();
   final Future<List<PlaceResult>> Function(String) geocode;
   final MapUrlResolver resolver;
-  static final _pair =
-      RegExp(r'^\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*$');
+  static final _pair = RegExp(
+    r'^\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*$',
+  );
   static bool accepts(String input) =>
       input.trim().contains('://') ||
       _pair.hasMatch(input.trim()) ||
@@ -107,11 +109,12 @@ class LocationLinkParser {
     final source = input.trim();
     PlaceResult point(LatLng p, {String? name, bool viewport = false}) =>
         PlaceResult(
-            name: name ?? '${p.latitude}, ${p.longitude}',
-            address: '${p.latitude}, ${p.longitude}',
-            location: p,
-            sourceUrl: source.contains('://') ? source : null,
-            resolutionStatus: viewport ? 'viewport' : 'coordinates');
+          name: name ?? '${p.latitude}, ${p.longitude}',
+          address: '${p.latitude}, ${p.longitude}',
+          location: p,
+          sourceUrl: source.contains('://') ? source : null,
+          resolutionStatus: viewport ? 'viewport' : 'coordinates',
+        );
     final plain = coordinates(source);
     if (plain != null) return [point(plain)];
     try {
@@ -153,16 +156,20 @@ class LocationLinkParser {
         if (query.startsWith('place_id:')) {
           throw const LocationLinkException('identifier');
         }
-        final results =
-            await geocode(query).timeout(const Duration(seconds: 12));
+        final results = await geocode(
+          query,
+        ).timeout(const Duration(seconds: 12));
         if (results.isEmpty) throw const LocationLinkException('unresolved');
         return results
-            .map((p) => PlaceResult(
+            .map(
+              (p) => PlaceResult(
                 name: p.name,
                 address: p.address,
                 location: p.location,
                 sourceUrl: source,
-                resolutionStatus: 'geocoded'))
+                resolutionStatus: 'geocoded',
+              ),
+            )
             .toList();
       }
       if (q.containsKey('query_place_id') ||
@@ -174,11 +181,12 @@ class LocationLinkParser {
       if (uri.path.contains('/dir/') || q['map_action'] == 'pano') {
         throw const LocationLinkException('unresolved');
       }
-      final viewport = RegExp(r'@([+-]?\d+(?:\.\d+)?),([+-]?\d+(?:\.\d+)?)')
-          .firstMatch(uri.path);
+      final viewport = RegExp(
+        r'@([+-]?\d+(?:\.\d+)?),([+-]?\d+(?:\.\d+)?)',
+      ).firstMatch(uri.path);
       if (viewport != null) {
         return [
-          point(coordinates('${viewport[1]},${viewport[2]}')!, viewport: true)
+          point(coordinates('${viewport[1]},${viewport[2]}')!, viewport: true),
         ];
       }
       throw const LocationLinkException('unresolved');

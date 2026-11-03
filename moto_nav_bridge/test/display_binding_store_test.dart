@@ -32,8 +32,10 @@ void main() {
     'identity': '001122334455',
     'key': '000102030405060708090a0b0c0d0e0f',
   });
-  final keyless =
-      jsonEncode({'remote': 'phone-device-A', 'identity': '001122334455'});
+  final keyless = jsonEncode({
+    'remote': 'phone-device-A',
+    'identity': '001122334455',
+  });
 
   late FakeSecureStore secure;
   late DisplayBindingStore store;
@@ -49,7 +51,9 @@ void main() {
     expect(data?['key'], '000102030405060708090a0b0c0d0e0f');
     expect(secure.value, signed);
     expect(
-        (await SharedPreferences.getInstance()).getString(legacyKey), isNull);
+      (await SharedPreferences.getInstance()).getString(legacyKey),
+      isNull,
+    );
   });
 
   test('a keyless legacy binding is dropped, not migrated', () async {
@@ -58,7 +62,9 @@ void main() {
     expect(data?.containsKey('key'), isFalse);
     expect(secure.value, isNull);
     expect(
-        (await SharedPreferences.getInstance()).getString(legacyKey), isNull);
+      (await SharedPreferences.getInstance()).getString(legacyKey),
+      isNull,
+    );
   });
 
   test('a failed secure write keeps the old copy', () async {
@@ -66,7 +72,9 @@ void main() {
     secure.failWrites = true;
     await expectLater(store.read(), throwsA(isA<PlatformException>()));
     expect(
-        (await SharedPreferences.getInstance()).getString(legacyKey), signed);
+      (await SharedPreferences.getInstance()).getString(legacyKey),
+      signed,
+    );
   });
 
   test('secure storage wins over preferences', () async {
@@ -77,10 +85,17 @@ void main() {
 
   test('write and delete go through secure storage only', () async {
     SharedPreferences.setMockInitialValues({});
-    await store.write(DisplayBinding('phone-device-A', '001122334455',
-        Uint8List.fromList(List.generate(16, (i) => i))));
+    await store.write(
+      DisplayBinding(
+        'phone-device-A',
+        '001122334455',
+        Uint8List.fromList(List.generate(16, (i) => i)),
+      ),
+    );
     expect(
-        jsonDecode(secure.value!)['key'], '000102030405060708090a0b0c0d0e0f');
+      jsonDecode(secure.value!)['key'],
+      '000102030405060708090a0b0c0d0e0f',
+    );
     expect((await SharedPreferences.getInstance()).getKeys(), isEmpty);
     await store.delete();
     expect(secure.value, isNull);
@@ -92,12 +107,13 @@ void main() {
     final calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      calls.add(call);
-      return call.method == 'load' ? signed : null;
-    });
-    addTearDown(() => TestDefaultBinaryMessengerBinding
-        .instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null));
+          calls.add(call);
+          return call.method == 'load' ? signed : null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
 
     const keychain = KeychainStringStore();
     expect(await keychain.read(), signed);

@@ -5,8 +5,11 @@ import '../models/route_candidate.dart';
 /// Routing constraints are applied by the provider and [eligible]; turn counts
 /// are only tie-breakers, never a reason to choose a slower route. Missing or
 /// invalid metrics rank after known ones. Exact ties retain provider order.
-int preferredRouteIndex(List<RouteCandidate> routes,
-    {bool Function(RouteCandidate)? eligible, bool avoidEarlyUTurns = false}) {
+int preferredRouteIndex(
+  List<RouteCandidate> routes, {
+  bool Function(RouteCandidate)? eligible,
+  bool avoidEarlyUTurns = false,
+}) {
   var selected = -1;
   for (var i = 0; i < routes.length; i++) {
     final route = routes[i];
@@ -20,8 +23,10 @@ int preferredRouteIndex(List<RouteCandidate> routes,
 }
 
 int _compareRoutes(RouteCandidate a, RouteCandidate b, bool avoidEarlyUTurns) {
-  final time =
-      _compareMetric(a.expectedTravelTimeSeconds, b.expectedTravelTimeSeconds);
+  final time = _compareMetric(
+    a.expectedTravelTimeSeconds,
+    b.expectedTravelTimeSeconds,
+  );
   if (time != 0) return time;
   final distance = _compareMetric(a.distanceMeters, b.distanceMeters);
   if (distance != 0) return distance;

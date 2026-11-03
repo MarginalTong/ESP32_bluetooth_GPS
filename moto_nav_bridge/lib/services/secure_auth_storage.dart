@@ -4,12 +4,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Deliberately replaces the SDK's SharedPreferences default. Distinct from
 /// the BLE signing key; signing out must never delete the device binding.
 class SecureAuthStorage extends LocalStorage {
-  const SecureAuthStorage(this.project,
-      {this.storage = const FlutterSecureStorage(
-        iOptions: IOSOptions(
-            accessibility: KeychainAccessibility.first_unlock_this_device),
-        aOptions: AndroidOptions(resetOnError: true),
-      )});
+  const SecureAuthStorage(
+    this.project, {
+    this.storage = const FlutterSecureStorage(
+      iOptions: IOSOptions(
+        accessibility: KeychainAccessibility.first_unlock_this_device,
+      ),
+      aOptions: AndroidOptions(resetOnError: true),
+    ),
+  });
   final String project;
   final FlutterSecureStorage storage;
   String get key => 'navio.auth.session.$project';

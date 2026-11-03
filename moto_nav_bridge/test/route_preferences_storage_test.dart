@@ -9,16 +9,17 @@ void main() {
   test('legacy locked preferences remain available after upgrade', () async {
     SharedPreferences.setMockInitialValues({
       'route_preferences_test_v1':
-          '{"testUnlock":false,"highways":true,"tolls":true,"ferries":false,"tunnels":true}'
+          '{"testUnlock":false,"highways":true,"tolls":true,"ferries":false,"tunnels":true}',
     });
     final store = await SharedPreferences.getInstance();
     final positions = FakePositions(current: p0);
     final nav = NavigationController(
-        ble: FakeBle(),
-        directions: FakeRoutes(mainRoute),
-        location: positions,
-        sideRoads: FakeSideRoads(),
-        preferences: store);
+      ble: FakeBle(),
+      directions: FakeRoutes(mainRoute),
+      location: positions,
+      sideRoads: FakeSideRoads(),
+      preferences: store,
+    );
     expect(nav.avoidHighways, isTrue);
     expect(nav.avoidTolls, isTrue);
     expect(nav.avoidTunnels, isTrue);
@@ -30,14 +31,19 @@ void main() {
     final store = await SharedPreferences.getInstance();
     final positions = FakePositions(current: p0);
     NavigationController create() => NavigationController(
-        ble: FakeBle(),
-        directions: FakeRoutes(mainRoute),
-        location: positions,
-        sideRoads: FakeSideRoads(),
-        preferences: store);
+      ble: FakeBle(),
+      directions: FakeRoutes(mainRoute),
+      location: positions,
+      sideRoads: FakeSideRoads(),
+      preferences: store,
+    );
     final first = create();
     await first.savePreferences(
-        highways: true, tolls: false, ferries: true, tunnels: true);
+      highways: true,
+      tolls: false,
+      ferries: true,
+      tunnels: true,
+    );
     first.dispose();
     final restored = create();
     expect(restored.avoidHighways, isTrue);
@@ -45,7 +51,10 @@ void main() {
     expect(restored.avoidFerries, isTrue);
     expect(restored.avoidTunnels, isTrue);
     await restored.savePreferences(
-        highways: false, tolls: true, ferries: false);
+      highways: false,
+      tolls: true,
+      ferries: false,
+    );
     restored.dispose();
     final changed = create();
     expect(changed.avoidHighways, isFalse);

@@ -42,59 +42,72 @@ class BootPairingBle extends ChangeNotifier implements BleService {
 
 void main() {
   for (final english in [true, false]) {
-    testWidgets('BOOT replaces the code and success closes the sheet: $english',
-        (tester) async {
-      tester.binding.platformDispatcher.localeTestValue =
-          Locale(english ? 'en' : 'zh');
-      addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
-      final ble = BootPairingBle();
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: Builder(builder: (context) {
-            return CupertinoButton(
-              onPressed: () => connectDisplay(context, ble),
-              child: const Text('Open'),
-            );
-          }),
-        ),
-      ));
-      await tester.tap(find.text('Open'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-      expect(
+    testWidgets(
+      'BOOT replaces the code and success closes the sheet: $english',
+      (tester) async {
+        tester.binding.platformDispatcher.localeTestValue = Locale(
+          english ? 'en' : 'zh',
+        );
+        addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
+        final ble = BootPairingBle();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) {
+                  return CupertinoButton(
+                    onPressed: () => connectDisplay(context, ble),
+                    child: const Text('Open'),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('Open'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(
           find.text(english ? 'Press BOOT on the display' : '请按屏幕上的 BOOT 按钮'),
-          findsOneWidget);
-      expect(find.byType(TextField), findsNothing);
-      ble.confirmation.complete();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 1100));
-      await tester.pumpAndSettle();
-      expect(find.text('Open'), findsOneWidget);
-      expect(find.byIcon(CupertinoIcons.xmark_circle_fill), findsNothing);
-      ble.dispose();
-    });
+          findsOneWidget,
+        );
+        expect(find.byType(TextField), findsNothing);
+        ble.confirmation.complete();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 1100));
+        await tester.pumpAndSettle();
+        expect(find.text('Open'), findsOneWidget);
+        expect(find.byIcon(CupertinoIcons.xmark_circle_fill), findsNothing);
+        ble.dispose();
+      },
+    );
   }
 
   Future<void> open(WidgetTester tester, BootPairingBle ble) async {
     tester.binding.platformDispatcher.localeTestValue = const Locale('en');
     addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Builder(builder: (context) {
-          return CupertinoButton(
-            onPressed: () => connectDisplay(context, ble),
-            child: const Text('Open'),
-          );
-        }),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) {
+              return CupertinoButton(
+                onPressed: () => connectDisplay(context, ble),
+                child: const Text('Open'),
+              );
+            },
+          ),
+        ),
       ),
-    ));
+    );
     await tester.tap(find.text('Open'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
   }
 
-  testWidgets('a display without a button pairs without asking for BOOT',
-      (tester) async {
+  testWidgets('a display without a button pairs without asking for BOOT', (
+    tester,
+  ) async {
     final ble = BootPairingBle(byPower: true);
     await open(tester, ble);
     expect(find.text('Pairing…'), findsOneWidget);
@@ -107,11 +120,13 @@ void main() {
     ble.dispose();
   });
 
-  testWidgets('a closed power-up window asks the rider to replug the display',
-      (tester) async {
+  testWidgets('a closed power-up window asks the rider to replug the display', (
+    tester,
+  ) async {
     final ble = BootPairingBle(
-        byPower: true,
-        error: 'Connect failed: Exception: ${BleService.pairingWindowClosed}');
+      byPower: true,
+      error: 'Connect failed: Exception: ${BleService.pairingWindowClosed}',
+    );
     await open(tester, ble);
     ble.confirmation.complete();
     await tester.pump();

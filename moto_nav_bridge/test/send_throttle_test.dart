@@ -20,8 +20,10 @@ void main() {
     th.markSent(first, t0);
     // 2 m change, 100 ms later -> below both thresholds.
     expect(
-      th.shouldSend(s(DeviceDirection.up, 498),
-          t0.add(const Duration(milliseconds: 100))),
+      th.shouldSend(
+        s(DeviceDirection.up, 498),
+        t0.add(const Duration(milliseconds: 100)),
+      ),
       isFalse,
     );
   });
@@ -30,8 +32,10 @@ void main() {
     final th = SendThrottle(minDistanceDeltaMeters: 5);
     th.markSent(s(DeviceDirection.up, 500), t0);
     expect(
-      th.shouldSend(s(DeviceDirection.up, 495),
-          t0.add(const Duration(milliseconds: 100))),
+      th.shouldSend(
+        s(DeviceDirection.up, 495),
+        t0.add(const Duration(milliseconds: 100)),
+      ),
       isTrue,
     );
   });
@@ -40,8 +44,10 @@ void main() {
     final th = SendThrottle();
     th.markSent(s(DeviceDirection.up, 500), t0);
     expect(
-      th.shouldSend(s(DeviceDirection.left, 500),
-          t0.add(const Duration(milliseconds: 10))),
+      th.shouldSend(
+        s(DeviceDirection.left, 500),
+        t0.add(const Duration(milliseconds: 10)),
+      ),
       isTrue,
     );
   });
@@ -49,8 +55,10 @@ void main() {
   test('end-of-trip packet is not throttled after a STOP', () {
     final th = SendThrottle();
     th.markSent(NavState.stopped, t0);
-    expect(th.shouldSend(NavState.ended,
-        t0.add(const Duration(milliseconds: 10))), isTrue);
+    expect(
+      th.shouldSend(NavState.ended, t0.add(const Duration(milliseconds: 10))),
+      isTrue,
+    );
   });
 
   test('heartbeat: sends after the min interval even with no change', () {

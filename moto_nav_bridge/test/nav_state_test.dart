@@ -10,8 +10,10 @@ void main() {
     });
 
     test('BEAR_RIGHT serializes with the firmware token', () {
-      const s =
-          NavState(direction: DeviceDirection.bearRight, distanceMeters: 40);
+      const s = NavState(
+        direction: DeviceDirection.bearRight,
+        distanceMeters: 40,
+      );
       expect(s.toWire(), '{"dir":"BEAR_RIGHT","dist":40}');
     });
 
@@ -53,8 +55,10 @@ void main() {
         rerouting: true,
         routePreviewPoints: [64, 34, 64, 20],
       );
-      expect(s.toWire(),
-          '{"dir":"STOP","dist":0,"P":[64,34,64,20],"rerouting":true}');
+      expect(
+        s.toWire(),
+        '{"dir":"STOP","dist":0,"P":[64,34,64,20],"rerouting":true}',
+      );
     });
 
     test('toJson keys are dir/dist', () {

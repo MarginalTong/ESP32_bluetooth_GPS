@@ -44,15 +44,14 @@ class RouteCandidate {
     List<RoadSegment>? sideRoads,
     String? attribution,
     String? attributionUrl,
-  }) =>
-      RouteCandidate(
-        steps: steps ?? this.steps,
-        name: name ?? this.name,
-        distanceMeters: distanceMeters ?? this.distanceMeters,
-        expectedTravelTimeSeconds:
-            expectedTravelTimeSeconds ?? this.expectedTravelTimeSeconds,
-        sideRoads: sideRoads ?? this.sideRoads,
-        attribution: attribution ?? this.attribution,
-        attributionUrl: attributionUrl ?? this.attributionUrl,
-      );
+  }) => RouteCandidate(
+    steps: steps ?? this.steps,
+    name: name ?? this.name,
+    distanceMeters: distanceMeters ?? this.distanceMeters,
+    expectedTravelTimeSeconds:
+        expectedTravelTimeSeconds ?? this.expectedTravelTimeSeconds,
+    sideRoads: sideRoads ?? this.sideRoads,
+    attribution: attribution ?? this.attribution,
+    attributionUrl: attributionUrl ?? this.attributionUrl,
+  );
 }

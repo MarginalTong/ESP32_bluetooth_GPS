@@ -15,19 +15,19 @@ void main() {
     calls.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      calls.add(call);
-      if (call.method == 'loadSearchHistory') {
-        return [
-          {
-            'name': 'Sydney Opera House',
-            'address': 'Bennelong Point',
-            'latitude': -33.8568,
-            'longitude': 151.2153,
+          calls.add(call);
+          if (call.method == 'loadSearchHistory') {
+            return [
+              {
+                'name': 'Sydney Opera House',
+                'address': 'Bennelong Point',
+                'latitude': -33.8568,
+                'longitude': 151.2153,
+              },
+            ];
           }
-        ];
-      }
-      return null;
-    });
+          return null;
+        });
   });
 
   tearDown(() {

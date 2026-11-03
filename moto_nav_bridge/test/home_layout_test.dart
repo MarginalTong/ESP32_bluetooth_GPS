@@ -42,21 +42,30 @@ void main() {
       final ble = LayoutBle();
       final positions = FakePositions(current: p0);
       final nav = NavigationController(
-          ble: ble,
-          directions: FakeRoutes(mainRoute),
-          location: positions,
-          sideRoads: FakeSideRoads());
-      await tester.pumpWidget(MultiProvider(providers: [
-        ChangeNotifierProvider<BleService>.value(value: ble),
-        ChangeNotifierProvider.value(value: nav),
-      ], child: const MaterialApp(home: HomePage())));
+        ble: ble,
+        directions: FakeRoutes(mainRoute),
+        location: positions,
+        sideRoads: FakeSideRoads(),
+      );
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<BleService>.value(value: ble),
+            ChangeNotifierProvider.value(value: nav),
+          ],
+          child: const MaterialApp(home: HomePage()),
+        ),
+      );
       await tester.pumpAndSettle();
       final dark = style != 'standard';
       final background = tester.widget<Material>(
-          find.byKey(const ValueKey('map-settings-button-background')));
+        find.byKey(const ValueKey('map-settings-button-background')),
+      );
       final icon = tester.widget<Icon>(find.byIcon(Icons.settings_outlined));
-      expect(background.color,
-          dark ? const Color(0xff121820) : isNot(const Color(0xff121820)));
+      expect(
+        background.color,
+        dark ? const Color(0xff121820) : isNot(const Color(0xff121820)),
+      );
       expect(icon.color, dark ? Colors.white : isNull);
       await tester.pumpWidget(const SizedBox());
       nav.dispose();
@@ -65,20 +74,27 @@ void main() {
     });
   }
 
-  testWidgets('small map settings entry updates the visible map style',
-      (tester) async {
+  testWidgets('small map settings entry updates the visible map style', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final ble = LayoutBle();
     final positions = FakePositions(current: p0);
     final nav = NavigationController(
-        ble: ble,
-        directions: FakeRoutes(mainRoute),
-        location: positions,
-        sideRoads: FakeSideRoads());
-    await tester.pumpWidget(MultiProvider(providers: [
-      ChangeNotifierProvider<BleService>.value(value: ble),
-      ChangeNotifierProvider.value(value: nav),
-    ], child: const MaterialApp(home: HomePage())));
+      ble: ble,
+      directions: FakeRoutes(mainRoute),
+      location: positions,
+      sideRoads: FakeSideRoads(),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<BleService>.value(value: ble),
+          ChangeNotifierProvider.value(value: nav),
+        ],
+        child: const MaterialApp(home: HomePage()),
+      ),
+    );
     final en = AppText.of(tester.element(find.byType(HomePage))).isEnglish;
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
@@ -86,65 +102,77 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(tester.widget<NavigationMap>(find.byType(NavigationMap)).mapStyle,
-        'hybrid');
+    expect(
+      tester.widget<NavigationMap>(find.byType(NavigationMap)).mapStyle,
+      'hybrid',
+    );
     await tester.pumpWidget(const SizedBox());
     nav.dispose();
     ble.dispose();
     await positions.close();
   });
 
-  testWidgets('starting a trip asks nothing; the button only toggles guidance',
-      (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    const channel = MethodChannel('moto_nav_bridge/voice');
-    final calls = <String>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
-        (call) async {
-      calls.add(call.method);
-      return null;
-    });
-    final ble = LayoutBle();
-    final positions = FakePositions(current: p0);
-    final nav = NavigationController(
+  testWidgets(
+    'starting a trip asks nothing; the button only toggles guidance',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      const channel = MethodChannel('moto_nav_bridge/voice');
+      final calls = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        calls.add(call.method);
+        return null;
+      });
+      final ble = LayoutBle();
+      final positions = FakePositions(current: p0);
+      final nav = NavigationController(
         ble: ble,
         directions: FakeRoutes(mainRoute),
         location: positions,
-        sideRoads: FakeSideRoads());
-    await tester.pumpWidget(MultiProvider(providers: [
-      ChangeNotifierProvider<BleService>.value(value: ble),
-      ChangeNotifierProvider.value(value: nav),
-    ], child: const MaterialApp(home: HomePage())));
-    tester
-        .widget<NavigationMap>(find.byType(NavigationMap))
-        .onMapPointSelected!(p2);
-    await tester.pumpAndSettle();
-    final text = AppText.of(tester.element(find.byType(HomePage)));
-    await tester.ensureVisible(find.text(text.startNavigation));
-    await tester.tap(find.text(text.startNavigation));
-    await tester.pumpAndSettle();
-    expect(nav.phase, NavPhase.navigating);
-    expect(find.byType(AlertDialog), findsNothing);
-    expect(calls, isNot(contains('startWake')));
-    expect(calls, isNot(contains('loadVoiceCredentials')));
-    expect(find.byIcon(Icons.auto_awesome_rounded), findsNothing);
-    await tester.tap(find.byIcon(Icons.volume_off_rounded));
-    await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.volume_up_rounded), findsOneWidget);
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getBool(LocalAccountData.voiceKey), isTrue);
-    await tester.tap(find.byIcon(Icons.volume_up_rounded));
-    await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.volume_off_rounded), findsOneWidget);
-    expect(calls, contains('stop'));
-    await tester.pumpWidget(const SizedBox());
-    nav.dispose();
-    ble.dispose();
-    await positions.close();
-  });
+        sideRoads: FakeSideRoads(),
+      );
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<BleService>.value(value: ble),
+            ChangeNotifierProvider.value(value: nav),
+          ],
+          child: const MaterialApp(home: HomePage()),
+        ),
+      );
+      tester
+          .widget<NavigationMap>(find.byType(NavigationMap))
+          .onMapPointSelected!(p2);
+      await tester.pumpAndSettle();
+      final text = AppText.of(tester.element(find.byType(HomePage)));
+      await tester.ensureVisible(find.text(text.startNavigation));
+      await tester.tap(find.text(text.startNavigation));
+      await tester.pumpAndSettle();
+      expect(nav.phase, NavPhase.navigating);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(calls, isNot(contains('startWake')));
+      expect(calls, isNot(contains('loadVoiceCredentials')));
+      expect(find.byIcon(Icons.auto_awesome_rounded), findsNothing);
+      await tester.tap(find.byIcon(Icons.volume_off_rounded));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.volume_up_rounded), findsOneWidget);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(LocalAccountData.voiceKey), isTrue);
+      await tester.tap(find.byIcon(Icons.volume_up_rounded));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.volume_off_rounded), findsOneWidget);
+      expect(calls, contains('stop'));
+      await tester.pumpWidget(const SizedBox());
+      nav.dispose();
+      ble.dispose();
+      await positions.close();
+    },
+  );
 
-  testWidgets('route preview and active trip leave central map touchable',
-      (tester) async {
+  testWidgets('route preview and active trip leave central map touchable', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -152,14 +180,20 @@ void main() {
     final ble = LayoutBle();
     final positions = FakePositions(current: p0);
     final nav = NavigationController(
-        ble: ble,
-        directions: FakeRoutes(mainRoute),
-        location: positions,
-        sideRoads: FakeSideRoads());
-    await tester.pumpWidget(MultiProvider(providers: [
-      ChangeNotifierProvider<BleService>.value(value: ble),
-      ChangeNotifierProvider.value(value: nav),
-    ], child: const MaterialApp(home: HomePage())));
+      ble: ble,
+      directions: FakeRoutes(mainRoute),
+      location: positions,
+      sideRoads: FakeSideRoads(),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<BleService>.value(value: ble),
+          ChangeNotifierProvider.value(value: nav),
+        ],
+        child: const MaterialApp(home: HomePage()),
+      ),
+    );
     final mapRenderObject = tester.renderObject(find.byType(NavigationMap));
     void expectMapExposed() {
       final hit = tester.hitTestOnBinding(const Offset(195, 420));
@@ -184,7 +218,7 @@ void main() {
   for (final size in [
     const Size(390, 844),
     const Size(844, 390),
-    const Size(320, 568)
+    const Size(320, 568),
   ]) {
     testWidgets('full-screen map and floating panels at $size', (tester) async {
       tester.view.physicalSize = size;
@@ -194,14 +228,20 @@ void main() {
       final ble = LayoutBle();
       final positions = FakePositions(current: p0);
       final nav = NavigationController(
-          ble: ble,
-          directions: FakeRoutes(mainRoute),
-          location: positions,
-          sideRoads: FakeSideRoads());
-      await tester.pumpWidget(MultiProvider(providers: [
-        ChangeNotifierProvider<BleService>.value(value: ble),
-        ChangeNotifierProvider.value(value: nav),
-      ], child: const MaterialApp(home: HomePage())));
+        ble: ble,
+        directions: FakeRoutes(mainRoute),
+        location: positions,
+        sideRoads: FakeSideRoads(),
+      );
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<BleService>.value(value: ble),
+            ChangeNotifierProvider.value(value: nav),
+          ],
+          child: const MaterialApp(home: HomePage()),
+        ),
+      );
       expect(tester.getSize(find.byType(NavigationMap)), size);
       final initialText = AppText.of(tester.element(find.byType(HomePage)));
       expect(find.text(initialText.destination), findsNothing);

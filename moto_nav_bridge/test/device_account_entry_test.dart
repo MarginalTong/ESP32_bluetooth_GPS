@@ -92,9 +92,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('device-account-button')));
       await tester.pumpAndSettle();
       expect(find.text('rider@example.test'), findsOneWidget);
-      final body = find.textContaining(
-        'Saved places, map/route preferences',
-      );
+      final body = find.textContaining('Saved places, map/route preferences');
       final style = DefaultTextStyle.of(tester.element(body)).style;
       expect(style.decoration, TextDecoration.none);
       expect(style.color, isNot(const Color(0xD0FF0000)));

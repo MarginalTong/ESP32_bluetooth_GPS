@@ -17,7 +17,9 @@ void main() {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(
-        SystemChannels.platform_views, (_) async => null);
+      SystemChannels.platform_views,
+      (_) async => null,
+    );
     messenger.setMockMethodCallHandler(control, (call) async {
       updates.add(call);
       return null;
@@ -32,97 +34,116 @@ void main() {
   });
 
   testWidgets(
-      'new geometry with identical distance and endpoints reaches native map',
-      (tester) async {
-    final first = List<RouteCandidate>.unmodifiable([candidate(0.001)]);
-    final replacement = List<RouteCandidate>.unmodifiable([candidate(-0.001)]);
-    await tester.pumpWidget(map(first));
-    await tester.pump();
-    await tester.pumpWidget(map(replacement));
-    await tester.pump();
+    'new geometry with identical distance and endpoints reaches native map',
+    (tester) async {
+      final first = List<RouteCandidate>.unmodifiable([candidate(0.001)]);
+      final replacement = List<RouteCandidate>.unmodifiable([
+        candidate(-0.001),
+      ]);
+      await tester.pumpWidget(map(first));
+      await tester.pump();
+      await tester.pumpWidget(map(replacement));
+      await tester.pump();
 
-    expect(updates, hasLength(1));
-    expect(updates.single.method, 'updateMap');
-    final route = (updates.single.arguments['routes'] as List).single as Map;
-    expect((route['points'] as List)[1]['longitude'], -0.001);
-    expect(route['attribution'], '© OpenStreetMap contributors');
-    expect(route['attributionUrl'], 'https://www.openstreetmap.org/copyright');
+      expect(updates, hasLength(1));
+      expect(updates.single.method, 'updateMap');
+      final route = (updates.single.arguments['routes'] as List).single as Map;
+      expect((route['points'] as List)[1]['longitude'], -0.001);
+      expect(route['attribution'], '© OpenStreetMap contributors');
+      expect(
+        route['attributionUrl'],
+        'https://www.openstreetmap.org/copyright',
+      );
 
-    // Ordinary UI rebuilds with unchanged immutable routes do not resend geometry.
-    await tester.pumpWidget(map(replacement));
-    await tester.pump();
-    expect(updates, hasLength(1));
+      // Ordinary UI rebuilds with unchanged immutable routes do not resend geometry.
+      await tester.pumpWidget(map(replacement));
+      await tester.pump();
+      expect(updates, hasLength(1));
 
-    await tester.pumpWidget(map(const []));
-    await tester.pump();
-    expect(updates.last.arguments['routes'], isEmpty);
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump();
-  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+      await tester.pumpWidget(map(const []));
+      await tester.pump();
+      expect(updates.last.arguments['routes'], isEmpty);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
-  testWidgets('a stuck native map is rebuilt as a new platform view',
-      (tester) async {
-    await tester.pumpWidget(map(const []));
-    final before = tester.widget<UiKitView>(find.byType(UiKitView)).key;
-    const events = MethodChannel('moto_nav_bridge/navigation_map_events');
-    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+  testWidgets(
+    'a stuck native map is rebuilt as a new platform view',
+    (tester) async {
+      await tester.pumpWidget(map(const []));
+      final before = tester.widget<UiKitView>(find.byType(UiKitView)).key;
+      const events = MethodChannel('moto_nav_bridge/navigation_map_events');
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
         events.name,
         events.codec.encodeMethodCall(
-            const MethodCall('recreateMapView', <String, Object?>{})),
-        (_) {});
-    await tester.pump();
-    final after = tester.widget<UiKitView>(find.byType(UiKitView)).key;
-    expect(after, isNot(before));
-    await tester.pumpWidget(const SizedBox());
-  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+          const MethodCall('recreateMapView', <String, Object?>{}),
+        ),
+        (_) {},
+      );
+      await tester.pump();
+      final after = tester.widget<UiKitView>(find.byType(UiKitView)).key;
+      expect(after, isNot(before));
+      await tester.pumpWidget(const SizedBox());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
-  testWidgets('map appearance changes reach native view without route changes',
-      (tester) async {
-    final routes = List<RouteCandidate>.unmodifiable([candidate(0.001)]);
-    await tester.pumpWidget(map(routes));
-    await tester.pumpWidget(map(routes, style: 'hybrid'));
-    await tester.pump();
-    expect(updates, hasLength(1));
-    expect(updates.single.arguments['mapStyle'], 'hybrid');
-    expect(updates.single.arguments.containsKey('showTraffic'), isFalse);
-    await tester.pumpWidget(const SizedBox());
-  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+  testWidgets(
+    'map appearance changes reach native view without route changes',
+    (tester) async {
+      final routes = List<RouteCandidate>.unmodifiable([candidate(0.001)]);
+      await tester.pumpWidget(map(routes));
+      await tester.pumpWidget(map(routes, style: 'hybrid'));
+      await tester.pump();
+      expect(updates, hasLength(1));
+      expect(updates.single.arguments['mapStyle'], 'hybrid');
+      expect(updates.single.arguments.containsKey('showTraffic'), isFalse);
+      await tester.pumpWidget(const SizedBox());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
-  testWidgets('native map receives gestures without an eager Flutter recognizer',
-      (tester) async {
-    await tester.pumpWidget(map(const []));
-    final platformView = tester.widget<UiKitView>(find.byType(UiKitView));
-    expect(platformView.gestureRecognizers, isEmpty);
-    await tester.pumpWidget(const SizedBox());
-  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+  testWidgets(
+    'native map receives gestures without an eager Flutter recognizer',
+    (tester) async {
+      await tester.pumpWidget(map(const []));
+      final platformView = tester.widget<UiKitView>(find.byType(UiKitView));
+      expect(platformView.gestureRecognizers, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 }
 
 RouteCandidate candidate(double middleLongitude) => RouteCandidate(
+  distanceMeters: 500,
+  steps: [
+    RouteStep(
+      direction: DeviceDirection.up,
+      start: const LatLng(0, 0),
+      end: const LatLng(0.002, 0),
       distanceMeters: 500,
-      steps: [
-        RouteStep(
-          direction: DeviceDirection.up,
-          start: const LatLng(0, 0),
-          end: const LatLng(0.002, 0),
-          distanceMeters: 500,
-          geometry: [
-            const LatLng(0, 0),
-            LatLng(0.001, middleLongitude),
-            const LatLng(0.002, 0)
-          ],
-        )
+      geometry: [
+        const LatLng(0, 0),
+        LatLng(0.001, middleLongitude),
+        const LatLng(0.002, 0),
       ],
-      attribution: '© OpenStreetMap contributors',
-      attributionUrl: 'https://www.openstreetmap.org/copyright',
-    );
+    ),
+  ],
+  attribution: '© OpenStreetMap contributors',
+  attributionUrl: 'https://www.openstreetmap.org/copyright',
+);
 
-Widget map(List<RouteCandidate> routes,
-        {String style = 'standard'}) =>
+Widget map(List<RouteCandidate> routes, {String style = 'standard'}) =>
     MaterialApp(
-        home: Scaffold(
-            body: NavigationMap(
-      origin: const LatLng(0, 0),
-      destination: const LatLng(0.002, 0),
-      routes: routes,
-      mapStyle: style,
-    )));
+      home: Scaffold(
+        body: NavigationMap(
+          origin: const LatLng(0, 0),
+          destination: const LatLng(0.002, 0),
+          routes: routes,
+          mapStyle: style,
+        ),
+      ),
+    );

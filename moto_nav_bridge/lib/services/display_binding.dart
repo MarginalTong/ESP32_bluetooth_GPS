@@ -26,10 +26,10 @@ class DisplayBinding {
   }
 
   Map<String, String> toJson() => {
-        'remote': remote,
-        'identity': identity,
-        'key': key.map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
-      };
+    'remote': remote,
+    'identity': identity,
+    'key': key.map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
+  };
 
   bool matches(String remoteId, String screenId) =>
       remote == remoteId && identity == screenId;

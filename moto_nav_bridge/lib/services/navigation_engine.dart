@@ -21,9 +21,9 @@ class NavigationEngine {
   NavigationEngine(
     List<RouteStep> steps, {
     List<RoadSegment> sideRoads = const [],
-  })  : _steps = List.unmodifiable(steps),
-        _sideRoads = List.unmodifiable(sideRoads),
-        assert(steps.isNotEmpty, 'route must have at least one step');
+  }) : _steps = List.unmodifiable(steps),
+       _sideRoads = List.unmodifiable(sideRoads),
+       assert(steps.isNotEmpty, 'route must have at least one step');
 
   final List<RouteStep> _steps;
   List<RoadSegment> _sideRoads;
@@ -99,11 +99,14 @@ class NavigationEngine {
       final current = _steps[_index];
       final distToCurrentEnd = position.distanceTo(current.end);
       final stop = current.waypointIndex;
-      if (stop != null && distToCurrentEnd <= 25 &&
+      if (stop != null &&
+          distToCurrentEnd <= 25 &&
           (position is! NavigationFix ||
-              (position.accuracy.isFinite && position.accuracy >= 0 &&
-               position.accuracy <= 25 &&
-               DateTime.now().difference(position.timestamp).abs() <= const Duration(seconds: 10)))) {
+              (position.accuracy.isFinite &&
+                  position.accuracy >= 0 &&
+                  position.accuracy <= 25 &&
+                  DateTime.now().difference(position.timestamp).abs() <=
+                      const Duration(seconds: 10)))) {
         if (_reachedWaypoints.add(stop)) _remainingRouteCacheIndex = -1;
       }
       // A required stop must not be skipped by the normal overshoot heuristic.
@@ -122,7 +125,8 @@ class NavigationEngine {
         // keep an explicit U-turn until motion follows its outgoing segment.
         final onNext =
             _distanceToSegmentMeters(fix, points[0], points[1]) <= 15;
-        advance = RouteAlignment.forward(fix, current.end) < 0 &&
+        advance =
+            RouteAlignment.forward(fix, current.end) < 0 &&
             followsNext &&
             (distToCurrentEnd < arrivalThresholdMeters || (overshot && onNext));
         // A GPS update can miss the entire turn, or the next road can curve
@@ -138,11 +142,15 @@ class NavigationEngine {
               progress += points[i].distanceTo(points[i + 1]);
             }
             progress += points[match.segmentIndex].distanceTo(match.projected);
-            advance = match.distanceMeters <= 15 &&
+            advance =
+                match.distanceMeters <= 15 &&
                 currentMatch.distanceMeters > match.distanceMeters + 8 &&
                 progress >= arrivalThresholdMeters &&
-                RouteAlignment.aligned(fix, points[match.segmentIndex],
-                    points[match.segmentIndex + 1]);
+                RouteAlignment.aligned(
+                  fix,
+                  points[match.segmentIndex],
+                  points[match.segmentIndex + 1],
+                );
           }
         }
       }
@@ -167,14 +175,17 @@ class NavigationEngine {
     // Arrival is a proximity test, so it keeps the straight-line distance.
     DeviceDirection dir = (_index >= n - 1)
         ? (straight.round() <= arrivalThresholdMeters
-            ? DeviceDirection.arrived
-            : DeviceDirection.up)
+              ? DeviceDirection.arrived
+              : DeviceDirection.up)
         : _steps[_index + 1].direction;
     if (_steps[_index].direction == DeviceDirection.uturn &&
         RouteAlignment.usable(position)) {
       final points = RouteAlignment.geometry(_steps[_index]);
       if (!RouteAlignment.aligned(
-          position as NavigationFix, points[0], points[1])) {
+        position as NavigationFix,
+        points[0],
+        points[1],
+      )) {
         dir = DeviceDirection.uturn;
       }
     }
@@ -222,8 +233,11 @@ class NavigationEngine {
       _matchStep = _index;
       final count = _geometryForStep(_steps[_index]).length - 1;
       for (var i = 0; i < math.min(count, points.length - 1); i++) {
-        final distance =
-            _distanceToSegmentMeters(position, points[i], points[i + 1]);
+        final distance = _distanceToSegmentMeters(
+          position,
+          points[i],
+          points[i + 1],
+        );
         if (distance < best) {
           best = distance;
           _matchSegment = i;
@@ -232,11 +246,16 @@ class NavigationEngine {
     }
     best = double.infinity;
     var selected = _matchSegment;
-    for (var i = _matchSegment;
-        i < math.min(_matchSegment + 4, points.length - 1);
-        i++) {
-      final distance =
-          _distanceToSegmentMeters(position, points[i], points[i + 1]);
+    for (
+      var i = _matchSegment;
+      i < math.min(_matchSegment + 4, points.length - 1);
+      i++
+    ) {
+      final distance = _distanceToSegmentMeters(
+        position,
+        points[i],
+        points[i + 1],
+      );
       if (distance < best) {
         best = distance;
         selected = i;
@@ -299,7 +318,9 @@ class NavigationEngine {
           (best == null || whole.distanceMeters < best.distanceMeters)) {
         bestIndex = whole.segmentIndex;
         best = _SegmentProjection(
-            projected: whole.projected, distanceMeters: whole.distanceMeters);
+          projected: whole.projected,
+          distanceMeters: whole.distanceMeters,
+        );
       }
     }
     if (best == null) return 0;
@@ -341,8 +362,9 @@ class NavigationEngine {
     for (var i = 1; i < metric.length; i++) {
       final dForward = metric[i].forward - metric[i - 1].forward;
       final dLateral = metric[i].lateral - metric[i - 1].lateral;
-      along.add(along.last +
-          math.sqrt(dForward * dForward + dLateral * dLateral));
+      along.add(
+        along.last + math.sqrt(dForward * dForward + dLateral * dLateral),
+      );
     }
     final total = along.last;
     if (total <= 0) return const [];
@@ -357,8 +379,9 @@ class NavigationEngine {
       final a = metric[segment - 1];
       final b = metric[segment];
       final span = along[segment] - along[segment - 1];
-      final t =
-          span > 0 ? ((target - along[segment - 1]) / span).clamp(0.0, 1.0) : 0.0;
+      final t = span > 0
+          ? ((target - along[segment - 1]) / span).clamp(0.0, 1.0)
+          : 0.0;
       final point = preview.screenPointAt(
         forward: a.forward + (b.forward - a.forward) * t,
         lateral: a.lateral + (b.lateral - a.lateral) * t,
@@ -407,8 +430,8 @@ class NavigationEngine {
                   branchVector.dy * branchVector.dy),
         );
         if (denominator == 0) continue;
-        final cross = routeVector.dx * branchVector.dy -
-            routeVector.dy * branchVector.dx;
+        final cross =
+            routeVector.dx * branchVector.dy - routeVector.dy * branchVector.dx;
         final crossingSin = cross.abs() / denominator;
         if (crossingSin < sideRoadMinimumCrossingSin) continue;
 
@@ -418,7 +441,8 @@ class NavigationEngine {
         // shown; only roads that genuinely cross the route qualify (above).
         // The BLE segment describes a direction, not the side road's length.
         final routeLength = math.sqrt(
-            routeVector.dx * routeVector.dx + routeVector.dy * routeVector.dy);
+          routeVector.dx * routeVector.dx + routeVector.dy * routeVector.dy,
+        );
         final rightSide = cross < 0;
         final side = rightSide ? 1.0 : -1.0;
         // (lateral, forward) of the route turned 90° towards that side.
@@ -429,23 +453,28 @@ class NavigationEngine {
         if (!arms.add('${a.x ~/ 20},${a.y ~/ 20},$rightSide')) continue;
         const reach = _sideRoadDirectionPreviewUnits * previewResolution;
         final b = (
-          x: (a.x + perpendicular.dx * reach)
-              .round()
-              .clamp(0, 127 * previewResolution),
-          y: (a.y - perpendicular.dy * reach)
-              .round()
-              .clamp(0, 63 * previewResolution),
+          x: (a.x + perpendicular.dx * reach).round().clamp(
+            0,
+            127 * previewResolution,
+          ),
+          y: (a.y - perpendicular.dy * reach).round().clamp(
+            0,
+            63 * previewResolution,
+          ),
         );
         if ((a.x - b.x).abs() + (a.y - b.y).abs() < 5 * previewResolution) {
           continue;
         }
-        candidates.add(_SideRoadCandidate(
-          a: a,
-          b: b,
-          priority: anchorMetric.forward.abs() +
-              connection.distanceMeters * 4 +
-              length * 0.05,
-        ));
+        candidates.add(
+          _SideRoadCandidate(
+            a: a,
+            b: b,
+            priority:
+                anchorMetric.forward.abs() +
+                connection.distanceMeters * 4 +
+                length * 0.05,
+          ),
+        );
       }
     }
 
@@ -456,7 +485,7 @@ class NavigationEngine {
         segment.a.x,
         segment.a.y,
         segment.b.x,
-        segment.b.y
+        segment.b.y,
       ],
     ];
   }
@@ -501,12 +530,7 @@ class NavigationEngine {
     return best;
   }
 
-  static LatLng? _segmentIntersection(
-    LatLng a,
-    LatLng b,
-    LatLng c,
-    LatLng d,
-  ) {
+  static LatLng? _segmentIntersection(LatLng a, LatLng b, LatLng c, LatLng d) {
     final abX = b.longitude - a.longitude;
     final abY = b.latitude - a.latitude;
     final cdX = d.longitude - c.longitude;
@@ -636,16 +660,17 @@ class NavigationEngine {
   }
 
   static LatLng _interpolate(LatLng a, LatLng b, double t) => LatLng(
-        a.latitude + (b.latitude - a.latitude) * t,
-        a.longitude + (b.longitude - a.longitude) * t,
-      );
+    a.latitude + (b.latitude - a.latitude) * t,
+    a.longitude + (b.longitude - a.longitude) * t,
+  );
 
   static double _bearingRadians(LatLng a, LatLng b) {
     final lat1 = _toRad(a.latitude);
     final lat2 = _toRad(b.latitude);
     final deltaLongitude = _toRad(b.longitude - a.longitude);
     final y = math.sin(deltaLongitude) * math.cos(lat2);
-    final x = math.cos(lat1) * math.sin(lat2) -
+    final x =
+        math.cos(lat1) * math.sin(lat2) -
         math.sin(lat1) * math.cos(lat2) * math.cos(deltaLongitude);
     return math.atan2(y, x);
   }
@@ -726,12 +751,16 @@ class _PreviewFrame {
     return (
       x: ((NavigationEngine._previewCenterX + lateral * scale) * resolution)
           .round()
-          .clamp(NavigationEngine._previewLeft * resolution,
-              NavigationEngine._previewRight * resolution),
+          .clamp(
+            NavigationEngine._previewLeft * resolution,
+            NavigationEngine._previewRight * resolution,
+          ),
       y: ((NavigationEngine._previewBottom - forward * scale) * resolution)
           .round()
-          .clamp(NavigationEngine._previewTop * resolution,
-              NavigationEngine._previewBottom * resolution),
+          .clamp(
+            NavigationEngine._previewTop * resolution,
+            NavigationEngine._previewBottom * resolution,
+          ),
     );
   }
 }

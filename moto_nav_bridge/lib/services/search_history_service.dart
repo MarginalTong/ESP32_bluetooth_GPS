@@ -4,7 +4,7 @@ import '../models/place_result.dart';
 
 class SearchHistoryService {
   SearchHistoryService({MethodChannel? channel})
-      : _channel = channel ?? _defaultChannel;
+    : _channel = channel ?? _defaultChannel;
 
   static const int maxItems = 10;
   static const _defaultChannel = MethodChannel('moto_nav_bridge/apple_maps');
@@ -12,16 +12,18 @@ class SearchHistoryService {
   final MethodChannel _channel;
 
   Future<List<PlaceResult>> load() async {
-    final raw = await _channel.invokeListMethod<Object?>(
+    final raw =
+        await _channel.invokeListMethod<Object?>(
           'loadSearchHistory',
           const <String, Object>{},
         ) ??
         const [];
 
     return raw
-        .map((item) => PlaceResult.fromMap(Map<Object?, Object?>.from(
-              item! as Map,
-            )))
+        .map(
+          (item) =>
+              PlaceResult.fromMap(Map<Object?, Object?>.from(item! as Map)),
+        )
         .toList(growable: false);
   }
 

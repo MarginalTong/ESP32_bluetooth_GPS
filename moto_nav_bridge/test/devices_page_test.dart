@@ -22,8 +22,8 @@ class DeviceBle extends LayoutBle {
   BleConnectionState get state => seeking
       ? BleConnectionState.connecting
       : connected
-          ? BleConnectionState.connected
-          : BleConnectionState.idle;
+      ? BleConnectionState.connected
+      : BleConnectionState.idle;
   @override
   Future<void> refreshBinding() async {}
   @override
@@ -51,26 +51,34 @@ class DeviceBle extends LayoutBle {
 }
 
 void main() {
-  testWidgets('satellite-family map styles use a dark bottom tab bar',
-      (tester) async {
+  testWidgets('satellite-family map styles use a dark bottom tab bar', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({'map_style_v1': 'hybrid'});
     final ble = DeviceBle();
     final positions = FakePositions(current: p0);
     final nav = NavigationController(
-        ble: ble,
-        directions: FakeRoutes(mainRoute),
-        location: positions,
-        sideRoads: FakeSideRoads());
-    await tester.pumpWidget(MultiProvider(providers: [
-      ChangeNotifierProvider<BleService>.value(value: ble),
-      ChangeNotifierProvider.value(value: nav),
-    ], child: const MaterialApp(home: AppShell())));
+      ble: ble,
+      directions: FakeRoutes(mainRoute),
+      location: positions,
+      sideRoads: FakeSideRoads(),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<BleService>.value(value: ble),
+          ChangeNotifierProvider.value(value: nav),
+        ],
+        child: const MaterialApp(home: AppShell()),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(
-        tester
-            .widget<CupertinoTabBar>(find.byType(CupertinoTabBar))
-            .backgroundColor,
-        const Color(0xff121820));
+      tester
+          .widget<CupertinoTabBar>(find.byType(CupertinoTabBar))
+          .backgroundColor,
+      const Color(0xff121820),
+    );
     await tester.pumpWidget(const SizedBox());
     nav.dispose();
     ble.dispose();
@@ -78,10 +86,12 @@ void main() {
   });
 
   for (final english in [true, false]) {
-    testWidgets('device menus, confirmation and map retention: $english',
-        (tester) async {
-      tester.binding.platformDispatcher.localeTestValue =
-          Locale(english ? 'en' : 'zh');
+    testWidgets('device menus, confirmation and map retention: $english', (
+      tester,
+    ) async {
+      tester.binding.platformDispatcher.localeTestValue = Locale(
+        english ? 'en' : 'zh',
+      );
       addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
@@ -90,14 +100,20 @@ void main() {
       final ble = DeviceBle();
       final positions = FakePositions(current: p0);
       final nav = NavigationController(
-          ble: ble,
-          directions: FakeRoutes(mainRoute),
-          location: positions,
-          sideRoads: FakeSideRoads());
-      await tester.pumpWidget(MultiProvider(providers: [
-        ChangeNotifierProvider<BleService>.value(value: ble),
-        ChangeNotifierProvider.value(value: nav),
-      ], child: const MaterialApp(home: AppShell())));
+        ble: ble,
+        directions: FakeRoutes(mainRoute),
+        location: positions,
+        sideRoads: FakeSideRoads(),
+      );
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<BleService>.value(value: ble),
+            ChangeNotifierProvider.value(value: nav),
+          ],
+          child: const MaterialApp(home: AppShell()),
+        ),
+      );
       await tester.pumpAndSettle();
       final original = tester.state(find.byType(HomePage));
       await tester.tap(find.text(english ? 'My devices' : '我的设备').last);
@@ -138,40 +154,48 @@ void main() {
     });
   }
 
-  testWidgets('an offline old display can be replaced or forgotten mid-connect',
-      (tester) async {
-    tester.binding.platformDispatcher.localeTestValue = const Locale('en');
-    addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final ble = DeviceBle()
-      ..connected = false
-      ..seeking = true;
-    final positions = FakePositions(current: p0);
-    final nav = NavigationController(
+  testWidgets(
+    'an offline old display can be replaced or forgotten mid-connect',
+    (tester) async {
+      tester.binding.platformDispatcher.localeTestValue = const Locale('en');
+      addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final ble = DeviceBle()
+        ..connected = false
+        ..seeking = true;
+      final positions = FakePositions(current: p0);
+      final nav = NavigationController(
         ble: ble,
         directions: FakeRoutes(mainRoute),
         location: positions,
-        sideRoads: FakeSideRoads());
-    await tester.pumpWidget(MultiProvider(providers: [
-      ChangeNotifierProvider<BleService>.value(value: ble),
-      ChangeNotifierProvider.value(value: nav),
-    ], child: const MaterialApp(home: AppShell())));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(find.text('My devices').last);
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(find.text('Forget device'));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(find.text('Confirm'));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(ble.identity, isNull);
-    expect(ble.seeking, isFalse);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox());
-    nav.dispose();
-    ble.dispose();
-    await positions.close();
-  });
+        sideRoads: FakeSideRoads(),
+      );
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<BleService>.value(value: ble),
+            ChangeNotifierProvider.value(value: nav),
+          ],
+          child: const MaterialApp(home: AppShell()),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.text('My devices').last);
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.text('Forget device'));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.text('Confirm'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(ble.identity, isNull);
+      expect(ble.seeking, isFalse);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      nav.dispose();
+      ble.dispose();
+      await positions.close();
+    },
+  );
 }

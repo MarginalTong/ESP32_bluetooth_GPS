@@ -14,28 +14,36 @@ void main() {
     const bend = LatLng(0.001, 0.0001), c = LatLng(0.006, 0.0001);
     const d = LatLng(0.006, 0.005);
     NavigationEngine engine() => NavigationEngine(const [
-          RouteStep(
-              direction: DeviceDirection.up,
-              start: a,
-              end: b,
-              distanceMeters: 111,
-              geometry: [a, b]),
-          RouteStep(
-              direction: DeviceDirection.right,
-              start: b,
-              end: c,
-              distanceMeters: 567,
-              geometry: [b, bend, c]),
-          RouteStep(
-              direction: DeviceDirection.right,
-              start: c,
-              end: d,
-              distanceMeters: 545,
-              geometry: [c, d]),
-        ]);
-    NavigationFix fix(double lat, double lon, double heading) =>
-        NavigationFix(lat, lon,
-            heading: heading, speed: 8, accuracy: 5, timestamp: DateTime.now());
+      RouteStep(
+        direction: DeviceDirection.up,
+        start: a,
+        end: b,
+        distanceMeters: 111,
+        geometry: [a, b],
+      ),
+      RouteStep(
+        direction: DeviceDirection.right,
+        start: b,
+        end: c,
+        distanceMeters: 567,
+        geometry: [b, bend, c],
+      ),
+      RouteStep(
+        direction: DeviceDirection.right,
+        start: c,
+        end: d,
+        distanceMeters: 545,
+        geometry: [c, d],
+      ),
+    ]);
+    NavigationFix fix(double lat, double lon, double heading) => NavigationFix(
+      lat,
+      lon,
+      heading: heading,
+      speed: 8,
+      accuracy: 5,
+      timestamp: DateTime.now(),
+    );
     final nav = engine();
     nav.update(fix(0.0007, 0, 0));
     // Skip the corner and its short eastbound segment entirely.
@@ -57,61 +65,82 @@ void main() {
     final points = List.generate(10, (i) => LatLng(i * 0.001, 0));
     final engine = NavigationEngine([
       RouteStep(
-          direction: DeviceDirection.up,
-          start: points.first,
-          end: points.last,
-          distanceMeters: 1000,
-          geometry: points)
+        direction: DeviceDirection.up,
+        start: points.first,
+        end: points.last,
+        distanceMeters: 1000,
+        geometry: points,
+      ),
     ]);
     expect(engine.isOffRoute(points.first), isFalse);
     expect(engine.isOffRoute(points[8]), isTrue);
     expect(engine.isOffRoute(points[1]), isFalse);
   });
-  test('travel course detects reverse movement but ignores stationary heading',
-      () {
+  test(
+    'travel course detects reverse movement but ignores stationary heading',
+    () {
+      final engine = NavigationEngine(const [
+        RouteStep(
+          direction: DeviceDirection.up,
+          start: LatLng(0, 0),
+          end: LatLng(0.01, 0),
+          distanceMeters: 1110,
+          rawManeuver: null,
+        ),
+      ]);
+      NavigationFix fix(
+        double heading,
+        double speed, {
+        double longitude = 0,
+        double accuracy = 5,
+      }) => NavigationFix(
+        0.001,
+        longitude,
+        heading: heading,
+        speed: speed,
+        accuracy: accuracy,
+        timestamp: DateTime.now(),
+      );
+      expect(engine.isOffRoute(fix(0, 2)), isFalse);
+      expect(engine.isOffRoute(fix(180, 3)), isTrue);
+      expect(engine.reverseTravel, isTrue);
+      for (final speed in [
+        0.67,
+        1.05,
+        1.67,
+        2.49,
+        double.nan,
+        double.infinity,
+      ]) {
+        expect(engine.isOffRoute(fix(180, speed)), isFalse);
+        expect(engine.lastCourseDeltaDegrees, isNull);
+        expect(engine.lastRouteDistanceMeters, closeTo(0, .01));
+      }
+      expect(engine.isOffRoute(fix(180, 0)), isFalse);
+      expect(engine.isOffRoute(fix(0, 2, longitude: 0.0003)), isTrue);
+      expect(
+        engine.isOffRoute(fix(0, 2, longitude: 0.0003, accuracy: 20)),
+        isFalse,
+      );
+    },
+  );
+  test('route tolerance changes smoothly around 10 m GPS accuracy', () {
     final engine = NavigationEngine(const [
       RouteStep(
         direction: DeviceDirection.up,
         start: LatLng(0, 0),
         end: LatLng(0.01, 0),
         distanceMeters: 1110,
-        rawManeuver: null,
-      )
+      ),
     ]);
-    NavigationFix fix(double heading, double speed,
-            {double longitude = 0, double accuracy = 5}) =>
-        NavigationFix(0.001, longitude,
-            heading: heading,
-            speed: speed,
-            accuracy: accuracy,
-            timestamp: DateTime.now());
-    expect(engine.isOffRoute(fix(0, 2)), isFalse);
-    expect(engine.isOffRoute(fix(180, 3)), isTrue);
-    expect(engine.reverseTravel, isTrue);
-    for (final speed in [0.67, 1.05, 1.67, 2.49, double.nan, double.infinity]) {
-      expect(engine.isOffRoute(fix(180, speed)), isFalse);
-      expect(engine.lastCourseDeltaDegrees, isNull);
-      expect(engine.lastRouteDistanceMeters, closeTo(0, .01));
-    }
-    expect(engine.isOffRoute(fix(180, 0)), isFalse);
-    expect(engine.isOffRoute(fix(0, 2, longitude: 0.0003)), isTrue);
-    expect(
-        engine.isOffRoute(fix(0, 2, longitude: 0.0003, accuracy: 20)), isFalse);
-  });
-  test('route tolerance changes smoothly around 10 m GPS accuracy', () {
-    final engine = NavigationEngine(const [
-      RouteStep(
-          direction: DeviceDirection.up,
-          start: LatLng(0, 0),
-          end: LatLng(0.01, 0),
-          distanceMeters: 1110),
-    ]);
-    NavigationFix fix(double accuracy, double longitude) =>
-        NavigationFix(0.001, longitude,
-            heading: -1,
-            speed: 0,
-            accuracy: accuracy,
-            timestamp: DateTime.now());
+    NavigationFix fix(double accuracy, double longitude) => NavigationFix(
+      0.001,
+      longitude,
+      heading: -1,
+      speed: 0,
+      accuracy: accuracy,
+      timestamp: DateTime.now(),
+    );
 
     // About 30 m from the line: both sides of the old 10 m accuracy cliff
     // should make the same decision.
@@ -128,21 +157,21 @@ void main() {
   const p2 = LatLng(0.002, 0.0); // end of step 1 == destination (ARRIVED)
 
   List<RouteStep> route() => const [
-        RouteStep(
-          direction: DeviceDirection.up, // heading out, no prior maneuver
-          start: p0,
-          end: p1,
-          distanceMeters: 111,
-          rawManeuver: null,
-        ),
-        RouteStep(
-          direction: DeviceDirection.left, // the turn performed at p1
-          start: p1,
-          end: p2,
-          distanceMeters: 111,
-          rawManeuver: 'turn-left',
-        ),
-      ];
+    RouteStep(
+      direction: DeviceDirection.up, // heading out, no prior maneuver
+      start: p0,
+      end: p1,
+      distanceMeters: 111,
+      rawManeuver: null,
+    ),
+    RouteStep(
+      direction: DeviceDirection.left, // the turn performed at p1
+      start: p1,
+      end: p2,
+      distanceMeters: 111,
+      rawManeuver: 'turn-left',
+    ),
+  ];
 
   test('early in step 0, announces the upcoming LEFT turn at p1', () {
     final engine = NavigationEngine(route());
@@ -299,13 +328,15 @@ void main() {
       route(),
       sideRoads: const [
         RoadSegment(
-            start: LatLng(0.0002, -0.0004), end: LatLng(0.0008, 0.0004)),
+          start: LatLng(0.0002, -0.0004),
+          end: LatLng(0.0008, 0.0004),
+        ),
       ],
     ).update(p0).sideRoadPreviewPoints;
     expect(roads, hasLength(8));
     final arms = [
       for (var i = 0; i < roads.length; i += 4)
-        (dx: roads[i + 2] - roads[i], dy: roads[i + 3] - roads[i + 1])
+        (dx: roads[i + 2] - roads[i], dy: roads[i + 3] - roads[i + 1]),
     ];
     for (final arm in arms) {
       expect(arm.dy.abs(), lessThanOrEqualTo(1)); // horizontal on screen
@@ -329,14 +360,14 @@ void main() {
 
   test('side-road direction does not depend on the real road length', () {
     List<int> preview(double halfWidth) => NavigationEngine(
-          route(),
-          sideRoads: [
-            RoadSegment(
-              start: LatLng(0.0005, -halfWidth),
-              end: LatLng(0.0005, halfWidth),
-            ),
-          ],
-        ).update(p0).sideRoadPreviewPoints;
+      route(),
+      sideRoads: [
+        RoadSegment(
+          start: LatLng(0.0005, -halfWidth),
+          end: LatLng(0.0005, halfWidth),
+        ),
+      ],
+    ).update(p0).sideRoadPreviewPoints;
 
     expect(preview(0.00012), isNotEmpty);
     expect(preview(0.00012), preview(0.0004));
@@ -346,10 +377,7 @@ void main() {
     final engine = NavigationEngine(
       route(),
       sideRoads: const [
-        RoadSegment(
-          start: LatLng(0.0001, 0.0001),
-          end: LatLng(0.0008, 0.0001),
-        ),
+        RoadSegment(start: LatLng(0.0001, 0.0001), end: LatLng(0.0008, 0.0001)),
       ],
     );
 
@@ -368,20 +396,20 @@ void main() {
     final turn = hairpin.last;
     const after = LatLng(0, 0.0012);
     List<RouteStep> hairpinRoute() => [
-          RouteStep(
-            direction: DeviceDirection.up,
-            start: hairpin.first,
-            end: turn,
-            distanceMeters: 630,
-            geometry: hairpin,
-          ),
-          RouteStep(
-            direction: DeviceDirection.left,
-            start: turn,
-            end: after,
-            distanceMeters: 104,
-          ),
-        ];
+      RouteStep(
+        direction: DeviceDirection.up,
+        start: hairpin.first,
+        end: turn,
+        distanceMeters: 630,
+        geometry: hairpin,
+      ),
+      RouteStep(
+        direction: DeviceDirection.left,
+        start: turn,
+        end: after,
+        distanceMeters: 104,
+      ),
+    ];
 
     test('a hairpin announces road distance, not the straight line', () {
       final engine = NavigationEngine(hairpinRoute());
@@ -431,36 +459,38 @@ void main() {
     const step = 0.00002;
     final shape = [for (var i = 0; i <= 2000; i++) LatLng(i * step, 0)];
     List<RouteStep> longRoute() => [
-          RouteStep(
-            direction: DeviceDirection.up,
-            start: shape.first,
-            end: shape[1000],
-            distanceMeters: 2224,
-            geometry: shape.sublist(0, 1001),
-          ),
-          RouteStep(
-            direction: DeviceDirection.left,
-            start: shape[1000],
-            end: shape.last,
-            distanceMeters: 2224,
-            geometry: shape.sublist(1000),
-          ),
-        ];
+      RouteStep(
+        direction: DeviceDirection.up,
+        start: shape.first,
+        end: shape[1000],
+        distanceMeters: 2224,
+        geometry: shape.sublist(0, 1001),
+      ),
+      RouteStep(
+        direction: DeviceDirection.left,
+        start: shape[1000],
+        end: shape.last,
+        distanceMeters: 2224,
+        geometry: shape.sublist(1000),
+      ),
+    ];
     RoadSegment crossing(double latitude) => RoadSegment(
-          start: LatLng(latitude, -0.0004),
-          end: LatLng(latitude, 0.0004),
-        );
+      start: LatLng(latitude, -0.0004),
+      end: LatLng(latitude, 0.0004),
+    );
     const rider = LatLng(0.0003, 0); // ~33 m along the route
 
     test('roads far down the trip do not change the preview', () {
       final near = crossing(0.0012); // ~100 m ahead of the rider
       final far = [for (var i = 0; i < 200; i++) crossing(0.006 + i * 0.00015)];
-      final withFar = NavigationEngine(longRoute(), sideRoads: [near, ...far])
-          .update(rider)
-          .sideRoadPreviewPoints;
-      final nearOnly = NavigationEngine(longRoute(), sideRoads: [near])
-          .update(rider)
-          .sideRoadPreviewPoints;
+      final withFar = NavigationEngine(
+        longRoute(),
+        sideRoads: [near, ...far],
+      ).update(rider).sideRoadPreviewPoints;
+      final nearOnly = NavigationEngine(
+        longRoute(),
+        sideRoads: [near],
+      ).update(rider).sideRoadPreviewPoints;
       expect(nearOnly, isNotEmpty);
       expect(withFar, nearOnly);
     });
@@ -468,10 +498,10 @@ void main() {
     test('a junction just behind the rider is still drawn', () {
       // ~15 m behind, several vertices back: inside the 20 m the preview
       // keeps behind the rider, outside the segment the rider is on.
-      final roads = NavigationEngine(longRoute(),
-              sideRoads: [crossing(0.0003 - 0.000135)])
-          .update(rider)
-          .sideRoadPreviewPoints;
+      final roads = NavigationEngine(
+        longRoute(),
+        sideRoads: [crossing(0.0003 - 0.000135)],
+      ).update(rider).sideRoadPreviewPoints;
       expect(roads, isNotEmpty);
     });
   });
@@ -480,10 +510,7 @@ void main() {
     final engine = NavigationEngine(
       route(),
       sideRoads: const [
-        RoadSegment(
-          start: LatLng(0.0005, 0.0003),
-          end: LatLng(0.0005, 0.0006),
-        ),
+        RoadSegment(start: LatLng(0.0005, 0.0003), end: LatLng(0.0005, 0.0006)),
       ],
     );
 

@@ -44,7 +44,8 @@ class LatLng {
     final lat1 = _toRad(latitude);
     final lat2 = _toRad(other.latitude);
 
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.sin(dLng / 2) *
             math.sin(dLng / 2) *
             math.cos(lat1) *

@@ -27,8 +27,9 @@ class NavigationMap extends StatefulWidget {
 
   static const _viewType = 'moto_nav_bridge/navigation_map';
   static const _events = MethodChannel('moto_nav_bridge/navigation_map_events');
-  static const _control =
-      MethodChannel('moto_nav_bridge/navigation_map_control');
+  static const _control = MethodChannel(
+    'moto_nav_bridge/navigation_map_control',
+  );
 
   final LatLng? origin;
   final LatLng? destination;
@@ -110,8 +111,10 @@ class _NavigationMapState extends State<NavigationMap> {
 
   Future<void> _sendMapUpdate() async {
     if (defaultTargetPlatform != TargetPlatform.iOS) return;
-    await NavigationMap._control
-        .invokeMethod<void>('updateMap', _creationParams);
+    await NavigationMap._control.invokeMethod<void>(
+      'updateMap',
+      _creationParams,
+    );
   }
 
   Future<void> _handleMapEvent(MethodCall call) async {
@@ -155,26 +158,26 @@ class _NavigationMapState extends State<NavigationMap> {
           // map, which resets recognizers UIKit left stuck if that touch
           // never reached them (see resetStuckRecognizers in AppDelegate).
           TargetPlatform.iOS => Listener(
-              onPointerDown: (_) => NavigationMap._control
-                  .invokeMethod<void>('pointerDown')
-                  .catchError((Object _) {}),
-              child: UiKitView(
-                key: ValueKey(_viewKey),
-                viewType: NavigationMap._viewType,
-                creationParams: _creationParams,
-                creationParamsCodec: const StandardMessageCodec(),
-                // Let MapKit's pan, pinch and rotation recognizers own gestures
-                // that begin on the map. An eager Flutter recognizer can keep
-                // winning subsequent touch sequences in a platform view.
-                gestureRecognizers: const {},
-              ),
+            onPointerDown: (_) => NavigationMap._control
+                .invokeMethod<void>('pointerDown')
+                .catchError((Object _) {}),
+            child: UiKitView(
+              key: ValueKey(_viewKey),
+              viewType: NavigationMap._viewType,
+              creationParams: _creationParams,
+              creationParamsCodec: const StandardMessageCodec(),
+              // Let MapKit's pan, pinch and rotation recognizers own gestures
+              // that begin on the map. An eager Flutter recognizer can keep
+              // winning subsequent touch sequences in a platform view.
+              gestureRecognizers: const {},
             ),
+          ),
           _ => Container(
-              color: colorScheme.surfaceContainer,
-              alignment: Alignment.center,
-              padding: const EdgeInsets.all(18),
-              child: Text(text.iosMapKitOnly),
-            ),
+            color: colorScheme.surfaceContainer,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.all(18),
+            child: Text(text.iosMapKitOnly),
+          ),
         },
       ),
     );
@@ -183,7 +186,6 @@ class _NavigationMapState extends State<NavigationMap> {
   int _viewGeneration = 0;
 
   String get _viewKey => 'navigation-map-$_viewGeneration';
-
 
   String _updateKeyFor(NavigationMap map) {
     final o = map.origin;
@@ -203,42 +205,39 @@ class _NavigationMapState extends State<NavigationMap> {
   }
 
   Map<String, Object?> get _creationParams => {
-        'riders': widget.riders.map((r) => r.toMap()).toList(),
-        if (widget.origin != null) ...{
-          'originLatitude': widget.origin!.latitude,
-          'originLongitude': widget.origin!.longitude,
+    'riders': widget.riders.map((r) => r.toMap()).toList(),
+    if (widget.origin != null) ...{
+      'originLatitude': widget.origin!.latitude,
+      'originLongitude': widget.origin!.longitude,
+    },
+    if (widget.destination != null) ...{
+      'destinationLatitude': widget.destination!.latitude,
+      'destinationLongitude': widget.destination!.longitude,
+      'destinationName': widget.destinationName,
+    },
+    'paddingTop': widget.contentPadding.top,
+    'paddingBottom': widget.contentPadding.bottom,
+    'paddingLeft': widget.contentPadding.left,
+    'paddingRight': widget.contentPadding.right,
+    'languageCode': AppText.current.languageCode,
+    'selectedRouteIndex': widget.selectedRouteIndex,
+    'mapStyle': widget.mapStyle,
+    'mapPointSelectionEnabled': widget.onMapPointSelected != null,
+    'routes': [
+      for (var i = 0; i < widget.routes.length; i++)
+        {
+          'index': i,
+          'name': widget.routes[i].name,
+          'distanceMeters': widget.routes[i].distanceMeters,
+          'expectedTravelTimeSeconds':
+              widget.routes[i].expectedTravelTimeSeconds,
+          'attribution': widget.routes[i].attribution,
+          'attributionUrl': widget.routes[i].attributionUrl,
+          'points': [
+            for (final point in widget.routes[i].polyline)
+              {'latitude': point.latitude, 'longitude': point.longitude},
+          ],
         },
-        if (widget.destination != null) ...{
-          'destinationLatitude': widget.destination!.latitude,
-          'destinationLongitude': widget.destination!.longitude,
-          'destinationName': widget.destinationName,
-        },
-        'paddingTop': widget.contentPadding.top,
-        'paddingBottom': widget.contentPadding.bottom,
-        'paddingLeft': widget.contentPadding.left,
-        'paddingRight': widget.contentPadding.right,
-        'languageCode': AppText.current.languageCode,
-        'selectedRouteIndex': widget.selectedRouteIndex,
-        'mapStyle': widget.mapStyle,
-        'mapPointSelectionEnabled': widget.onMapPointSelected != null,
-        'routes': [
-          for (var i = 0; i < widget.routes.length; i++)
-            {
-              'index': i,
-              'name': widget.routes[i].name,
-              'distanceMeters': widget.routes[i].distanceMeters,
-              'expectedTravelTimeSeconds':
-                  widget.routes[i].expectedTravelTimeSeconds,
-              'attribution': widget.routes[i].attribution,
-              'attributionUrl': widget.routes[i].attributionUrl,
-              'points': [
-                for (final point in widget.routes[i].polyline)
-                  {
-                    'latitude': point.latitude,
-                    'longitude': point.longitude,
-                  },
-              ],
-            },
-        ],
-      };
+    ],
+  };
 }

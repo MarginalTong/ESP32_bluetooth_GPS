@@ -60,7 +60,11 @@ SettingsMerge mergeSettings(
       revision: cloud.revision,
       displayName: cloud.displayName,
       preferences: {
-        for (final key in [...AccountData.boolKeys, 'map_style', 'app_language'])
+        for (final key in [
+          ...AccountData.boolKeys,
+          'map_style',
+          'app_language',
+        ])
           key: merged[key]!,
       },
       places: {

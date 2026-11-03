@@ -18,10 +18,14 @@ class NavState {
 
   final DeviceDirection direction;
   final bool rerouting;
+
   /// Signed end-of-trip marker; unlike STOP, it returns the display to NAVIO.
   final bool tripEnded;
   static const recalculating = NavState(
-      direction: DeviceDirection.stop, distanceMeters: 0, rerouting: true);
+    direction: DeviceDirection.stop,
+    distanceMeters: 0,
+    rerouting: true,
+  );
 
   /// Distance to the next maneuver, in whole meters. Never negative.
   final int distanceMeters;
@@ -40,19 +44,24 @@ class NavState {
   final List<int> sideRoadPreviewPoints;
 
   /// A safe idle/paused state (matches the firmware's STOP icon).
-  static const NavState stopped =
-      NavState(direction: DeviceDirection.stop, distanceMeters: 0);
+  static const NavState stopped = NavState(
+    direction: DeviceDirection.stop,
+    distanceMeters: 0,
+  );
   static const NavState ended = NavState(
-      direction: DeviceDirection.stop, distanceMeters: 0, tripEnded: true);
+    direction: DeviceDirection.stop,
+    distanceMeters: 0,
+    tripEnded: true,
+  );
 
   Map<String, dynamic> toJson() => {
-        'dir': direction.wire,
-        'dist': distanceMeters,
-        if (tripEnded) 'end': true,
-        if (rerouting) 'rerouting': true,
-        if (routePreviewPoints.isNotEmpty) 'P': routePreviewPoints,
-        if (sideRoadPreviewPoints.isNotEmpty) 'R': sideRoadPreviewPoints,
-      };
+    'dir': direction.wire,
+    'dist': distanceMeters,
+    if (tripEnded) 'end': true,
+    if (rerouting) 'rerouting': true,
+    if (routePreviewPoints.isNotEmpty) 'P': routePreviewPoints,
+    if (sideRoadPreviewPoints.isNotEmpty) 'R': sideRoadPreviewPoints,
+  };
 
   /// The unsigned JSON body of a navigation write (see `PacketSigner`).
   /// No whitespace: the firmware rejects writes over 400 bytes, signature
@@ -82,16 +91,14 @@ class NavState {
     List<int>? sideRoadPreviewPoints,
     bool? rerouting,
     bool? tripEnded,
-  }) =>
-      NavState(
-        rerouting: rerouting ?? this.rerouting,
-        tripEnded: tripEnded ?? this.tripEnded,
-        direction: direction ?? this.direction,
-        distanceMeters: distanceMeters ?? this.distanceMeters,
-        routePreviewPoints: routePreviewPoints ?? this.routePreviewPoints,
-        sideRoadPreviewPoints:
-            sideRoadPreviewPoints ?? this.sideRoadPreviewPoints,
-      );
+  }) => NavState(
+    rerouting: rerouting ?? this.rerouting,
+    tripEnded: tripEnded ?? this.tripEnded,
+    direction: direction ?? this.direction,
+    distanceMeters: distanceMeters ?? this.distanceMeters,
+    routePreviewPoints: routePreviewPoints ?? this.routePreviewPoints,
+    sideRoadPreviewPoints: sideRoadPreviewPoints ?? this.sideRoadPreviewPoints,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -105,13 +112,13 @@ class NavState {
 
   @override
   int get hashCode => Object.hash(
-        direction,
-        rerouting,
-        tripEnded,
-        distanceMeters,
-        Object.hashAll(routePreviewPoints),
-        Object.hashAll(sideRoadPreviewPoints),
-      );
+    direction,
+    rerouting,
+    tripEnded,
+    distanceMeters,
+    Object.hashAll(routePreviewPoints),
+    Object.hashAll(sideRoadPreviewPoints),
+  );
 
   @override
   String toString() => 'NavState($direction, ${distanceMeters}m)';

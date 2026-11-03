@@ -21,8 +21,10 @@ void main() {
       expect(options, contains('"z":14'));
       return http.Response.bytes(bytes, 200);
     });
-    final service =
-        SideRoadService(client: client, baseUrl: 'https://example.test');
+    final service = SideRoadService(
+      client: client,
+      baseUrl: 'https://example.test',
+    );
     // Middle of one z14 tile, far enough from its boundary to need one tile.
     final center = _tilePoint(15072.5, 9832.5);
 
@@ -42,8 +44,10 @@ void main() {
       calls++;
       return http.Response('unavailable', 503);
     });
-    final service =
-        SideRoadService(client: client, baseUrl: 'https://example.test');
+    final service = SideRoadService(
+      client: client,
+      baseUrl: 'https://example.test',
+    );
     final center = _tilePoint(15072.5, 9832.5);
 
     expect(await service.fetchSideRoadsNear(center), isEmpty);
@@ -52,48 +56,55 @@ void main() {
     service.dispose();
   });
 
-  test('route prefetch fills the display cache without GPS network fetches',
-      () async {
-    final response = Completer<http.Response>();
-    final loaded = Completer<void>();
-    var calls = 0;
-    final service = SideRoadService(
+  test(
+    'route prefetch fills the display cache without GPS network fetches',
+    () async {
+      final response = Completer<http.Response>();
+      final loaded = Completer<void>();
+      var calls = 0;
+      final service = SideRoadService(
         client: MockClient((_) {
           calls++;
           return response.future;
         }),
-        baseUrl: 'https://example.test');
-    final center = _tilePoint(15072.5, 9832.5);
-    service.prefetchRoute(
-        [center, LatLng(center.latitude + .0001, center.longitude)], center,
+        baseUrl: 'https://example.test',
+      );
+      final center = _tilePoint(15072.5, 9832.5);
+      service.prefetchRoute(
+        [center, LatLng(center.latitude + .0001, center.longitude)],
+        center,
         (_) {
-      if (!loaded.isCompleted) loaded.complete();
-    });
-    expect(service.cachedSideRoadsNear(center), isEmpty);
-    response.complete(http.Response.bytes(_tileBytes(), 200));
-    await loaded.future.timeout(const Duration(seconds: 5));
-    expect(service.cachedSideRoadsNear(center), hasLength(1));
-    final callsAfterPrefetch = calls;
-    service.cachedSideRoadsNear(center);
-    expect(calls, callsAfterPrefetch);
-    service.dispose();
-  });
+          if (!loaded.isCompleted) loaded.complete();
+        },
+      );
+      expect(service.cachedSideRoadsNear(center), isEmpty);
+      response.complete(http.Response.bytes(_tileBytes(), 200));
+      await loaded.future.timeout(const Duration(seconds: 5));
+      expect(service.cachedSideRoadsNear(center), hasLength(1));
+      final callsAfterPrefetch = calls;
+      service.cachedSideRoadsNear(center);
+      expect(calls, callsAfterPrefetch);
+      service.dispose();
+    },
+  );
 
   test('cancelled route cannot publish a late tile', () async {
     final response = Completer<http.Response>();
     final started = Completer<void>();
     var published = false;
     final service = SideRoadService(
-        client: MockClient((_) {
-          if (!started.isCompleted) started.complete();
-          return response.future;
-        }),
-        baseUrl: 'https://example.test');
+      client: MockClient((_) {
+        if (!started.isCompleted) started.complete();
+        return response.future;
+      }),
+      baseUrl: 'https://example.test',
+    );
     final center = _tilePoint(15072.5, 9832.5);
     service.prefetchRoute(
-        [center, LatLng(center.latitude + .0001, center.longitude)],
-        center,
-        (_) => published = true);
+      [center, LatLng(center.latitude + .0001, center.longitude)],
+      center,
+      (_) => published = true,
+    );
     await started.future;
     service.cancelPrefetch();
     response.complete(http.Response.bytes(_tileBytes(), 200));
@@ -103,47 +114,52 @@ void main() {
     service.dispose();
   });
 
-  test('rolling route cache loads ahead, then advances and evicts behind',
-      () async {
-    final firstResponse = Completer<http.Response>();
-    final secondResponse = Completer<http.Response>();
-    final firstLoaded = Completer<void>();
-    final secondLoaded = Completer<void>();
-    var advanced = false;
-    final service = SideRoadService(
+  test(
+    'rolling route cache loads ahead, then advances and evicts behind',
+    () async {
+      final firstResponse = Completer<http.Response>();
+      final secondResponse = Completer<http.Response>();
+      final firstLoaded = Completer<void>();
+      final secondLoaded = Completer<void>();
+      var advanced = false;
+      final service = SideRoadService(
         client: MockClient((request) {
-          final tile = (jsonDecode(request.url.queryParameters['json']!)
-              as Map<String, dynamic>)['tile'] as Map<String, dynamic>;
+          final tile =
+              (jsonDecode(request.url.queryParameters['json']!)
+                      as Map<String, dynamic>)['tile']
+                  as Map<String, dynamic>;
           if (tile['x'] == 15072) return firstResponse.future;
           if (tile['x'] == 15075) return secondResponse.future;
           return Future.value(http.Response.bytes(_tileBytes(), 200));
         }),
-        baseUrl: 'https://example.test');
-    final start = _tilePoint(15072.5, 9832.5);
-    final end = _tilePoint(15075.5, 9832.5);
-    service.prefetchRoute([start, end], start, (loadedNear) {
-      if (!advanced &&
-          !firstLoaded.isCompleted &&
-          loadedNear.distanceTo(start) < 500) {
-        firstLoaded.complete();
-      } else if (advanced &&
-          !secondLoaded.isCompleted &&
-          service.cachedSideRoadsNear(end).isNotEmpty) {
-        secondLoaded.complete();
-      }
-    });
-    firstResponse.complete(http.Response.bytes(_tileBytes(), 200));
-    await firstLoaded.future.timeout(const Duration(seconds: 5));
-    expect(service.cachedSideRoadsNear(start), hasLength(1));
-    expect(service.cachedSideRoadsNear(end), isEmpty);
-    advanced = true;
-    service.advancePrefetch(end);
-    secondResponse.complete(http.Response.bytes(_tileBytes(), 200));
-    await secondLoaded.future.timeout(const Duration(seconds: 5));
-    expect(service.cachedSideRoadsNear(end), hasLength(1));
-    expect(service.cachedSideRoadsNear(start), isEmpty);
-    service.dispose();
-  });
+        baseUrl: 'https://example.test',
+      );
+      final start = _tilePoint(15072.5, 9832.5);
+      final end = _tilePoint(15075.5, 9832.5);
+      service.prefetchRoute([start, end], start, (loadedNear) {
+        if (!advanced &&
+            !firstLoaded.isCompleted &&
+            loadedNear.distanceTo(start) < 500) {
+          firstLoaded.complete();
+        } else if (advanced &&
+            !secondLoaded.isCompleted &&
+            service.cachedSideRoadsNear(end).isNotEmpty) {
+          secondLoaded.complete();
+        }
+      });
+      firstResponse.complete(http.Response.bytes(_tileBytes(), 200));
+      await firstLoaded.future.timeout(const Duration(seconds: 5));
+      expect(service.cachedSideRoadsNear(start), hasLength(1));
+      expect(service.cachedSideRoadsNear(end), isEmpty);
+      advanced = true;
+      service.advancePrefetch(end);
+      secondResponse.complete(http.Response.bytes(_tileBytes(), 200));
+      await secondLoaded.future.timeout(const Duration(seconds: 5));
+      expect(service.cachedSideRoadsNear(end), hasLength(1));
+      expect(service.cachedSideRoadsNear(start), isEmpty);
+      service.dispose();
+    },
+  );
 }
 
 LatLng _tilePoint(double x, double y) {
@@ -172,18 +188,20 @@ List<int> _tileBytes() {
     type: mvt.VectorTile_GeomType.LINESTRING,
     geometry: [9, 4096, 4096, 10, 0, 400],
   );
-  final tile = mvt.createVectorTile(layers: [
-    mvt.createVectorTileLayer(
-      name: 'edges',
-      extent: 4096,
-      version: 2,
-      keys: ['access:fwd', 'access:bwd'],
-      values: [
-        mvt.createVectorTileValue(stringValue: '1024'),
-        mvt.createVectorTileValue(stringValue: '0'),
-      ],
-      features: [road, reverse, footpath],
-    ),
-  ]);
+  final tile = mvt.createVectorTile(
+    layers: [
+      mvt.createVectorTileLayer(
+        name: 'edges',
+        extent: 4096,
+        version: 2,
+        keys: ['access:fwd', 'access:bwd'],
+        values: [
+          mvt.createVectorTileValue(stringValue: '1024'),
+          mvt.createVectorTileValue(stringValue: '0'),
+        ],
+        features: [road, reverse, footpath],
+      ),
+    ],
+  );
   return tile.writeToBuffer();
 }

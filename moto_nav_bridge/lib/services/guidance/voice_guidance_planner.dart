@@ -123,14 +123,19 @@ class VoiceGuidancePlanner {
         _inReroute = true;
         _rerouteFailureSpoken = false;
         final last = _lastRerouteNoticeAt;
-        if (last == null || input.now.difference(last) >= policy.rerouteCooldown) {
+        if (last == null ||
+            input.now.difference(last) >= policy.rerouteCooldown) {
           _lastRerouteNoticeAt = input.now;
           return _speak(phrases.rerouting, GuidancePriority.urgent, input.now);
         }
       }
       if (input.rerouteFailed && !_rerouteFailureSpoken && !input.speaking) {
         _rerouteFailureSpoken = true;
-        return _speak(phrases.rerouteFailed, GuidancePriority.urgent, input.now);
+        return _speak(
+          phrases.rerouteFailed,
+          GuidancePriority.urgent,
+          input.now,
+        );
       }
       return null;
     }
@@ -157,11 +162,18 @@ class VoiceGuidancePlanner {
     // it agrees with it. Agreeing data decides (a straight-on ramp or fork is
     // announced, a plain "continue" is not); otherwise only a real turn is.
     final consistent = atDestination || upcoming.direction == state.direction;
-    final announced =
-        consistent ? !upcoming.isSilent : state.direction != DeviceDirection.up;
+    final announced = consistent
+        ? !upcoming.isSilent
+        : state.direction != DeviceDirection.up;
     if (!announced) return _maybeCurves(input, guidance, phrases);
     final maneuver = consistent ? upcoming : null;
-    final speech = _maneuverSpeech(input, guidance, phrases, upcoming, maneuver);
+    final speech = _maneuverSpeech(
+      input,
+      guidance,
+      phrases,
+      upcoming,
+      maneuver,
+    );
     return speech ?? _maybeCurves(input, guidance, phrases);
   }
 
@@ -175,17 +187,19 @@ class VoiceGuidancePlanner {
     final state = input.state;
     final d = state.distanceMeters.toDouble();
     final speed = _speed ?? _defaultSpeed;
-    final complex = (maneuver?.isComplex ?? false) || _followUp(guidance, maneuver, speed) != null;
+    final complex =
+        (maneuver?.isComplex ?? false) ||
+        _followUp(guidance, maneuver, speed) != null;
     final t = _thresholds(speed, input.accuracyMeters ?? 0, complex);
     final followUpOnly = _announcedAsFollowUp.contains(upcoming.index);
 
     final stage = d <= t.$3
         ? _final
         : d <= t.$2 && !followUpOnly
-            ? _prepare
-            : d <= t.$1 && speed >= 6 && !followUpOnly
-                ? _far
-                : _none;
+        ? _prepare
+        : d <= t.$1 && speed >= 6 && !followUpOnly
+        ? _far
+        : _none;
     final spoken = _spokenStage[upcoming.index] ?? _none;
     if (stage == _none || stage >= spoken) return null;
 
@@ -206,7 +220,9 @@ class VoiceGuidancePlanner {
     } else {
       if (input.speaking) return null; // re-evaluated with fresh distance later
       final last = _lastSpokenAt;
-      if (last != null && input.now.difference(last) < policy.minGap) return null;
+      if (last != null && input.now.difference(last) < policy.minGap) {
+        return null;
+      }
     }
 
     final direction = upcoming.kind == ManeuverKind.destination
@@ -214,7 +230,9 @@ class VoiceGuidancePlanner {
         : state.direction;
     final action = phrases.action(direction, maneuver);
     final follow = _followUp(guidance, maneuver, speed);
-    final then = follow == null ? '' : phrases.then(follow.maneuver, follow.gapMeters);
+    final then = follow == null
+        ? ''
+        : phrases.then(follow.maneuver, follow.gapMeters);
     if (follow != null) _announcedAsFollowUp.add(follow.maneuver.index);
 
     final String body;
@@ -228,15 +246,23 @@ class VoiceGuidancePlanner {
     }
     _spokenStage[upcoming.index] = stage;
     _stageSpokenAt[upcoming.index] = input.now;
-    return _speak(phrases.sentence(body),
-        stage == _final ? GuidancePriority.urgent : GuidancePriority.maneuver, input.now);
+    return _speak(
+      phrases.sentence(body),
+      stage == _final ? GuidancePriority.urgent : GuidancePriority.maneuver,
+      input.now,
+    );
   }
 
   /// The next announced maneuver when it comes too soon for its own
   /// announcement. Only for verified maneuvers: missing data never chains.
   ({GuidanceManeuver maneuver, double gapMeters})? _followUp(
-      GuidanceRoute guidance, GuidanceManeuver? maneuver, double speed) {
-    if (maneuver == null || maneuver.kind == ManeuverKind.destination) return null;
+    GuidanceRoute guidance,
+    GuidanceManeuver? maneuver,
+    double speed,
+  ) {
+    if (maneuver == null || maneuver.kind == ManeuverKind.destination) {
+      return null;
+    }
     final next = guidance.following(maneuver);
     if (next == null) return null;
     // A roundabout's own exit is part of its entry announcement.
@@ -250,7 +276,11 @@ class VoiceGuidancePlanner {
 
   /// (far, prepare, final) trigger distances in metres: about 30 s, 12 s and
   /// 4.5 s ahead, earlier for complex junctions and imprecise fixes.
-  (double, double, double) _thresholds(double speed, double accuracy, bool complex) {
+  (double, double, double) _thresholds(
+    double speed,
+    double accuracy,
+    bool complex,
+  ) {
     final factor = complex ? 1.25 : 1.0;
     final margin = accuracy.clamp(0.0, 30.0) * 0.5;
     return (
@@ -261,18 +291,24 @@ class VoiceGuidancePlanner {
   }
 
   GuidanceUtterance? _maybeCurves(
-      GuidanceInput input, GuidanceRoute guidance, GuidancePhrases phrases) {
+    GuidanceInput input,
+    GuidanceRoute guidance,
+    GuidancePhrases phrases,
+  ) {
     if (!policy.curveWarnings || !input.reliable || input.speaking) return null;
     final speed = _speed ?? 0;
     if (speed < 5) return null;
     final last = _lastSpokenAt;
-    if (last != null && input.now.difference(last) < const Duration(seconds: 4)) {
+    if (last != null &&
+        input.now.difference(last) < const Duration(seconds: 4)) {
       return null;
     }
-    if (input.stepIndex < 0 || input.stepIndex >= guidance.stepEndAlong.length) {
+    if (input.stepIndex < 0 ||
+        input.stepIndex >= guidance.stepEndAlong.length) {
       return null;
     }
-    final rider = guidance.stepEndAlong[input.stepIndex] - input.state.distanceMeters;
+    final rider =
+        guidance.stepEndAlong[input.stepIndex] - input.state.distanceMeters;
     final reach = (speed * 10).clamp(80.0, 300.0);
     for (var i = 0; i < guidance.curves.length; i++) {
       if (_curvesWarned.contains(i)) continue;
@@ -280,7 +316,8 @@ class VoiceGuidancePlanner {
       if (ahead <= 0 || ahead > reach) continue;
       _curvesWarned.add(i);
       // A maneuver right before or inside the bends matters more.
-      final maneuverAhead = input.state.direction != DeviceDirection.up &&
+      final maneuverAhead =
+          input.state.direction != DeviceDirection.up &&
           input.state.distanceMeters < ahead + 100;
       if (maneuverAhead) return null;
       return _speak(phrases.curves, GuidancePriority.info, input.now);
@@ -293,7 +330,11 @@ class VoiceGuidancePlanner {
     _speed = _speed == null ? speed : _speed! + (speed - _speed!) * 0.5;
   }
 
-  GuidanceUtterance _speak(String text, GuidancePriority priority, DateTime now) {
+  GuidanceUtterance _speak(
+    String text,
+    GuidancePriority priority,
+    DateTime now,
+  ) {
     _lastSpokenAt = now;
     return GuidanceUtterance(text, priority);
   }

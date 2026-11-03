@@ -16,8 +16,8 @@ import 'navigation_ports.dart';
 /// independently of guidance: a tile failure must never hold up navigation.
 class SideRoadService implements RouteSideRoadProvider {
   SideRoadService({http.Client? client, String? baseUrl})
-      : _client = client ?? http.Client(),
-        _baseUrl = baseUrl ?? ApiConfig.valhallaBaseUrl;
+    : _client = client ?? http.Client(),
+      _baseUrl = baseUrl ?? ApiConfig.valhallaBaseUrl;
 
   final http.Client _client;
   final String _baseUrl;
@@ -45,8 +45,11 @@ class SideRoadService implements RouteSideRoadProvider {
   static const _motorcycleAccess = 1024; // Valhalla kMotorcycleAccess.
 
   @override
-  void prefetchRoute(List<LatLng> route, LatLng position,
-      void Function(LatLng loadedNear) onProgress) {
+  void prefetchRoute(
+    List<LatLng> route,
+    LatLng position,
+    void Function(LatLng loadedNear) onProgress,
+  ) {
     cancelPrefetch();
     if (route.length < 2) return;
     _route = List.unmodifiable(route);
@@ -98,7 +101,10 @@ class SideRoadService implements RouteSideRoadProvider {
         final length = route[back].distanceTo(route[back - 1]);
         if (covered + length > _behindMeters) {
           backPoint = _lerp(
-              route[back], route[back - 1], (_behindMeters - covered) / length);
+            route[back],
+            route[back - 1],
+            (_behindMeters - covered) / length,
+          );
           break;
         }
         covered += length;
@@ -110,8 +116,11 @@ class SideRoadService implements RouteSideRoadProvider {
       while (front < route.length - 1 && covered < _aheadMeters) {
         final length = route[front].distanceTo(route[front + 1]);
         if (covered + length > _aheadMeters) {
-          frontPoint = _lerp(route[front], route[front + 1],
-              (_aheadMeters - covered) / length);
+          frontPoint = _lerp(
+            route[front],
+            route[front + 1],
+            (_aheadMeters - covered) / length,
+          );
           break;
         }
         covered += length;
@@ -132,8 +141,12 @@ class SideRoadService implements RouteSideRoadProvider {
         for (var j = 1; j <= samples; j++) {
           if (generation != _prefetchGeneration) return;
           final t = j / samples;
-          include(LatLng(a.latitude + (b.latitude - a.latitude) * t,
-              a.longitude + (b.longitude - a.longitude) * t));
+          include(
+            LatLng(
+              a.latitude + (b.latitude - a.latitude) * t,
+              a.longitude + (b.longitude - a.longitude) * t,
+            ),
+          );
           if (++indexed % 100 == 0) {
             await Future<void>.delayed(const Duration(milliseconds: 1));
           }
@@ -148,8 +161,9 @@ class SideRoadService implements RouteSideRoadProvider {
       // The junctions around the rider matter before distant road context.
       // Keep only a few requests in flight; each completed tile publishes
       // independently so a slow tile cannot block the nearest one.
-      final immediate =
-          _tilesFor(_BoundingBox.around(position, _radiusMeters)).toSet();
+      final immediate = _tilesFor(
+        _BoundingBox.around(position, _radiusMeters),
+      ).toSet();
       final ordered = corridor.keys.toList()
         ..sort((a, b) {
           final aImmediate = immediate.contains(a);
@@ -168,7 +182,8 @@ class SideRoadService implements RouteSideRoadProvider {
             if (generation != _prefetchGeneration) return;
             _routeTiles[id] = roads
                 .where(
-                    (road) => corridor[id]!.any((box) => box.intersects(road)))
+                  (road) => corridor[id]!.any((box) => box.intersects(road)),
+                )
                 .toList(growable: false);
             _cacheVersion++;
             onProgress(tileAnchors[id]!);
@@ -202,8 +217,12 @@ class SideRoadService implements RouteSideRoadProvider {
         }
       }
     }
-    nearby.sort((a, b) => _distanceToSegment(position, a)
-        .compareTo(_distanceToSegment(position, b)));
+    nearby.sort(
+      (a, b) => _distanceToSegment(
+        position,
+        a,
+      ).compareTo(_distanceToSegment(position, b)),
+    );
     return nearby.take(_maxSegments).toList(growable: false);
   }
 
@@ -222,14 +241,16 @@ class SideRoadService implements RouteSideRoadProvider {
     final box = _BoundingBox.around(position, _radiusMeters);
     final ids = _tilesFor(box);
     try {
-      final groups = await Future.wait(ids.map((id) async {
-        try {
-          return await _loadTile(id);
-        } on Object catch (error) {
-          if (kDebugMode) debugPrint('[SIDE_ROADS] tile $id failed: $error');
-          return <RoadSegment>[];
-        }
-      }));
+      final groups = await Future.wait(
+        ids.map((id) async {
+          try {
+            return await _loadTile(id);
+          } on Object catch (error) {
+            if (kDebugMode) debugPrint('[SIDE_ROADS] tile $id failed: $error');
+            return <RoadSegment>[];
+          }
+        }),
+      );
       final nearby = <RoadSegment>[];
       final seen = <String>{};
       for (final group in groups) {
@@ -242,11 +263,16 @@ class SideRoadService implements RouteSideRoadProvider {
           nearby.add(road);
         }
       }
-      nearby.sort((a, b) => _distanceToSegment(position, a)
-          .compareTo(_distanceToSegment(position, b)));
+      nearby.sort(
+        (a, b) => _distanceToSegment(
+          position,
+          a,
+        ).compareTo(_distanceToSegment(position, b)),
+      );
       if (kDebugMode) {
         debugPrint(
-            '[SIDE_ROADS] Valhalla tiles=${ids.length} roads=${nearby.length}');
+          '[SIDE_ROADS] Valhalla tiles=${ids.length} roads=${nearby.length}',
+        );
       }
       return nearby.take(_maxSegments).toList(growable: false);
     } on Object catch (error) {
@@ -255,8 +281,8 @@ class SideRoadService implements RouteSideRoadProvider {
     }
   }
 
-  Future<List<RoadSegment>> _loadTile(_TileId id) =>
-      _tiles.putIfAbsent(id, () async {
+  Future<List<RoadSegment>> _loadTile(_TileId id) => _tiles
+      .putIfAbsent(id, () async {
         // The cache bounds both memory and repeat network traffic while riding.
         if (_tiles.length > 8) _tiles.remove(_tiles.keys.first);
         final request = jsonEncode({
@@ -266,7 +292,7 @@ class SideRoadService implements RouteSideRoadProvider {
               'nodes',
               'shortcuts',
               'access_restrictions',
-              'incidents'
+              'incidents',
             ],
           },
           'filters': {
@@ -281,14 +307,16 @@ class SideRoadService implements RouteSideRoadProvider {
           },
           'generalize': 1,
         });
-        final uri = Uri.parse('$_baseUrl/tile')
-            .replace(queryParameters: {'json': request});
+        final uri = Uri.parse(
+          '$_baseUrl/tile',
+        ).replace(queryParameters: {'json': request});
         final response = await _client.get(uri).timeout(_timeout);
         if (response.statusCode != 200) {
           throw StateError('tile HTTP ${response.statusCode}');
         }
         return compute(_decodeRoadTile, _TilePayload(id, response.bodyBytes));
-      }).catchError((Object error) {
+      })
+      .catchError((Object error) {
         _tiles.remove(id); // Let a later location refresh retry.
         throw error;
       });
@@ -319,9 +347,9 @@ class SideRoadService implements RouteSideRoadProvider {
       '${(p.latitude * 100000).round()},${(p.longitude * 100000).round()}';
 
   static LatLng _lerp(LatLng a, LatLng b, double t) => LatLng(
-        a.latitude + (b.latitude - a.latitude) * t,
-        a.longitude + (b.longitude - a.longitude) * t,
-      );
+    a.latitude + (b.latitude - a.latitude) * t,
+    a.longitude + (b.longitude - a.longitude) * t,
+  );
 
   static double _distanceToSegment(LatLng position, RoadSegment road) =>
       math.min(position.distanceTo(road.start), position.distanceTo(road.end));
@@ -377,7 +405,8 @@ LatLng _tilePoint(_TileId id, int extent, int x, int y) {
   final scale = (1 << id.z).toDouble();
   final longitude = (id.x + x / extent) / scale * 360 - 180;
   final mercatorY = math.pi * (1 - 2 * (id.y + y / extent) / scale);
-  final latitude = math.atan((math.exp(mercatorY) - math.exp(-mercatorY)) / 2) *
+  final latitude =
+      math.atan((math.exp(mercatorY) - math.exp(-mercatorY)) / 2) *
       180 /
       math.pi;
   return LatLng(latitude, longitude);
@@ -418,8 +447,12 @@ class _BoundingBox {
     final latPad = radiusMeters / latMeters;
     final lonPad =
         radiusMeters / (latMeters * math.cos(center.latitude * math.pi / 180));
-    return _BoundingBox(center.latitude - latPad, center.longitude - lonPad,
-        center.latitude + latPad, center.longitude + lonPad);
+    return _BoundingBox(
+      center.latitude - latPad,
+      center.longitude - lonPad,
+      center.latitude + latPad,
+      center.longitude + lonPad,
+    );
   }
 
   bool intersects(RoadSegment road) {

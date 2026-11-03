@@ -37,12 +37,13 @@ class NavigationController extends ChangeNotifier {
     PositionProvider? location,
     SideRoadProvider? sideRoads,
     SharedPreferences? preferences,
-  // Preserve the public `preferences` constructor parameter.
-  // ignore: prefer_initializing_formals
-  })  : _preferences = preferences,
-        _location = location ?? LocationService(),
-        _sideRoads = sideRoads ?? SideRoadService() {
-    _directions = directions ??
+    // Preserve the public `preferences` constructor parameter.
+    // ignore: prefer_initializing_formals
+  }) : _preferences = preferences,
+       _location = location ?? LocationService(),
+       _sideRoads = sideRoads ?? SideRoadService() {
+    _directions =
+        directions ??
         ValhallaDirectionsService(routePreferences: () => _tripPreferences);
     _rerouteDirections = rerouteDirections ?? _directions;
     final saved = _preferences?.getString(_preferencesKey);
@@ -183,8 +184,11 @@ class NavigationController extends ChangeNotifier {
   List<PlaceResult> get waypoints => _waypointPlan.stops;
   int get completedWaypoints => _waypointPlan.completed;
 
-  Future<List<RouteCandidate>> _fetchTripRoutes(RouteProvider provider,
-      {required LatLng origin, required LatLng destination}) {
+  Future<List<RouteCandidate>> _fetchTripRoutes(
+    RouteProvider provider, {
+    required LatLng origin,
+    required LatLng destination,
+  }) {
     final remaining = _waypointPlan.remaining;
     if (remaining.isEmpty) {
       return provider.fetchRoutes(origin: origin, destination: destination);
@@ -192,8 +196,11 @@ class NavigationController extends ChangeNotifier {
     if (provider is! WaypointRouteProvider) {
       throw DirectionsException('Route provider does not support waypoints');
     }
-    return provider.fetchWaypointRoutes(origin: origin,
-        destination: destination, waypoints: remaining);
+    return provider.fetchWaypointRoutes(
+      origin: origin,
+      destination: destination,
+      waypoints: remaining,
+    );
   }
 
   List<RouteCandidate> _routeOptions = const [];
@@ -240,8 +247,10 @@ class NavigationController extends ChangeNotifier {
 
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
-    _heartbeatTimer =
-        Timer.periodic(_heartbeatInterval, (_) => unawaited(_heartbeat()));
+    _heartbeatTimer = Timer.periodic(
+      _heartbeatInterval,
+      (_) => unawaited(_heartbeat()),
+    );
   }
 
   void _stopHeartbeat() {
@@ -268,8 +277,9 @@ class NavigationController extends ChangeNotifier {
     final subscription = _posSub;
     _heartbeatBusy = true;
     try {
-      final fix =
-          await _location.currentPosition().timeout(_heartbeatFixTimeout);
+      final fix = await _location.currentPosition().timeout(
+        _heartbeatFixTimeout,
+      );
       final anchor = _latestPosition;
       final state = _current;
       if (_disposed ||
@@ -310,21 +320,20 @@ class NavigationController extends ChangeNotifier {
   void recordMapDiagnostic(String event) {
     if (event == 'tap_received' ||
         event == 'region_changed' ||
-        const {
-          'fit_skipped_active_gesture',
-          'fit_requested',
-        }.contains(event) ||
+        const {'fit_skipped_active_gesture', 'fit_requested'}.contains(event) ||
         RegExp(r'^update_ms=\d{1,9}$').hasMatch(event) ||
         // The map reset gesture recognizers UIKit left stuck.
-        RegExp(r'^recognizers_reset reason=(sequence_end|missed_touch) '
-                r'count=\d{1,3} states=[0-9/,]{1,300}$')
-            .hasMatch(event) ||
+        RegExp(
+          r'^recognizers_reset reason=(sequence_end|missed_touch) '
+          r'count=\d{1,3} states=[0-9/,]{1,300}$',
+        ).hasMatch(event) ||
         event == 'view_recreate' ||
         RegExp(r'^gate_reattach count=\d{1,3}$').hasMatch(event) ||
         // Which touch-gate recognizer holds a touch the map never received.
-        RegExp(r'^touch_gate observer=\d/\d{1,2} '
-                r'ancestors=[0-9A-Za-z_:/,|]{1,600}$')
-            .hasMatch(event)) {
+        RegExp(
+          r'^touch_gate observer=\d/\d{1,2} '
+          r'ancestors=[0-9A-Za-z_:/,|]{1,600}$',
+        ).hasMatch(event)) {
       _log('map $event');
     }
   }
@@ -425,8 +434,10 @@ class NavigationController extends ChangeNotifier {
 
   /// Builds route options for the destination panel without starting live
   /// navigation or writing instructions to the ESP32.
-  Future<void> previewDestination(LatLng destination,
-      {List<PlaceResult> waypoints = const []}) async {
+  Future<void> previewDestination(
+    LatLng destination, {
+    List<PlaceResult> waypoints = const [],
+  }) async {
     if (_phase != NavPhase.idle && _phase != NavPhase.error) return;
     final plan = WaypointPlan(waypoints);
 
@@ -464,7 +475,8 @@ class NavigationController extends ChangeNotifier {
       if (!current()) return;
       final origin = await _location.currentPosition();
       if (!current()) return;
-      final routes = await _fetchTripRoutes(_directions,
+      final routes = await _fetchTripRoutes(
+        _directions,
         origin: origin,
         destination: destination,
       );
@@ -487,18 +499,26 @@ class NavigationController extends ChangeNotifier {
 
   /// Builds a route from the current location to [destination] and starts
   /// streaming navigation updates to the device.
-  Future<void> startNavigation(LatLng destination,
-      {List<PlaceResult>? waypoints}) async {
-    final stops = waypoints ??
+  Future<void> startNavigation(
+    LatLng destination, {
+    List<PlaceResult>? waypoints,
+  }) async {
+    final stops =
+        waypoints ??
         (((_destination?.distanceTo(destination) ?? double.infinity) < 5)
-            ? this.waypoints : const <PlaceResult>[]);
+            ? this.waypoints
+            : const <PlaceResult>[]);
     final plan = WaypointPlan(stops);
     // A route picked on the preview map is an explicit user choice. Keep it
     // across the fresh route request made when the trip starts.
-    final previewSelection = _previewRouteExplicitlySelected &&
+    final previewSelection =
+        _previewRouteExplicitlySelected &&
             stops.length == this.waypoints.length &&
-            stops.asMap().entries.every((e) =>
-                e.value.location.distanceTo(this.waypoints[e.key].location) < 1) &&
+            stops.asMap().entries.every(
+              (e) =>
+                  e.value.location.distanceTo(this.waypoints[e.key].location) <
+                  1,
+            ) &&
             _phase == NavPhase.idle &&
             _destination != null &&
             _destination!.distanceTo(destination) < 5 &&
@@ -522,7 +542,8 @@ class NavigationController extends ChangeNotifier {
       _waypointPlan.completeAtStart(origin);
       _destination = destination;
       notifyListeners();
-      final routes = await _fetchTripRoutes(_directions,
+      final routes = await _fetchTripRoutes(
+        _directions,
         origin: origin,
         destination: destination,
       );
@@ -532,8 +553,8 @@ class NavigationController extends ChangeNotifier {
         routes,
         selectedIndex:
             previewSelection != null && previewSelection < routes.length
-                ? previewSelection
-                : preferredRouteIndex(routes),
+            ? previewSelection
+            : preferredRouteIndex(routes),
       );
     } catch (e) {
       _set(NavPhase.error, error: e.toString());
@@ -551,10 +572,10 @@ class NavigationController extends ChangeNotifier {
     if (_disposed || _phase != NavPhase.navigating || _posSub != null) return;
     try {
       _posSub = _location.positionStream().listen(
-            _onPosition,
-            onError: _onPositionError,
-            onDone: () => _onPositionError(StateError('GPS stream ended')),
-          );
+        _onPosition,
+        onError: _onPositionError,
+        onDone: () => _onPositionError(StateError('GPS stream ended')),
+      );
       _log('gps_stream_started');
     } catch (error) {
       _onPositionError(error);
@@ -571,9 +592,9 @@ class NavigationController extends ChangeNotifier {
       // A fresh one-shot fix can restore guidance even when the bike is still
       // and the restarted stream's distance filter has not emitted yet.
       try {
-        final fix = await _location
-            .currentPosition()
-            .timeout(const Duration(seconds: 8));
+        final fix = await _location.currentPosition().timeout(
+          const Duration(seconds: 8),
+        );
         if (!_disposed &&
             _phase == NavPhase.navigating &&
             fix is NavigationFix &&
@@ -623,7 +644,9 @@ class NavigationController extends ChangeNotifier {
     }
 
     final navState = engine.update(pos);
-    if (_offRouteSamples == 0 && !_awaitingValidRoute && selectedRoute != null) {
+    if (_offRouteSamples == 0 &&
+        !_awaitingValidRoute &&
+        selectedRoute != null) {
       _waypointPlan.update(selectedRoute!, engine.currentStepIndex, pos);
     }
     _current = navState;
@@ -739,7 +762,8 @@ class NavigationController extends ChangeNotifier {
 
     try {
       unawaited(ble.send(_current!));
-      final routes = await _fetchTripRoutes(_rerouteDirections,
+      final routes = await _fetchTripRoutes(
+        _rerouteDirections,
         origin: pos,
         destination: destination,
       );
@@ -755,36 +779,42 @@ class NavigationController extends ChangeNotifier {
                   const Duration(seconds: 10))) {
         throw DirectionsException('No fresh accurate position for reroute');
       }
-      final alignedRoutes =
-          routes.map((r) => RouteAlignment.trim(r, pos, latest)).toList();
+      final alignedRoutes = routes
+          .map((r) => RouteAlignment.trim(r, pos, latest))
+          .toList();
       _log(
-          'reroute_response elapsedMs=${DateTime.now().difference(requestStarted).inMilliseconds} candidates=${routes.length} movedM=${pos.distanceTo(latest).round()} ${_fixDetails(latest)}');
+        'reroute_response elapsedMs=${DateTime.now().difference(requestStarted).inMilliseconds} candidates=${routes.length} movedM=${pos.distanceTo(latest).round()} ${_fixDetails(latest)}',
+      );
       var anyDistanceRejected = false;
       var anyDirectionRejected = false;
-      final selected = preferredRouteIndex(alignedRoutes,
-          avoidEarlyUTurns: true, eligible: (route) {
-        // Heading on the API request is a preference, not a guarantee. Reject
-        // stale/distant or reverse-going starts rather than silently falling
-        // back to a route which points back at the missed junction.
-        final reverse = RouteAlignment.conflictsWithCourse(route, latest);
-        final matcher = NavigationEngine(route.steps);
-        matcher.isOffRoute(latest);
-        final distanceRejected =
-            (matcher.lastRouteDistanceMeters ?? double.infinity) >
-                (matcher.lastOffRouteThresholdMeters ?? 0);
-        final directionRejected = reverse || matcher.reverseTravel;
-        anyDistanceRejected |= distanceRejected;
-        anyDirectionRejected |= directionRejected;
-        _log(
-            'candidate startReverse=$reverse matchedReverse=${matcher.reverseTravel} distanceM=${matcher.lastRouteDistanceMeters?.toStringAsFixed(1)} thresholdM=${matcher.lastOffRouteThresholdMeters?.toStringAsFixed(1)} courseDeltaDeg=${matcher.lastCourseDeltaDegrees?.toStringAsFixed(1) ?? "ignored"} courseReliable=${latest is NavigationFix && latest.reliableCourse} distanceRejected=$distanceRejected directionRejected=$directionRejected rejected=${distanceRejected || directionRejected}');
-        return !distanceRejected && !directionRejected;
-      });
+      final selected = preferredRouteIndex(
+        alignedRoutes,
+        avoidEarlyUTurns: true,
+        eligible: (route) {
+          // Heading on the API request is a preference, not a guarantee. Reject
+          // stale/distant or reverse-going starts rather than silently falling
+          // back to a route which points back at the missed junction.
+          final reverse = RouteAlignment.conflictsWithCourse(route, latest);
+          final matcher = NavigationEngine(route.steps);
+          matcher.isOffRoute(latest);
+          final distanceRejected =
+              (matcher.lastRouteDistanceMeters ?? double.infinity) >
+              (matcher.lastOffRouteThresholdMeters ?? 0);
+          final directionRejected = reverse || matcher.reverseTravel;
+          anyDistanceRejected |= distanceRejected;
+          anyDirectionRejected |= directionRejected;
+          _log(
+            'candidate startReverse=$reverse matchedReverse=${matcher.reverseTravel} distanceM=${matcher.lastRouteDistanceMeters?.toStringAsFixed(1)} thresholdM=${matcher.lastOffRouteThresholdMeters?.toStringAsFixed(1)} courseDeltaDeg=${matcher.lastCourseDeltaDegrees?.toStringAsFixed(1) ?? "ignored"} courseReliable=${latest is NavigationFix && latest.reliableCourse} distanceRejected=$distanceRejected directionRejected=$directionRejected rejected=${distanceRejected || directionRejected}',
+          );
+          return !distanceRejected && !directionRejected;
+        },
+      );
       if (selected < 0) {
         final reason = anyDistanceRejected && !anyDirectionRejected
             ? 'No reroute is close enough to the current position'
             : anyDirectionRejected && !anyDistanceRejected
-                ? 'No reroute matches the current travel direction'
-                : 'No reroute matches the current position and travel direction';
+            ? 'No reroute matches the current travel direction'
+            : 'No reroute matches the current position and travel direction';
         throw DirectionsException(reason);
       }
       _origin = latest;
@@ -835,7 +865,8 @@ class NavigationController extends ChangeNotifier {
       _rerouteFailure = text.rerouteFailed(e);
       // Avoid retaining exception URLs or coordinates in diagnostic logs.
       _log(
-          'reroute_failed type=${e.runtimeType} elapsedMs=${DateTime.now().difference(requestStarted).inMilliseconds}');
+        'reroute_failed type=${e.runtimeType} elapsedMs=${DateTime.now().difference(requestStarted).inMilliseconds}',
+      );
       _scheduleRecovery();
       _clearRerouteNotice();
       _current = _temporaryRouteState();
@@ -866,7 +897,10 @@ class NavigationController extends ChangeNotifier {
   }
 
   bool _isCurrentReroute(
-          int requestId, NavigationEngine engine, LatLng destination) =>
+    int requestId,
+    NavigationEngine engine,
+    LatLng destination,
+  ) =>
       !_disposed &&
       _rerouteRequestId == requestId &&
       _engine == engine &&
@@ -906,8 +940,9 @@ class NavigationController extends ChangeNotifier {
       _routeOptions[index].steps,
       sideRoads: _routeOptions[index].sideRoads,
     );
-    _lastReliableNavState =
-        _engine!.update(_routeOptions[index].polyline.first);
+    _lastReliableNavState = _engine!.update(
+      _routeOptions[index].polyline.first,
+    );
     _offRouteSamples = 0;
     _lastSideRoadRefreshAt = null;
     _sideRoadRefreshPosition = null;
@@ -964,9 +999,9 @@ class NavigationController extends ChangeNotifier {
     Future<LatLng?> currentFreshFix() async {
       if (fresh(_latestPosition)) return _latestPosition;
       try {
-        final measured = await _location
-            .currentPosition()
-            .timeout(const Duration(seconds: 8));
+        final measured = await _location.currentPosition().timeout(
+          const Duration(seconds: 8),
+        );
         if (!valid() || !fresh(measured)) return null;
         final latest = _latestPosition;
         if (latest is NavigationFix &&
@@ -993,9 +1028,11 @@ class NavigationController extends ChangeNotifier {
     try {
       final start = await currentFreshFix();
       if (start == null) return false;
-      final routes = await _fetchTripRoutes(_directions,
-          origin: start, destination: destination)
-          .timeout(const Duration(seconds: 25));
+      final routes = await _fetchTripRoutes(
+        _directions,
+        origin: start,
+        destination: destination,
+      ).timeout(const Duration(seconds: 25));
       if (!valid()) return false;
       final latest = await currentFreshFix();
       if (latest == null) return false;
@@ -1003,19 +1040,24 @@ class NavigationController extends ChangeNotifier {
           .where((route) => route.steps.isNotEmpty)
           .map((route) => RouteAlignment.trim(route, start, latest))
           .toList();
-      final selected = preferredRouteIndex(aligned, avoidEarlyUTurns: true,
-          eligible: (route) {
-        if (route.steps.isEmpty ||
-            route.steps.last.end.distanceTo(destination) > 200) {
-          return false;
-        }
-        return !RouteAlignment.conflictsWithCourse(route, latest) &&
-            !NavigationEngine(route.steps).isOffRoute(latest);
-      });
+      final selected = preferredRouteIndex(
+        aligned,
+        avoidEarlyUTurns: true,
+        eligible: (route) {
+          if (route.steps.isEmpty ||
+              route.steps.last.end.distanceTo(destination) > 200) {
+            return false;
+          }
+          return !RouteAlignment.conflictsWithCourse(route, latest) &&
+              !NavigationEngine(route.steps).isOffRoute(latest);
+        },
+      );
       if (selected < 0 || !valid()) return false;
       // Build everything before touching the active trip.
-      final nextEngine = NavigationEngine(aligned[selected].steps,
-          sideRoads: aligned[selected].sideRoads);
+      final nextEngine = NavigationEngine(
+        aligned[selected].steps,
+        sideRoads: aligned[selected].sideRoads,
+      );
       final nextState = nextEngine.update(latest);
       _invalidateReroute();
       _origin = latest;
@@ -1024,7 +1066,11 @@ class NavigationController extends ChangeNotifier {
       _selectedRouteIndex = selected;
       _engine = nextEngine;
       _waypointPlan.bindRoute();
-      _waypointPlan.update(aligned[selected], nextEngine.currentStepIndex, latest);
+      _waypointPlan.update(
+        aligned[selected],
+        nextEngine.currentStepIndex,
+        latest,
+      );
       _current = nextState;
       _error = null;
       _offRouteSamples = 0;
@@ -1036,8 +1082,9 @@ class NavigationController extends ChangeNotifier {
       _startRouteSideRoadPrefetch();
       // Routing success is separate from BLE availability. Send the new state,
       // but do not claim the route failed after it has already been committed.
-      unawaited(Future<bool>.sync(() => ble.send(nextState))
-          .catchError((_) => false));
+      unawaited(
+        Future<bool>.sync(() => ble.send(nextState)).catchError((_) => false),
+      );
       return true;
     } catch (_) {
       if (!_disposed) _log('voice_destination_change_failed');
@@ -1061,10 +1108,15 @@ class NavigationController extends ChangeNotifier {
     _engine = NavigationEngine(selected.steps, sideRoads: selected.sideRoads);
     _waypointPlan.bindRoute();
     final initialPosition = _waypointPlan.stops.isEmpty
-        ? selected.polyline.first : (_latestPosition ?? selected.polyline.first);
+        ? selected.polyline.first
+        : (_latestPosition ?? selected.polyline.first);
     _lastReliableNavState = _engine!.update(initialPosition);
     if (_phase == NavPhase.routing || _phase == NavPhase.navigating) {
-      _waypointPlan.update(selected, _engine!.currentStepIndex, initialPosition);
+      _waypointPlan.update(
+        selected,
+        _engine!.currentStepIndex,
+        initialPosition,
+      );
     }
   }
 
@@ -1081,28 +1133,31 @@ class NavigationController extends ChangeNotifier {
     _lastSideRoadCacheVersion = -1;
     _lastAppliedSideRoads = const [];
     provider.prefetchRoute(
-        route.polyline, _latestPosition ?? route.polyline.first, (loadedNear) {
-      final position = _latestPosition;
-      if (_disposed ||
-          _phase != NavPhase.navigating ||
-          _engine != engine ||
-          _rerouting ||
-          _awaitingValidRoute ||
-          position is! NavigationFix ||
-          !position.accuracy.isFinite ||
-          position.accuracy > 50 ||
-          DateTime.now().difference(position.timestamp).abs() >=
-              const Duration(seconds: 10) ||
-          position.distanceTo(loadedNear) > 600) {
-        return;
-      }
-      if (_applyCachedSideRoads(position)) {
-        final refreshed = engine.update(position);
-        _current = refreshed;
-        notifyListeners();
-        unawaited(ble.send(refreshed));
-      }
-    });
+      route.polyline,
+      _latestPosition ?? route.polyline.first,
+      (loadedNear) {
+        final position = _latestPosition;
+        if (_disposed ||
+            _phase != NavPhase.navigating ||
+            _engine != engine ||
+            _rerouting ||
+            _awaitingValidRoute ||
+            position is! NavigationFix ||
+            !position.accuracy.isFinite ||
+            position.accuracy > 50 ||
+            DateTime.now().difference(position.timestamp).abs() >=
+                const Duration(seconds: 10) ||
+            position.distanceTo(loadedNear) > 600) {
+          return;
+        }
+        if (_applyCachedSideRoads(position)) {
+          final refreshed = engine.update(position);
+          _current = refreshed;
+          notifyListeners();
+          unawaited(ble.send(refreshed));
+        }
+      },
+    );
     if (_latestPosition != null) _applyCachedSideRoads(_latestPosition!);
   }
 
@@ -1119,14 +1174,18 @@ class NavigationController extends ChangeNotifier {
     // The tile futures survive cancelPrefetch, so starting navigation can
     // reuse completed or in-flight downloads without waiting for them.
     provider.prefetchRoute(
-        route.polyline, _latestPosition ?? route.polyline.first, (_) {});
+      route.polyline,
+      _latestPosition ?? route.polyline.first,
+      (_) {},
+    );
   }
 
   bool _applyCachedSideRoads(LatLng position) {
     final provider = _sideRoads;
     final engine = _engine;
     if (provider is! RouteSideRoadProvider || engine == null) return false;
-    final moved = _sideRoadRefreshPosition == null ||
+    final moved =
+        _sideRoadRefreshPosition == null ||
         _sideRoadRefreshPosition!.distanceTo(position) >= 80;
     if (!moved && provider.cacheVersion == _lastSideRoadCacheVersion) {
       return false;
@@ -1147,7 +1206,8 @@ class NavigationController extends ChangeNotifier {
     final lastPosition = _sideRoadRefreshPosition;
     final isRecent =
         lastAt != null && now.difference(lastAt) < _sideRoadRefreshInterval;
-    final hasNotMovedFar = lastPosition != null &&
+    final hasNotMovedFar =
+        lastPosition != null &&
         lastPosition.distanceTo(position) < _sideRoadRefreshDistanceMeters;
     if (isRecent && hasNotMovedFar) return;
 
@@ -1245,7 +1305,8 @@ class NavigationController extends ChangeNotifier {
     await _clearNavigationState();
     bool stopDelivered = false;
     try {
-      stopDelivered = await ble.send(NavState.ended)
+      stopDelivered = await ble
+          .send(NavState.ended)
           .timeout(const Duration(seconds: 2));
     } catch (error) {
       _log('stop_write_failed type=${error.runtimeType}');

@@ -9,11 +9,13 @@ import 'navigation_controller_test.dart'
 
 void main() {
   for (final en in [true, false]) {
-    testWidgets('preferences are free and autosave in both languages: $en',
-        (tester) async {
+    testWidgets('preferences are free and autosave in both languages: $en', (
+      tester,
+    ) async {
       SharedPreferences.setMockInitialValues({});
-      tester.binding.platformDispatcher.localeTestValue =
-          Locale(en ? 'en' : 'zh');
+      tester.binding.platformDispatcher.localeTestValue = Locale(
+        en ? 'en' : 'zh',
+      );
       addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
       tester.view.physicalSize = const Size(320, 568);
       tester.view.devicePixelRatio = 1;
@@ -21,36 +23,47 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final positions = FakePositions(current: p0);
       final nav = NavigationController(
-          ble: FakeBle(),
-          directions: FakeRoutes(mainRoute),
-          location: positions,
-          sideRoads: FakeSideRoads());
-      await tester
-          .pumpWidget(MaterialApp(home: RoutePreferencesPage(nav: nav)));
+        ble: FakeBle(),
+        directions: FakeRoutes(mainRoute),
+        location: positions,
+        sideRoads: FakeSideRoads(),
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: RoutePreferencesPage(nav: nav)),
+      );
       Finder toggle(String label) => find.descendant(
-          of: find.ancestor(
-              of: find.text(label), matching: find.byType(CupertinoListTile)),
-          matching: find.byType(CupertinoSwitch));
+        of: find.ancestor(
+          of: find.text(label),
+          matching: find.byType(CupertinoListTile),
+        ),
+        matching: find.byType(CupertinoSwitch),
+      );
       expect(find.text('NAVIO Plus'), findsNothing);
       expect(find.byType(CupertinoSwitch), findsNWidgets(4));
       expect(
-          tester
-              .widget<CupertinoNavigationBar>(
-                  find.byType(CupertinoNavigationBar))
-              .transitionBetweenRoutes,
-          isFalse);
+        tester
+            .widget<CupertinoNavigationBar>(find.byType(CupertinoNavigationBar))
+            .transitionBetweenRoutes,
+        isFalse,
+      );
       final highwayLabel = en ? 'Prefer avoiding highways' : '尽量避开高速';
       await tester.scrollUntilVisible(find.text(highwayLabel), 120);
-      expect(tester.widget<CupertinoSwitch>(toggle(highwayLabel)).onChanged,
-          isNotNull);
+      expect(
+        tester.widget<CupertinoSwitch>(toggle(highwayLabel)).onChanged,
+        isNotNull,
+      );
       await tester.tap(toggle(highwayLabel));
       await tester.pumpAndSettle();
       expect(
-          tester.widget<CupertinoSwitch>(toggle(highwayLabel)).value, isTrue);
+        tester.widget<CupertinoSwitch>(toggle(highwayLabel)).value,
+        isTrue,
+      );
       final tunnelLabel = en ? 'Avoid tunnels' : '避开隧道';
       await tester.scrollUntilVisible(find.text(tunnelLabel), 120);
-      expect(tester.widget<CupertinoSwitch>(toggle(tunnelLabel)).onChanged,
-          isNotNull);
+      expect(
+        tester.widget<CupertinoSwitch>(toggle(tunnelLabel)).onChanged,
+        isNotNull,
+      );
       await tester.tap(toggle(tunnelLabel));
       await tester.pumpAndSettle();
       expect(tester.widget<CupertinoSwitch>(toggle(tunnelLabel)).value, isTrue);

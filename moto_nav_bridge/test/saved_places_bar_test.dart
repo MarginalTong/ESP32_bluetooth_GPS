@@ -8,23 +8,31 @@ import 'package:moto_nav_bridge/ui/widgets/saved_places_bar.dart';
 
 void main() {
   for (final en in [true, false]) {
-    testWidgets('saved place shortcuts select persisted coordinates: $en',
-        (tester) async {
+    testWidgets('saved place shortcuts select persisted coordinates: $en', (
+      tester,
+    ) async {
       SharedPreferences.setMockInitialValues({});
-      tester.binding.platformDispatcher.localeTestValue =
-          Locale(en ? 'en' : 'zh');
+      tester.binding.platformDispatcher.localeTestValue = Locale(
+        en ? 'en' : 'zh',
+      );
       addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
       const home = PlaceResult(
-          name: 'Saved home',
-          address: 'My address',
-          location: LatLng(-33, 151));
+        name: 'Saved home',
+        address: 'My address',
+        location: LatLng(-33, 151),
+      );
       await SavedPlaces().save('home', home);
       PlaceResult? selected;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(
+        MaterialApp(
           home: Scaffold(
-              body: SizedBox(
-                  width: 320,
-                  child: SavedPlacesBar(onSelected: (p) => selected = p)))));
+            body: SizedBox(
+              width: 320,
+              child: SavedPlacesBar(onSelected: (p) => selected = p),
+            ),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.text(en ? 'Home' : '家'), findsOneWidget);
       expect(find.text(en ? 'Work' : '公司'), findsOneWidget);

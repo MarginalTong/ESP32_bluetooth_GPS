@@ -25,31 +25,35 @@ class _ChangingRoutes extends FakeRoutes {
     required LatLng origin,
     required LatLng destination,
   }) async =>
-      responses[
-          requests < responses.length ? requests++ : responses.length - 1];
+      responses[requests < responses.length
+          ? requests++
+          : responses.length - 1];
 }
 
 void main() {
   const slow = RouteCandidate(
-      steps: mainRoute,
-      name: 'Detour',
-      expectedTravelTimeSeconds: 1200,
-      distanceMeters: 12000);
+    steps: mainRoute,
+    name: 'Detour',
+    expectedTravelTimeSeconds: 1200,
+    distanceMeters: 12000,
+  );
   const fast = RouteCandidate(
-      steps: alternateRoute,
-      name: 'Fast',
-      expectedTravelTimeSeconds: 600,
-      distanceMeters: 8000);
+    steps: alternateRoute,
+    name: 'Fast',
+    expectedTravelTimeSeconds: 600,
+    distanceMeters: 8000,
+  );
   late FakeBle ble;
   late FakePositions positions;
   NavigationController? controller;
 
   NavigationController create(List<List<RouteCandidate>> responses) {
     return controller = NavigationController(
-        ble: ble,
-        directions: _ChangingRoutes(responses),
-        location: positions,
-        sideRoads: FakeSideRoads());
+      ble: ble,
+      directions: _ChangingRoutes(responses),
+      location: positions,
+      sideRoads: FakeSideRoads(),
+    );
   }
 
   setUp(() {
@@ -62,93 +66,105 @@ void main() {
     await positions.close();
   });
 
-  test('preview defaults to the faster alternate without sending BLE',
-      () async {
-    final nav = create([
-      [slow, fast]
-    ]);
-    await nav.previewDestination(p2);
-    expect(nav.selectedRouteIndex, 1);
-    expect(nav.selectedRoute?.name, 'Fast');
-    expect(ble.sent, isEmpty);
-  });
+  test(
+    'preview defaults to the faster alternate without sending BLE',
+    () async {
+      final nav = create([
+        [slow, fast],
+      ]);
+      await nav.previewDestination(p2);
+      expect(nav.selectedRouteIndex, 1);
+      expect(nav.selectedRoute?.name, 'Fast');
+      expect(ble.sent, isEmpty);
+    },
+  );
 
-  test('starting without a preview uses the fastest route in BLE guidance',
-      () async {
-    final nav = create([
-      [slow, fast]
-    ]);
-    await nav.startNavigation(p2);
-    expect(nav.selectedRoute?.name, 'Fast');
-    positions.emit(p0);
-    await pumpEventQueue();
-    expect(ble.sent.last.direction, DeviceDirection.right);
-  });
+  test(
+    'starting without a preview uses the fastest route in BLE guidance',
+    () async {
+      final nav = create([
+        [slow, fast],
+      ]);
+      await nav.startNavigation(p2);
+      expect(nav.selectedRoute?.name, 'Fast');
+      positions.emit(p0);
+      await pumpEventQueue();
+      expect(ble.sent.last.direction, DeviceDirection.right);
+    },
+  );
 
-  test('Start re-evaluates the automatic preview choice using fresh ETAs',
-      () async {
-    final newFast = slow.copyWith(expectedTravelTimeSeconds: 300);
-    final nav = create([
-      [slow, fast],
-      [newFast, fast]
-    ]);
-    await nav.previewDestination(p2);
-    expect(nav.selectedRouteIndex, 1);
-    await nav.startNavigation(p2);
-    expect(nav.selectedRouteIndex, 0);
-    expect(nav.selectedRoute?.expectedTravelTimeSeconds, 300);
-    positions.emit(p0);
-    await pumpEventQueue();
-    expect(ble.sent.last.direction, DeviceDirection.left);
-  });
+  test(
+    'Start re-evaluates the automatic preview choice using fresh ETAs',
+    () async {
+      final newFast = slow.copyWith(expectedTravelTimeSeconds: 300);
+      final nav = create([
+        [slow, fast],
+        [newFast, fast],
+      ]);
+      await nav.previewDestination(p2);
+      expect(nav.selectedRouteIndex, 1);
+      await nav.startNavigation(p2);
+      expect(nav.selectedRouteIndex, 0);
+      expect(nav.selectedRoute?.expectedTravelTimeSeconds, 300);
+      positions.emit(p0);
+      await pumpEventQueue();
+      expect(ble.sent.last.direction, DeviceDirection.left);
+    },
+  );
 
-  test('automatic preview index is not reused when provider order changes',
-      () async {
-    final nav = create([
-      [slow, fast],
-      [fast, slow]
-    ]);
-    await nav.previewDestination(p2);
-    expect(nav.selectedRouteIndex, 1);
-    await nav.startNavigation(p2);
-    expect(nav.selectedRouteIndex, 0);
-    expect(nav.selectedRoute?.name, 'Fast');
-  });
+  test(
+    'automatic preview index is not reused when provider order changes',
+    () async {
+      final nav = create([
+        [slow, fast],
+        [fast, slow],
+      ]);
+      await nav.previewDestination(p2);
+      expect(nav.selectedRouteIndex, 1);
+      await nav.startNavigation(p2);
+      expect(nav.selectedRouteIndex, 0);
+      expect(nav.selectedRoute?.name, 'Fast');
+    },
+  );
 
-  test('an explicit longer route choice is not silently replaced by fastest',
-      () async {
-    final nav = create([
-      [slow, fast]
-    ]);
-    await nav.previewDestination(p2);
-    await nav.selectRoute(0);
-    expect(ble.sent, isEmpty);
-    await nav.startNavigation(p2);
-    expect(nav.selectedRoute?.name, 'Detour');
-    positions.emit(p0);
-    await pumpEventQueue();
-    expect(ble.sent.last.direction, DeviceDirection.left);
-  });
+  test(
+    'an explicit longer route choice is not silently replaced by fastest',
+    () async {
+      final nav = create([
+        [slow, fast],
+      ]);
+      await nav.previewDestination(p2);
+      await nav.selectRoute(0);
+      expect(ble.sent, isEmpty);
+      await nav.startNavigation(p2);
+      expect(nav.selectedRoute?.name, 'Detour');
+      positions.emit(p0);
+      await pumpEventQueue();
+      expect(ble.sent.last.direction, DeviceDirection.left);
+    },
+  );
 
-  test('tapping the already selected route also records explicit intent',
-      () async {
-    final newFast = slow.copyWith(expectedTravelTimeSeconds: 300);
-    final nav = create([
-      [slow, fast],
-      [newFast, fast]
-    ]);
-    await nav.previewDestination(p2);
-    await nav.selectRoute(1);
-    await nav.startNavigation(p2);
-    expect(nav.selectedRouteIndex, 1);
-    expect(nav.selectedRoute?.name, 'Fast');
-  });
+  test(
+    'tapping the already selected route also records explicit intent',
+    () async {
+      final newFast = slow.copyWith(expectedTravelTimeSeconds: 300);
+      final nav = create([
+        [slow, fast],
+        [newFast, fast],
+      ]);
+      await nav.previewDestination(p2);
+      await nav.selectRoute(1);
+      await nav.startNavigation(p2);
+      expect(nav.selectedRouteIndex, 1);
+      expect(nav.selectedRoute?.name, 'Fast');
+    },
+  );
 
   test('a new preview clears the previous manual route choice', () async {
     final nav = create([
       [slow, fast],
       [slow, fast],
-      [slow, fast]
+      [slow, fast],
     ]);
     await nav.previewDestination(p2);
     await nav.selectRoute(0);
@@ -160,7 +176,7 @@ void main() {
 
   test('stopping clears explicit selection before the next trip', () async {
     final nav = create([
-      [slow, fast]
+      [slow, fast],
     ]);
     await nav.previewDestination(p2);
     await nav.selectRoute(0);

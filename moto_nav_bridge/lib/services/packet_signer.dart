@@ -14,8 +14,8 @@ import 'package:crypto/crypto.dart';
 /// Must match the firmware's PACKET AUTH block byte for byte.
 class PacketSigner {
   PacketSigner({required Uint8List key, required Uint8List sessionNonce})
-      : _hmac = Hmac(sha256, key),
-        _nonce = sessionNonce {
+    : _hmac = Hmac(sha256, key),
+      _nonce = sessionNonce {
     if (key.length != keyBytes || sessionNonce.length != nonceBytes) {
       throw ArgumentError('Invalid display key or session nonce');
     }

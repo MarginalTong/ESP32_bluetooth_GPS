@@ -18,7 +18,7 @@ enum BleConnectionState {
   connecting,
   awaitingBoot,
   connected,
-  disconnected
+  disconnected,
 }
 
 /// Owns the BLE link to the NAVIO display: scan -> connect -> discover
@@ -28,8 +28,8 @@ enum BleConnectionState {
 /// physical BOOT press before the first binding is saved on this phone.
 class BleService extends ChangeNotifier implements NavigationBlePort {
   BleService({SendThrottle? throttle, DisplayBindingStore? bindingStore})
-      : _throttle = throttle ?? SendThrottle(),
-        _bindingStore = bindingStore ?? DisplayBindingStore() {
+    : _throttle = throttle ?? SendThrottle(),
+      _bindingStore = bindingStore ?? DisplayBindingStore() {
     _adapterSub = FlutterBluePlus.adapterState.listen((s) {
       // CoreBluetooth reports `unknown` briefly while iOS is restoring its
       // state. Treating that transitional value as Bluetooth-off tears down a
@@ -42,8 +42,10 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
             _state == BleConnectionState.connecting ||
             _state == BleConnectionState.awaitingBoot ||
             _state == BleConnectionState.connected) {
-          _setState(BleConnectionState.disconnected,
-              error: 'Bluetooth is ${s.name}. Turn it on and reconnect.');
+          _setState(
+            BleConnectionState.disconnected,
+            error: 'Bluetooth is ${s.name}. Turn it on and reconnect.',
+          );
         }
       }
     });
@@ -196,8 +198,10 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     try {
       await _loadBinding();
     } catch (_) {
-      _setState(BleConnectionState.disconnected,
-          error: 'Cannot read saved display binding');
+      _setState(
+        BleConnectionState.disconnected,
+        error: 'Cannot read saved display binding',
+      );
       return; // Never silently treat a broken binding as an unbound phone.
     } finally {
       _loadingBinding = false;
@@ -224,9 +228,10 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
 
     final adapterState = await FlutterBluePlus.adapterState.first;
     if (adapterState != BluetoothAdapterState.on) {
-      _setState(BleConnectionState.idle,
-          error:
-              'Bluetooth is ${adapterState.name}. Turn it on and reconnect.');
+      _setState(
+        BleConnectionState.idle,
+        error: 'Bluetooth is ${adapterState.name}. Turn it on and reconnect.',
+      );
       return;
     }
 
@@ -263,23 +268,26 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     Timer? candidateWindow;
 
     await _scanSub?.cancel();
-    _scanSub = FlutterBluePlus.onScanResults.listen((results) {
-      for (final r in results) {
-        if (_matchesDevice(r)) {
-          if (_boundRemote == null) {
-            candidates[r.device.remoteId.str] = r;
-            candidateWindow ??= Timer(const Duration(milliseconds: 1100), () {
-              if (!completer.isCompleted) completer.complete(null);
-            });
-          } else if (r.device.remoteId.str == _boundRemote) {
-            if (!completer.isCompleted) completer.complete(r.device);
-            return;
+    _scanSub = FlutterBluePlus.onScanResults.listen(
+      (results) {
+        for (final r in results) {
+          if (_matchesDevice(r)) {
+            if (_boundRemote == null) {
+              candidates[r.device.remoteId.str] = r;
+              candidateWindow ??= Timer(const Duration(milliseconds: 1100), () {
+                if (!completer.isCompleted) completer.complete(null);
+              });
+            } else if (r.device.remoteId.str == _boundRemote) {
+              if (!completer.isCompleted) completer.complete(r.device);
+              return;
+            }
           }
         }
-      }
-    }, onError: (Object e) {
-      if (!completer.isCompleted) completer.completeError(e);
-    });
+      },
+      onError: (Object e) {
+        if (!completer.isCompleted) completer.completeError(e);
+      },
+    );
 
     try {
       // Match in `_matchesDevice` instead of filtering here. On iOS a service
@@ -314,12 +322,14 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     }
 
     if (found == null) {
-      _setState(BleConnectionState.idle,
-          error: _legacyBindingDropped
-              ? 'Display security was updated. Connect and press BOOT to pair again.'
-              : _boundRemote == null
-                  ? 'No display selected. Tap to scan again.'
-                  : 'Bound display is offline. Other displays will not be connected.');
+      _setState(
+        BleConnectionState.idle,
+        error: _legacyBindingDropped
+            ? 'Display security was updated. Connect and press BOOT to pair again.'
+            : _boundRemote == null
+            ? 'No display selected. Tap to scan again.'
+            : 'Bound display is offline. Other displays will not be connected.',
+      );
       return;
     }
 
@@ -328,8 +338,9 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
 
   Future<BluetoothDevice?> _findSystemDevice() async {
     try {
-      final devices =
-          await FlutterBluePlus.systemDevices([Guid(BleConstants.serviceUuid)]);
+      final devices = await FlutterBluePlus.systemDevices([
+        Guid(BleConstants.serviceUuid),
+      ]);
       for (final device in devices) {
         if (device.remoteId.str == _boundRemote) return device;
       }
@@ -393,7 +404,9 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         // small for a signed packet; ask for a large one. iOS negotiates its
         // own MTU and ignores this.
         await device.connect(
-            timeout: const Duration(seconds: 10), mtu: BleConstants.requestMtu);
+          timeout: const Duration(seconds: 10),
+          mtu: BleConstants.requestMtu,
+        );
       }
       final services = await device.discoverServices();
       final service = services.firstWhere(
@@ -417,7 +430,9 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       final boot = first['boot'];
       final up = first['up'];
       if (boot is String && up is int) {
-        _log('device boot=${boot.replaceAll(RegExp(r'[^a-z_]'), '')} up=${up}s');
+        _log(
+          'device boot=${boot.replaceAll(RegExp(r'[^a-z_]'), '')} up=${up}s',
+        );
       }
       // New every connection; without it this is pre-signing firmware.
       final nonce = PacketSigner.parseHex(first['s'], PacketSigner.nonceBytes);
@@ -429,8 +444,11 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       }
       Uint8List? key;
       if (_boundRemote != null) {
-        if (!DisplayBinding(_boundRemote!, _boundIdentity!, _boundKey!)
-            .matches(device.remoteId.str, identity)) {
+        if (!DisplayBinding(
+          _boundRemote!,
+          _boundIdentity!,
+          _boundKey!,
+        ).matches(device.remoteId.str, identity)) {
           throw Exception('Display identity mismatch');
         }
         key = _boundKey;
@@ -531,10 +549,12 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     _reconnectTimer = Timer(Duration(seconds: seconds), () {
       _reconnectTimer = null;
       if (_disposed || !_maintainConnection) return;
-      unawaited(connect(
-        timeout: const Duration(seconds: 8),
-        resetReconnectAttempts: false,
-      ));
+      unawaited(
+        connect(
+          timeout: const Duration(seconds: 8),
+          resetReconnectAttempts: false,
+        ),
+      );
     });
   }
 
@@ -610,7 +630,8 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
 
       final bytes = utf8.encode(wire);
       final mtu = _device?.mtuNow ?? 0;
-      final timing = 'bytes=${bytes.length} mtu=$mtu '
+      final timing =
+          'bytes=${bytes.length} mtu=$mtu '
           'long=${mtu > 0 && bytes.length > mtu - 3}';
       final elapsed = Stopwatch()..start();
       try {
@@ -627,8 +648,10 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         _writeFailureFade?.cancel();
         notifyListeners();
       } catch (e) {
-        _log('write failed $timing ms=${elapsed.elapsedMilliseconds} '
-            'type=${e.runtimeType}');
+        _log(
+          'write failed $timing ms=${elapsed.elapsedMilliseconds} '
+          'type=${e.runtimeType}',
+        );
         // Preserve the newest unsent instruction for the reconnect flush.
         _pendingState ??= state;
         _pendingStateAt ??= now;
