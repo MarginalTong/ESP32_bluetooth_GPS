@@ -72,8 +72,8 @@ class _HomePageState extends State<HomePage> {
       _voiceEnabled = voice;
       _mapStyle =
           {'standard', 'standard_dark', 'hybrid', 'satellite'}.contains(saved)
-              ? saved!
-              : 'standard';
+          ? saved!
+          : 'standard';
     });
     widget.onMapStyleChanged?.call(_mapStyle);
   }
@@ -137,7 +137,9 @@ class _HomePageState extends State<HomePage> {
   Future<void> _silence() async {
     try {
       await NavigationVoice.stop();
-    } catch (_) {/* Optional native audio. */}
+    } catch (_) {
+      /* Optional native audio. */
+    }
   }
 
   void _announce() {
@@ -155,33 +157,35 @@ class _HomePageState extends State<HomePage> {
     }
     final fix = nav.voiceFix;
     final utterance = _guidance.next(
-        GuidanceInput(
-          route: route,
-          steps: route.steps,
-          stepIndex: nav.voiceStepIndex,
-          state: state,
-          now: DateTime.now(),
-          reliable: nav.voiceGuidanceReliable,
-          speedMps: fix?.speed,
-          accuracyMeters: fix?.accuracy,
-          rerouteFailed: nav.rerouteFailed,
-          speaking: _navigationSpeechSpeaking,
-        ),
-        english: AppText.of(context).isEnglish);
+      GuidanceInput(
+        route: route,
+        steps: route.steps,
+        stepIndex: nav.voiceStepIndex,
+        state: state,
+        now: DateTime.now(),
+        reliable: nav.voiceGuidanceReliable,
+        speedMps: fix?.speed,
+        accuracyMeters: fix?.accuracy,
+        rerouteFailed: nav.rerouteFailed,
+        speaking: _navigationSpeechSpeaking,
+      ),
+      english: AppText.of(context).isEnglish,
+    );
     if (utterance != null) _speak(utterance.text);
   }
 
   Future<void> _speak(String message) async {
     try {
-      await NavigationVoice.speak(message,
-          english: AppText.of(context).isEnglish);
+      await NavigationVoice.speak(
+        message,
+        english: AppText.of(context).isEnglish,
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => _voiceEnabled = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(AppText.of(context).isEnglish
-              ? 'Voice is unavailable on this device.'
-              : '此设备暂不支持语音播报。')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppText.of(context).voiceUnavailableOnDevice)),
+      );
     }
   }
 
@@ -202,8 +206,8 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _endNavigation({required bool disconnectDevice}) async {
     await context.read<NavigationController>().endNavigation(
-          disconnectDevice: disconnectDevice,
-        );
+      disconnectDevice: disconnectDevice,
+    );
     if (mounted) setState(() => _destination = null);
   }
 
@@ -246,8 +250,11 @@ class _HomePageState extends State<HomePage> {
     final nav = context.read<NavigationController>();
     if (destination == null || !nav.canEditPreferences) return;
     final stops = await Navigator.of(context).push<List<PlaceResult>>(
-        MaterialPageRoute(builder: (_) => WaypointEditorPage(
-            destination: destination, stops: nav.waypoints)));
+      MaterialPageRoute(
+        builder: (_) =>
+            WaypointEditorPage(destination: destination, stops: nav.waypoints),
+      ),
+    );
     if (!mounted || stops == null || !nav.canEditPreferences) return;
     await nav.previewDestination(destination.location, waypoints: stops);
   }
@@ -257,154 +264,188 @@ class _HomePageState extends State<HomePage> {
     final nav = context.watch<NavigationController>();
     final riders = context.watch<RiderMapController?>();
     final ble = context.watch<BleService>();
-    final navigating = nav.phase == NavPhase.navigating ||
+    final navigating =
+        nav.phase == NavPhase.navigating ||
         nav.phase == NavPhase.routing ||
         nav.phase == NavPhase.paused;
-    final showInstruction = nav.phase == NavPhase.navigating ||
+    final showInstruction =
+        nav.phase == NavPhase.navigating ||
         nav.phase == NavPhase.paused ||
         nav.phase == NavPhase.arrived;
     return Scaffold(
-      body: LayoutBuilder(builder: (context, constraints) {
-        final landscape = constraints.maxWidth > constraints.maxHeight;
-        final darkMapControls = _mapStyle != 'standard';
-        final safe = MediaQuery.paddingOf(context);
-        final panelWidth = landscape ? 320.0 : constraints.maxWidth - 32;
-        // Reserve space for native map attribution and route framing.
-        final mapInsets = EdgeInsets.fromLTRB(
-          landscape ? panelWidth + 32 : 16,
-          safe.top + (landscape ? 8 : 96),
-          16,
-          safe.bottom + (landscape ? 40 : 230),
-        );
-        return Theme(
-          data: darkMapControls ? NavioTheme.dark() : NavioTheme.light(),
-          child: Builder(builder: (context) => Stack(
-          children: [
-            Positioned.fill(
-              child: NavigationMap(
-                height: constraints.maxHeight,
-                borderRadius: 0,
-                contentPadding: mapInsets,
-                origin: nav.origin,
-                destination: nav.destination ?? _destination?.location,
-                destinationName: _destination?.name,
-                routes: nav.routeOptions,
-                selectedRouteIndex: nav.selectedRouteIndex,
-                mapStyle: _mapStyle,
-                riders: riders?.viewing == true ? riders!.riders : const [],
-                onRouteSelected: nav.selectRoute,
-                onDiagnostic: nav.recordMapDiagnostic,
-                onMapPointSelected: navigating ? null : _selectMapDestination,
-              ),
-            ),
-            Positioned(
-              top: safe.top + 12,
-              left: 16,
-              width: panelWidth,
-              child: const ConnectionCard(),
-            ),
-            Positioned(
-              top: safe.top + 92,
-              right: 16,
-              child: Material(
-                key: const ValueKey('map-settings-button-background'),
-                color: darkMapControls
-                    ? const Color(0xff121820)
-                    : Theme.of(context)
-                        .colorScheme
-                        .surface
-                        .withValues(alpha: 0.88),
-                shape: const CircleBorder(),
-                elevation: 1,
-                child: IconButton(
-                  onPressed: _openMapSettings,
-                  tooltip:
-                      AppText.of(context).isEnglish ? 'Map settings' : '地图设置',
-                  icon: Icon(Icons.settings_outlined,
-                      size: 19, color: darkMapControls ? Colors.white : null),
-                  constraints:
-                      const BoxConstraints(minWidth: 44, minHeight: 44),
-                ),
-              ),
-            ),
-            Positioned(top: safe.top + 148, right: 16,
-                child: RiderMapButton(dark: _mapStyle != 'standard')),
-            Positioned(
-              top: safe.top + 204,
-              right: 16,
-              child: Material(
-                color: darkMapControls ? const Color(0xff121820) : const Color(0xf5ffffff),
-                shape: const CircleBorder(),
-                elevation: 1,
-                child: IconButton(
-                  tooltip: AppText.of(context).isEnglish
-                      ? (_voiceEnabled ? 'Turn off guidance voice' : 'Turn on guidance voice')
-                      : (_voiceEnabled ? '关闭导航播报' : '开启导航播报'),
-                  icon: Icon(_voiceEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
-                      size: 20, color: darkMapControls ? Colors.white : const Color(0xff3a3a3c)),
-                  onPressed: _toggleGuidance,
-                ),
-              ),
-            ),
-            Positioned(
-              left: 16,
-              bottom: safe.bottom + 24,
-              width: panelWidth,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: (constraints.maxHeight - safe.vertical - 128)
-                      .clamp(80, 600),
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (navigating && nav.waypoints.isNotEmpty) ...[
-                        GlassPanel(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          child: Text(nav.completedWaypoints < nav.waypoints.length
-                              ? '${AppText.of(context).isEnglish ? "Next stop" : "下一途经点"}: ${nav.waypoints[nav.completedWaypoints].name} (${nav.completedWaypoints + 1}/${nav.waypoints.length})'
-                              : (AppText.of(context).isEnglish ? 'All stops visited · continuing to destination' : '途经点已全部经过 · 继续前往终点'),
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                      if (showInstruction) ...[
-                        const InstructionCard(),
-                        const SizedBox(height: 10),
-                      ],
-                      if (!navigating)
-                        _DestinationPanel(
-                          destination: _destination,
-                          selectedRoute: nav.selectedRoute,
-                          previewingRoute: nav.previewingRoute,
-                          canStart: ble.state == BleConnectionState.connected,
-                          waypointCount: nav.waypoints.length,
-                          onEditWaypoints: _editWaypoints,
-                          onChoose: _chooseDestination,
-                          onStart: _start,
-                        )
-                      else
-                        GlassPanel(
-                          padding: const EdgeInsets.all(12),
-                          child: _NavigationControls(
-                            phase: nav.phase,
-                            error: nav.error,
-                            onEnd: () =>
-                                _endNavigation(disconnectDevice: false),
-                            onEndAndDisconnect: () =>
-                                _endNavigation(disconnectDevice: true),
-                          ),
-                        ),
-                    ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final landscape = constraints.maxWidth > constraints.maxHeight;
+          final darkMapControls = _mapStyle != 'standard';
+          final safe = MediaQuery.paddingOf(context);
+          final panelWidth = landscape ? 320.0 : constraints.maxWidth - 32;
+          // Reserve space for native map attribution and route framing.
+          final mapInsets = EdgeInsets.fromLTRB(
+            landscape ? panelWidth + 32 : 16,
+            safe.top + (landscape ? 8 : 96),
+            16,
+            safe.bottom + (landscape ? 40 : 230),
+          );
+          return Theme(
+            data: darkMapControls ? NavioTheme.dark() : NavioTheme.light(),
+            child: Builder(
+              builder: (context) => Stack(
+                children: [
+                  Positioned.fill(
+                    child: NavigationMap(
+                      height: constraints.maxHeight,
+                      borderRadius: 0,
+                      contentPadding: mapInsets,
+                      origin: nav.origin,
+                      destination: nav.destination ?? _destination?.location,
+                      destinationName: _destination?.name,
+                      routes: nav.routeOptions,
+                      selectedRouteIndex: nav.selectedRouteIndex,
+                      mapStyle: _mapStyle,
+                      riders: riders?.viewing == true
+                          ? riders!.riders
+                          : const [],
+                      onRouteSelected: nav.selectRoute,
+                      onDiagnostic: nav.recordMapDiagnostic,
+                      onMapPointSelected: navigating
+                          ? null
+                          : _selectMapDestination,
+                    ),
                   ),
-                ),
+                  Positioned(
+                    top: safe.top + 12,
+                    left: 16,
+                    width: panelWidth,
+                    child: const ConnectionCard(),
+                  ),
+                  Positioned(
+                    top: safe.top + 92,
+                    right: 16,
+                    child: Material(
+                      key: const ValueKey('map-settings-button-background'),
+                      color: darkMapControls
+                          ? const Color(0xff121820)
+                          : Theme.of(
+                              context,
+                            ).colorScheme.surface.withValues(alpha: 0.88),
+                      shape: const CircleBorder(),
+                      elevation: 1,
+                      child: IconButton(
+                        onPressed: _openMapSettings,
+                        tooltip: AppText.of(context).mapSettings,
+                        icon: Icon(
+                          Icons.settings_outlined,
+                          size: 19,
+                          color: darkMapControls ? Colors.white : null,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 44,
+                          minHeight: 44,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: safe.top + 148,
+                    right: 16,
+                    child: RiderMapButton(dark: _mapStyle != 'standard'),
+                  ),
+                  Positioned(
+                    top: safe.top + 204,
+                    right: 16,
+                    child: Material(
+                      color: darkMapControls
+                          ? const Color(0xff121820)
+                          : const Color(0xf5ffffff),
+                      shape: const CircleBorder(),
+                      elevation: 1,
+                      child: IconButton(
+                        tooltip: AppText.of(
+                          context,
+                        ).guidanceVoiceToggle(_voiceEnabled),
+                        icon: Icon(
+                          _voiceEnabled
+                              ? Icons.volume_up_rounded
+                              : Icons.volume_off_rounded,
+                          size: 20,
+                          color: darkMapControls
+                              ? Colors.white
+                              : const Color(0xff3a3a3c),
+                        ),
+                        onPressed: _toggleGuidance,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 16,
+                    bottom: safe.bottom + 24,
+                    width: panelWidth,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: (constraints.maxHeight - safe.vertical - 128)
+                            .clamp(80, 600),
+                      ),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (navigating && nav.waypoints.isNotEmpty) ...[
+                              GlassPanel(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
+                                ),
+                                child: Text(
+                                  nav.completedWaypoints < nav.waypoints.length
+                                      ? '${AppText.of(context).nextStop}: ${nav.waypoints[nav.completedWaypoints].name} (${nav.completedWaypoints + 1}/${nav.waypoints.length})'
+                                      : (AppText.of(
+                                          context,
+                                        ).allStopsVisitedContinuing),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            if (showInstruction) ...[
+                              const InstructionCard(),
+                              const SizedBox(height: 10),
+                            ],
+                            if (!navigating)
+                              _DestinationPanel(
+                                destination: _destination,
+                                selectedRoute: nav.selectedRoute,
+                                previewingRoute: nav.previewingRoute,
+                                canStart:
+                                    ble.state == BleConnectionState.connected,
+                                waypointCount: nav.waypoints.length,
+                                onEditWaypoints: _editWaypoints,
+                                onChoose: _chooseDestination,
+                                onStart: _start,
+                              )
+                            else
+                              GlassPanel(
+                                padding: const EdgeInsets.all(12),
+                                child: _NavigationControls(
+                                  phase: nav.phase,
+                                  error: nav.error,
+                                  onEnd: () =>
+                                      _endNavigation(disconnectDevice: false),
+                                  onEndAndDisconnect: () =>
+                                      _endNavigation(disconnectDevice: true),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        )),
-        );
-      }),
+          );
+        },
+      ),
     );
   }
 }
@@ -442,11 +483,14 @@ class _DestinationPanel extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
               onPressed: () => Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                      builder: (_) => RoutePreferencesPage(
-                          nav: context.read<NavigationController>()))),
+                MaterialPageRoute<void>(
+                  builder: (_) => RoutePreferencesPage(
+                    nav: context.read<NavigationController>(),
+                  ),
+                ),
+              ),
               icon: const Icon(Icons.tune_rounded, size: 18),
-              label: Text(text.isEnglish ? 'Route preferences' : '路线偏好'),
+              label: Text(text.routePreferences),
             ),
           ),
           if (selectedRoute?.expectedTravelTimeSeconds != null ||
@@ -464,22 +508,28 @@ class _DestinationPanel extends StatelessWidget {
             child: SizedBox(
               width: double.infinity,
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     const Icon(Icons.search_rounded),
                     const SizedBox(width: 12),
                     Expanded(
                       child: destination == null
-                          ? Text(text.searchPlaceAddressBusiness,
-                              style: Theme.of(context).textTheme.titleMedium)
+                          ? Text(
+                              text.searchPlaceAddressBusiness,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            )
                           : Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   destination!.name,
-                                  style: Theme.of(context).textTheme.titleMedium,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
@@ -498,35 +548,41 @@ class _DestinationPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          if (destination != null) TextButton.icon(
-            onPressed: previewingRoute ? null : onEditWaypoints,
-            icon: const Icon(Icons.add_location_alt_outlined, size: 18),
-            label: Text(text.isEnglish
-                ? (waypointCount == 0 ? 'Add stops' : 'Edit stops ($waypointCount)')
-                : (waypointCount == 0 ? '添加途经点' : '编辑途经点（$waypointCount）')),
-          ),
+          if (destination != null)
+            TextButton.icon(
+              onPressed: previewingRoute ? null : onEditWaypoints,
+              icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+              label: Text(text.editStops(waypointCount)),
+            ),
           if (destination == null)
             Padding(
               padding: const EdgeInsets.fromLTRB(4, 2, 4, 4),
-              child: Text(!canStart ? text.connectNavScreenFirst : text.chooseDestinationFirst,
-                  style: Theme.of(context).textTheme.bodySmall),
-            )
-          else SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: FilledButton.icon(
-              onPressed: canStart && destination != null && !previewingRoute ? onStart : null,
-              icon: const Icon(Icons.navigation_rounded),
-              label: Text(
+              child: Text(
                 !canStart
                     ? text.connectNavScreenFirst
-                    : destination == null
-                        ? text.chooseDestinationFirst
-                        : text.startNavigation,
-                textAlign: TextAlign.center,
+                    : text.chooseDestinationFirst,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: canStart && destination != null && !previewingRoute
+                    ? onStart
+                    : null,
+                icon: const Icon(Icons.navigation_rounded),
+                label: Text(
+                  !canStart
+                      ? text.connectNavScreenFirst
+                      : destination == null
+                      ? text.chooseDestinationFirst
+                      : text.startNavigation,
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -534,10 +590,7 @@ class _DestinationPanel extends StatelessWidget {
 }
 
 class _RouteEta extends StatelessWidget {
-  const _RouteEta({
-    required this.seconds,
-    required this.loading,
-  });
+  const _RouteEta({required this.seconds, required this.loading});
 
   final int? seconds;
   final bool loading;
@@ -579,9 +632,9 @@ class _RouteEta extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       textAlign: TextAlign.right,
       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-            fontWeight: FontWeight.w700,
-          ),
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.w700,
+      ),
     );
   }
 }

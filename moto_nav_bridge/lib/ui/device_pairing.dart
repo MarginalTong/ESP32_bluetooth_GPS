@@ -85,9 +85,7 @@ class _PairingSheetState extends State<_PairingSheet>
         setState(
           () => _error =
               widget.ble.lastError ??
-              (AppText.of(context).isEnglish
-                  ? 'Could not connect. Please try again.'
-                  : '连接失败，请重试。'),
+              (AppText.of(context).couldNotConnectPlease),
         );
       }
     } catch (_) {
@@ -141,26 +139,19 @@ class _PairingSheetState extends State<_PairingSheet>
               : replug
               ? text.pairingWindowClosedTitle
               : _error != null
-              ? (text.isEnglish ? 'Connection interrupted' : '连接未完成')
+              ? (text.connectionInterrupted)
               : widget.ble.state == BleConnectionState.scanning
               ? text.searchingDevice
               : text.connecting;
           final subtitle = _success
-              ? (text.isEnglish
-                    ? 'This display is now saved on your phone.'
-                    : '这块屏幕已保存到你的手机。')
+              ? (text.displayNowSavedOn)
               : waiting
               ? (byPower ? text.pairingInProgressHint : text.bootHint)
               : replug
               ? text.replugToPair
               : choosing
-              ? (text.isEnglish
-                    ? 'Choose the screen in front of you.'
-                    : '请选择你面前的那块屏幕。')
-              : _error ??
-                    (text.isEnglish
-                        ? 'Bring your display near this iPhone.'
-                        : '请将导航屏靠近手机。');
+              ? (text.chooseScreenInFront)
+              : _error ?? (text.bringDisplayNearIphone);
           return Container(
             margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
             padding: const EdgeInsets.fromLTRB(24, 10, 24, 24),
@@ -309,7 +300,7 @@ class _PairingSheetState extends State<_PairingSheet>
                       width: double.infinity,
                       child: CupertinoButton.filled(
                         onPressed: _connect,
-                        child: Text(text.isEnglish ? 'Try again' : '重试'),
+                        child: Text(text.tryAgain),
                       ),
                     )
                   else if (!_success)

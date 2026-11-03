@@ -8,28 +8,29 @@ import '../navio_theme.dart';
 class LanguageSection extends StatelessWidget {
   const LanguageSection({super.key});
 
-  String _name(AppLanguage language, bool en) => switch (language) {
-    AppLanguage.system => en ? 'Follow system' : '跟随系统',
+  String _name(AppLanguage language, AppText text) => switch (language) {
+    AppLanguage.system => text.followSystem,
     AppLanguage.en => 'English',
+    // Each language is named in itself, whatever the current UI language.
     AppLanguage.zh => '简体中文',
   };
 
-  Future<void> _choose(BuildContext context, bool en) async {
+  Future<void> _choose(BuildContext context, AppText text) async {
     final choice = await showCupertinoModalPopup<AppLanguage>(
       context: context,
       builder: (sheet) => CupertinoActionSheet(
-        title: Text(en ? 'Language' : '语言'),
+        title: Text(text.languageLabel),
         actions: [
           for (final language in AppLanguage.values)
             CupertinoActionSheetAction(
               isDefaultAction: language == AppText.selected.value,
               onPressed: () => Navigator.pop(sheet, language),
-              child: Text(_name(language, en)),
+              child: Text(_name(language, text)),
             ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(sheet),
-          child: Text(en ? 'Cancel' : '取消'),
+          child: Text(text.cancelAction),
         ),
       ),
     );
@@ -43,7 +44,7 @@ class LanguageSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final en = AppText.of(context).isEnglish;
+    final text = AppText.of(context);
     return CupertinoListSection.insetGrouped(
       margin: const EdgeInsets.only(top: 24),
       children: [
@@ -58,7 +59,7 @@ class LanguageSection extends StatelessWidget {
             children: [
               Flexible(
                 child: Text(
-                  en ? 'Language' : '语言',
+                  text.languageLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 16),
@@ -67,7 +68,7 @@ class LanguageSection extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  _name(AppText.selected.value, en),
+                  _name(AppText.selected.value, text),
                   textAlign: TextAlign.end,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -80,7 +81,7 @@ class LanguageSection extends StatelessWidget {
             ],
           ),
           trailing: const CupertinoListTileChevron(),
-          onTap: () => _choose(context, en),
+          onTap: () => _choose(context, text),
         ),
       ],
     );

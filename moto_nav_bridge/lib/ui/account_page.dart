@@ -25,7 +25,7 @@ class _AccountPageState extends State<AccountPage> {
   bool recoverySent = false;
   bool showPasswords = false;
   String? notice;
-  String t(String en, String zh) => AppText.of(context).isEnglish ? en : zh;
+  AppText get _text => AppText.of(context);
   @override
   void dispose() {
     email.dispose();
@@ -38,18 +38,13 @@ class _AccountPageState extends State<AccountPage> {
   Future<void> _submit(AccountController account) async {
     FocusScope.of(context).unfocus();
     if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email.text.trim())) {
-      setState(() => notice = t('Enter a valid email.', '请输入有效邮箱。'));
+      setState(() => notice = _text.enterValidEmail);
       return;
     }
     if ((form == _AccountForm.register ||
             (form == _AccountForm.recovery && recoverySent)) &&
         (password.text.length < 6 || password.text != repeat.text)) {
-      setState(
-        () => notice = t(
-          'Use at least 6 characters and matching passwords.',
-          '密码至少 6 位，两次输入需一致。',
-        ),
-      );
+      setState(() => notice = _text.passwordRuleError);
       return;
     }
     bool ok;
@@ -80,14 +75,7 @@ class _AccountPageState extends State<AccountPage> {
     repeat.clear();
     code.clear();
     if (mounted) {
-      setState(
-        () => notice = ok
-            ? t(
-                'Request completed. Check your email if a code is required.',
-                '操作已完成，如需验证码请查收邮件。',
-              )
-            : null,
-      );
+      setState(() => notice = ok ? _text.requestCompletedCheckEmail : null);
     }
   }
 
@@ -120,14 +108,14 @@ class _AccountPageState extends State<AccountPage> {
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.pop(dialog, false),
-              child: Text(t('Cancel', '取消')),
+              child: Text(_text.cancelAction),
             ),
             CupertinoDialogAction(
               isDestructiveAction: deleting,
               onPressed: !deleting || confirmation.text == 'DELETE'
                   ? () => Navigator.pop(dialog, true)
                   : null,
-              child: Text(t('Confirm', '确认')),
+              child: Text(_text.confirmAction),
             ),
           ],
         ),
@@ -142,42 +130,15 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   String _error(String? value) => switch (value) {
-    'local_changed' => t(
-      'Local settings changed during sync. Nothing was replaced; try again.',
-      '同步期间本机资料被修改，未覆盖任何资料，请重试。',
-    ),
-    'conflict' => t(
-      'Cloud data changed on another device. Restore it before uploading.',
-      '另一台设备已更新云端资料，请先恢复云端资料，再上传。',
-    ),
-    'navigation_active' => t(
-      'Finish navigation before changing account data.',
-      '请先结束导航，再更改账号资料。',
-    ),
-    'local' => t(
-      'Local data could not be saved. Please try again.',
-      '本机资料保存失败，请重试。',
-    ),
-    'session' => t(
-      'Your session needs attention. Sign in again.',
-      '登录状态已失效，请重新登录。',
-    ),
-    'apple_grant_failed' => t(
-      'Apple authorization could not be saved. Try Apple sign-in again.',
-      'Apple 授权保存失败，请重新使用 Apple 登录。',
-    ),
-    'google_unconfigured' => t(
-      'Google sign-in is not configured for this build. Use email for now.',
-      '此版本尚未配置好 Google 登录，请暂时使用邮箱登录。',
-    ),
-    'google_failed' => t(
-      'Google sign-in did not complete. Check your connection and try again.',
-      'Google 登录未完成，请检查网络后重试。',
-    ),
-    _ => t(
-      'Request failed. Check your credentials, code and connection, then retry.',
-      '操作失败，请检查邮箱、密码、验证码或网络后重试。',
-    ),
+    'local_changed' => _text.localSettingsChangedDuring,
+    'conflict' => _text.cloudDataChangedOn,
+    'navigation_active' => _text.finishNavigationBeforeChanging,
+    'local' => _text.localDataCouldNot,
+    'session' => _text.sessionNeedsAttentionSign,
+    'apple_grant_failed' => _text.appleAuthorizationCouldNot,
+    'google_unconfigured' => _text.googleSignInNot,
+    'google_failed' => _text.googleSignInDid,
+    _ => _text.requestFailedCheckCredentials,
   };
   void _changeForm(_AccountForm value) {
     setState(() {
@@ -233,9 +194,7 @@ class _AccountPageState extends State<AccountPage> {
                   ? null
                   : () => setState(() => showPasswords = !showPasswords),
               child: Semantics(
-                label: showPasswords
-                    ? t('Hide password', '隐藏密码')
-                    : t('Show password', '显示密码'),
+                label: showPasswords ? _text.hidePassword : _text.showPassword,
                 child: Icon(
                   showPasswords ? CupertinoIcons.eye_slash : CupertinoIcons.eye,
                   size: 20,
@@ -263,34 +222,17 @@ class _AccountPageState extends State<AccountPage> {
     final recovering = form == _AccountForm.recovery;
     final newPassword = creating || (recovering && recoverySent);
     final title = switch (form) {
-      _AccountForm.login => t('Welcome back', '欢迎回来'),
-      _AccountForm.register => t('Create your account', '创建你的账号'),
-      _AccountForm.verify => t('Check your email', '查收验证邮件'),
-      _AccountForm.recovery => t('Reset your password', '重置密码'),
+      _AccountForm.login => _text.welcomeBack,
+      _AccountForm.register => _text.createAccountTitle,
+      _AccountForm.verify => _text.checkEmail,
+      _AccountForm.recovery => _text.resetPassword,
     };
     final subtitle = switch (form) {
-      _AccountForm.login => t(
-        'Your places and preferences, in one place.',
-        '登录后，管理你的常用地址与偏好。',
-      ),
-      _AccountForm.register => t(
-        'Save your favourites. Make NAVIO yours.',
-        '收藏常用地址，让 NAVIO 更懂你的出行。',
-      ),
-      _AccountForm.verify => t(
-        'Enter the verification code sent to your email.',
-        '输入邮件中的验证码，完成账号注册。',
-      ),
+      _AccountForm.login => _text.placesPreferencesInOne,
+      _AccountForm.register => _text.saveFavouritesMakeNavio,
+      _AccountForm.verify => _text.enterVerificationCodeSent,
       _AccountForm.recovery =>
-        recoverySent
-            ? t(
-                'Enter your email code and choose a new password.',
-                '输入邮件验证码，并设置新密码。',
-              )
-            : t(
-                'We’ll email you a code to reset your password.',
-                '我们将向你的邮箱发送密码重置验证码。',
-              ),
+        recoverySent ? _text.enterEmailCodeChoose : _text.resetCodeHint,
     };
     return Align(
       alignment: Alignment.topCenter,
@@ -359,30 +301,23 @@ class _AccountPageState extends State<AccountPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    field(email, t('Email', '邮箱')),
+                    field(email, _text.emailLabel),
                     if (verifying || (recovering && recoverySent))
-                      field(code, t('Code from email', '邮件验证码'), numeric: true),
+                      field(code, _text.emailCodeLabel, numeric: true),
                     if (!verifying && (!recovering || recoverySent))
                       field(
                         password,
                         recovering
-                            ? t('New password', '新密码')
-                            : t('Password', '密码'),
+                            ? _text.newPasswordLabel
+                            : _text.passwordLabel,
                         secret: true,
                       ),
                     if (newPassword) ...[
-                      field(
-                        repeat,
-                        t('Repeat password', '再次输入密码'),
-                        secret: true,
-                      ),
+                      field(repeat, _text.repeatPasswordLabel, secret: true),
                       Padding(
                         padding: const EdgeInsets.only(top: 4, bottom: 8),
                         child: Text(
-                          t(
-                            'At least 6 characters. A longer, unique password is safer.',
-                            '至少 6 位，建议使用更长且不重复的密码。',
-                          ),
+                          _text.atLeast6Characters,
                           style: TextStyle(
                             fontSize: 12,
                             height: 1.4,
@@ -402,7 +337,7 @@ class _AccountPageState extends State<AccountPage> {
                               ? () => _changeForm(_AccountForm.recovery)
                               : null,
                           child: Text(
-                            t('Forgot password?', '忘记密码？'),
+                            _text.forgotPassword,
                             style: const TextStyle(fontSize: 14),
                           ),
                         ),
@@ -434,19 +369,14 @@ class _AccountPageState extends State<AccountPage> {
                           ? const CupertinoActivityIndicator()
                           : Text(
                               switch (form) {
-                                _AccountForm.login => t('Sign in', '登录'),
-                                _AccountForm.register => t(
-                                  'Create account',
-                                  '创建账号',
-                                ),
-                                _AccountForm.verify => t(
-                                  'Verify email',
-                                  '验证邮箱',
-                                ),
+                                _AccountForm.login => _text.signInAction,
+                                _AccountForm.register =>
+                                  _text.createAccountAction,
+                                _AccountForm.verify => _text.verifyEmail,
                                 _AccountForm.recovery =>
                                   recoverySent
-                                      ? t('Set new password', '设置新密码')
-                                      : t('Send recovery code', '发送重置验证码'),
+                                      ? _text.setNewPassword
+                                      : _text.sendRecoveryCode,
                               },
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
@@ -460,7 +390,7 @@ class _AccountPageState extends State<AccountPage> {
                   (creating || form == _AccountForm.login)) ...[
                 const SizedBox(height: 22),
                 Text(
-                  t('or continue with', '或通过以下方式继续'),
+                  _text.orContinueWith,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
@@ -470,7 +400,7 @@ class _AccountPageState extends State<AccountPage> {
                 const SizedBox(height: 14),
                 if (account.googleAvailable) ...[
                   GoogleSignInButton(
-                    label: t('Continue with Google', '通过 Google 继续'),
+                    label: _text.continueGoogle,
                     onPressed: canAct
                         ? () async {
                             setState(() => notice = null);
@@ -501,7 +431,7 @@ class _AccountPageState extends State<AccountPage> {
                         const SizedBox(width: 8),
                         Flexible(
                           child: Text(
-                            t('Continue with Apple', '通过 Apple 继续'),
+                            _text.continueApple,
                             style: TextStyle(
                               color: CupertinoColors.systemBackground
                                   .resolveFrom(context),
@@ -519,9 +449,7 @@ class _AccountPageState extends State<AccountPage> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      creating
-                          ? t('Already have an account?', '已有账号？')
-                          : t('New to NAVIO?', '第一次使用 NAVIO？'),
+                      creating ? _text.alreadyHaveAccount : _text.newNavio,
                       style: TextStyle(
                         fontSize: 14,
                         color: CupertinoColors.secondaryLabel.resolveFrom(
@@ -538,7 +466,7 @@ class _AccountPageState extends State<AccountPage> {
                             )
                           : null,
                       child: Text(
-                        creating ? t('Sign in', '登录') : t('Register', '注册'),
+                        creating ? _text.signInAction : _text.registerAction,
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -552,14 +480,11 @@ class _AccountPageState extends State<AccountPage> {
                   onPressed: canAct
                       ? () => _changeForm(_AccountForm.login)
                       : null,
-                  child: Text(t('Back to sign in', '返回登录')),
+                  child: Text(_text.backSignIn),
                 ),
               const SizedBox(height: 8),
               Text(
-                t(
-                  'Guest navigation needs no account. When signed in, your saved places and preferences sync automatically; guest settings remain separate.',
-                  '游客导航无需账号。登录后常用地址与偏好自动同步，游客资料独立保留。',
-                ),
+                _text.guestNavigationNeedsNo,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 12,
@@ -583,33 +508,18 @@ class _AccountPageState extends State<AccountPage> {
     return NavioPage(
       navigationBar: CupertinoNavigationBar(
         transitionBetweenRoutes: false,
-        middle: Text(
-          loggedIn
-              ? t('Personal profile', '个人资料')
-              : t('NAVIO Account', 'NAVIO 账号'),
-        ),
+        middle: Text(loggedIn ? _text.personalProfile : _text.navioAccount),
       ),
       child: SafeArea(
         child: ListView(
           key: ValueKey('account:$loggedIn'),
           padding: const EdgeInsets.all(20),
           children: [
-            if (!account.available)
-              Text(
-                t(
-                  'Account service is not configured in this build. Maps and Bluetooth still work.',
-                  '此版本尚未配置账号服务，地图与蓝牙仍可正常使用。',
-                ),
-              ),
+            if (!account.available) Text(_text.accountServiceNotConfigured),
             if (!account.canModify)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
-                child: Text(
-                  t(
-                    'Switching accounts and cloud restore are paused during navigation.',
-                    '导航期间暂不切换账号或恢复云端资料。',
-                  ),
-                ),
+                child: Text(_text.switchingAccountsCloudRestore),
               ),
             if (account.busy && loggedIn)
               const Center(child: CupertinoActivityIndicator()),
@@ -645,36 +555,33 @@ class _AccountPageState extends State<AccountPage> {
               const LanguageSection(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
-                child: SectionLabel(t('ACCOUNT', '账号')),
+                child: SectionLabel(_text.accountHeader),
               ),
               CupertinoListSection.insetGrouped(
                 margin: EdgeInsets.zero,
                 children: [
                   _AccountAction(
                     icon: CupertinoIcons.square_arrow_right,
-                    title: t('Sign out', '退出登录'),
+                    title: _text.signOut,
                     onPressed: canAct ? account.signOut : null,
                   ),
                   if (account.user!.apple)
                     _AccountAction(
                       icon: CupertinoIcons.person_crop_circle_badge_checkmark,
-                      title: t('Reauthorize Apple', '重新验证 Apple 授权'),
+                      title: _text.reauthorizeApple,
                       onPressed: canAct && account.appleAvailable
                           ? account.signInApple
                           : null,
                     ),
                   _AccountAction(
                     icon: CupertinoIcons.trash,
-                    title: t('Delete account', '删除账号'),
+                    title: _text.deleteAccount,
                     destructive: true,
                     onPressed: canAct
                         ? () async {
                             if (await _confirm(
-                              t('Delete NAVIO account?', '删除 NAVIO 账号？'),
-                              t(
-                                'Permanently delete your account and its cloud addresses/preferences. Type DELETE. Guest data and Bluetooth pairing are separate.',
-                                '永久删除账号及其云端地址与偏好。输入 DELETE 确认。游客资料和蓝牙配对独立保留。',
-                              ),
+                              _text.deleteNavioAccount,
+                              _text.permanentlyDeleteAccountIts,
                               deleting: true,
                             )) {
                               await account.deleteAccount();

@@ -49,20 +49,23 @@ class _DevicesPageState extends State<DevicesPage> {
     final text = AppText.of(context);
     final ble = context.read<BleService>();
     final confirmed = await showCupertinoDialog<bool>(
-        context: context,
-        builder: (dialog) => CupertinoAlertDialog(
-              title: Text(replace ? text.replaceDevice : text.forgetDevice),
-              content: Text(replace ? text.replaceHint : text.forgetHint),
-              actions: [
-                CupertinoDialogAction(
-                    onPressed: () => Navigator.pop(dialog, false),
-                    child: Text(text.cancelAction)),
-                CupertinoDialogAction(
-                    isDestructiveAction: !replace,
-                    onPressed: () => Navigator.pop(dialog, true),
-                    child: Text(text.confirmAction)),
-              ],
-            ));
+      context: context,
+      builder: (dialog) => CupertinoAlertDialog(
+        title: Text(replace ? text.replaceDevice : text.forgetDevice),
+        content: Text(replace ? text.replaceHint : text.forgetHint),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: Text(text.cancelAction),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: !replace,
+            onPressed: () => Navigator.pop(dialog, true),
+            child: Text(text.confirmAction),
+          ),
+        ],
+      ),
+    );
     if (confirmed != true || !mounted) return;
     await _run(() async {
       await ble.forgetDevice();
@@ -71,157 +74,201 @@ class _DevicesPageState extends State<DevicesPage> {
   }
 
   Future<void> _showDiagnostics() async {
-    final en = AppText.of(context).isEnglish;
+    final text = AppText.of(context);
     final nav = context.read<NavigationController>();
     final ble = context.read<BleService>();
     // Both logs share UTC ISO-8601 timestamps, so text order is time order.
-    final log = ([
-      ...nav.diagnostics.split('\n'),
-      ...ble.diagnostics.split('\n'),
-    ]..removeWhere((line) => line.isEmpty)
-          ..sort())
-        .join('\n');
+    final log =
+        ([...nav.diagnostics.split('\n'), ...ble.diagnostics.split('\n')]
+              ..removeWhere((line) => line.isEmpty)
+              ..sort())
+            .join('\n');
     await showCupertinoModalPopup<void>(
-        context: context,
-        builder: (dialog) => CupertinoActionSheet(
-              title: Text(en ? 'Navigation diagnostics' : '导航诊断日志'),
-              message: SizedBox(
-                  height: 220,
-                  child: SingleChildScrollView(
-                      child: SelectableText(
-                          log.isEmpty
-                              ? (en ? 'No events recorded.' : '暂无记录。')
-                              : log,
-                          style: const TextStyle(fontSize: 12)))),
-              actions: [
-                CupertinoActionSheetAction(
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: log));
-                      if (dialog.mounted) Navigator.pop(dialog);
-                    },
-                    child: Text(en ? 'Copy log' : '复制日志')),
-                CupertinoActionSheetAction(
-                    isDestructiveAction: true,
-                    onPressed: () {
-                      nav.clearDiagnostics();
-                      ble.clearDiagnostics();
-                      Navigator.pop(dialog);
-                    },
-                    child: Text(en ? 'Clear log' : '清空日志')),
-              ],
-              cancelButton: CupertinoActionSheetAction(
-                  onPressed: () => Navigator.pop(dialog),
-                  child: Text(en ? 'Close' : '关闭')),
-            ));
+      context: context,
+      builder: (dialog) => CupertinoActionSheet(
+        title: Text(text.navigationDiagnostics),
+        message: SizedBox(
+          height: 220,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              log.isEmpty ? (text.noEventsRecorded) : log,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: log));
+              if (dialog.mounted) Navigator.pop(dialog);
+            },
+            child: Text(text.copyLog),
+          ),
+          CupertinoActionSheetAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              nav.clearDiagnostics();
+              ble.clearDiagnostics();
+              Navigator.pop(dialog);
+            },
+            child: Text(text.clearLog),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(dialog),
+          child: Text(text.closeAction),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final text = AppText.of(context);
     final ble = context.watch<BleService>();
-    final busy = _working ||
+    final busy =
+        _working ||
         ble.state == BleConnectionState.scanning ||
         ble.state == BleConnectionState.connecting ||
         ble.state == BleConnectionState.awaitingBoot;
     final connected = ble.state == BleConnectionState.connected;
     return NavioPage(
-      child: CustomScrollView(slivers: [
-        CupertinoSliverNavigationBar(
-          largeTitle: Text(text.myDevices),
-          trailing: const AccountButton(),
-          backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(context),
-          border: null,
-        ),
-        SliverPadding(
+      child: CustomScrollView(
+        slivers: [
+          CupertinoSliverNavigationBar(
+            largeTitle: Text(text.myDevices),
+            trailing: const AccountButton(),
+            backgroundColor: CupertinoColors.systemGroupedBackground
+                .resolveFrom(context),
+            border: null,
+          ),
+          SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-            sliver: SliverList.list(children: [
-              DeviceHeader(
-                name: ble.boundIdentity == null ? text.noBoundDevice : AppBrand.displayName(ble.boundIdentity!),
-                status: connected ? text.deviceConnected : busy ? text.connecting : (text.isEnglish ? 'Not connected' : '未连接'),
-                connected: connected,
-                busy: busy,
-                connectLabel: text.connectDevice,
-                onConnect: busy ? null : () => _run(() => connectDisplay(context, ble)),
-              ),
-              if (_error == null &&
-                  BleService.isWriteFailure(ble.lastError) &&
-                  ble.lastErrorAt != null)
-                _WriteFailureNotice(
-                    error: ble.lastError!, at: ble.lastErrorAt!)
-              else if (_error != null || ble.lastError != null)
-                Padding(
+            sliver: SliverList.list(
+              children: [
+                DeviceHeader(
+                  name: ble.boundIdentity == null
+                      ? text.noBoundDevice
+                      : AppBrand.displayName(ble.boundIdentity!),
+                  status: connected
+                      ? text.deviceConnected
+                      : busy
+                      ? text.connecting
+                      : (text.notConnected),
+                  connected: connected,
+                  busy: busy,
+                  connectLabel: text.connectDevice,
+                  onConnect: busy
+                      ? null
+                      : () => _run(() => connectDisplay(context, ble)),
+                ),
+                if (_error == null &&
+                    BleService.isWriteFailure(ble.lastError) &&
+                    ble.lastErrorAt != null)
+                  _WriteFailureNotice(
+                    error: ble.lastError!,
+                    at: ble.lastErrorAt!,
+                  )
+                else if (_error != null || ble.lastError != null)
+                  Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Text(_error ?? ble.lastError!,
-                        style: TextStyle(
-                            color: Theme.of(context).colorScheme.error))),
-              const SizedBox(height: 28),
-              DecoratedBox(
+                    child: Text(
+                      _error ?? ble.lastError!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 28),
+                DecoratedBox(
                   decoration: BoxDecoration(
-                      color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
-                      borderRadius: BorderRadius.circular(12)),
-                  child: Column(children: [
-                    _DeviceAction(
+                    color: CupertinoColors.secondarySystemGroupedBackground
+                        .resolveFrom(context),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      _DeviceAction(
                         icon: Icons.bluetooth_disabled,
                         title: text.disconnectDevice,
                         subtitle: text.disconnectHint,
                         onTap: !busy && connected
                             ? () => _run(ble.disconnect)
-                            : null),
-                    const Padding(
+                            : null,
+                      ),
+                      const Padding(
                         padding: EdgeInsets.only(left: 56),
                         child: Divider(
-                            height: 1,
-                            thickness: .5,
-                            color: Color(0xffdcdce0))),
-                    _DeviceAction(
+                          height: 1,
+                          thickness: .5,
+                          color: Color(0xffdcdce0),
+                        ),
+                      ),
+                      _DeviceAction(
                         icon: Icons.swap_horiz_rounded,
                         title: text.replaceDevice,
                         subtitle: text.replaceHint,
                         // Usable while the old display is still being sought:
                         // forgetting cancels that connection attempt first.
-                        onTap: !_working ? () => _forget(true) : null),
-                  ])),
-              const SizedBox(height: 20),
-              DecoratedBox(
+                        onTap: !_working ? () => _forget(true) : null,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                DecoratedBox(
                   decoration: BoxDecoration(
-                      color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
-                      borderRadius: BorderRadius.circular(12)),
+                    color: CupertinoColors.secondarySystemGroupedBackground
+                        .resolveFrom(context),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: _DeviceAction(
-                      icon: Icons.link_off_rounded,
-                      title: text.forgetDevice,
-                      subtitle: text.forgetHint,
-                      destructive: true,
-                      onTap: !_working && ble.boundIdentity != null
-                          ? () => _forget(false)
-                          : null)),
-              Padding(
+                    icon: Icons.link_off_rounded,
+                    title: text.forgetDevice,
+                    subtitle: text.forgetHint,
+                    destructive: true,
+                    onTap: !_working && ble.boundIdentity != null
+                        ? () => _forget(false)
+                        : null,
+                  ),
+                ),
+                Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Text(text.bindingScope,
-                      style: TextStyle(
-                          fontSize: 13,
-                          height: 1.4,
-                          color: CupertinoColors.secondaryLabel.resolveFrom(context)))),
-              const SizedBox(height: 20),
-              _DeviceAction(
+                  child: Text(
+                    text.bindingScope,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: CupertinoColors.secondaryLabel.resolveFrom(
+                        context,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _DeviceAction(
                   icon: Icons.receipt_long_outlined,
-                  title: text.isEnglish ? 'Navigation diagnostics' : '导航诊断日志',
-                  subtitle: text.isEnglish
-                      ? 'Last 200 events this session. No coordinates or uploads.'
-                      : '本次运行最近 200 条，不含坐标，不上传。',
-                  onTap: _showDiagnostics),
-            ])),
-      ]),
+                  title: text.navigationDiagnostics,
+                  subtitle: text.diagnosticsScope,
+                  onTap: _showDiagnostics,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _DeviceAction extends StatelessWidget {
-  const _DeviceAction(
-      {required this.icon,
-      required this.title,
-      required this.subtitle,
-      required this.onTap,
-      this.destructive = false});
+  const _DeviceAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.destructive = false,
+  });
   final IconData icon;
   final String title, subtitle;
   final VoidCallback? onTap;
@@ -232,31 +279,56 @@ class _DeviceAction extends StatelessWidget {
     final color = onTap == null
         ? CupertinoColors.tertiaryLabel.resolveFrom(context)
         : destructive
-            ? const Color(0xffff3b30)
-            : CupertinoColors.label.resolveFrom(context);
+        ? const Color(0xffff3b30)
+        : CupertinoColors.label.resolveFrom(context);
     return CupertinoButton(
       padding: const EdgeInsets.all(16),
       onPressed: onTap,
-      child: Row(children: [
-        SettingsIcon(icon, color: destructive ? CupertinoColors.systemRed : onTap == null ? CupertinoColors.systemGrey : CupertinoColors.systemBlue),
-        const SizedBox(width: 14),
-        Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title,
-              style: TextStyle(
-                  fontSize: 17, color: color, fontWeight: FontWeight.w400)),
-          const SizedBox(height: 5),
-          Text(subtitle,
-              style: TextStyle(
-                  fontSize: 13, height: 1.35, color: CupertinoColors.secondaryLabel.resolveFrom(context))),
-        ])),
-        if (!destructive) ...[
-          const SizedBox(width: 8),
-          const Icon(Icons.chevron_right_rounded,
-              size: 20, color: Color(0xffc7c7cc)),
+      child: Row(
+        children: [
+          SettingsIcon(
+            icon,
+            color: destructive
+                ? CupertinoColors.systemRed
+                : onTap == null
+                ? CupertinoColors.systemGrey
+                : CupertinoColors.systemBlue,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 17,
+                    color: color,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.35,
+                    color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!destructive) ...[
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: Color(0xffc7c7cc),
+            ),
+          ],
         ],
-      ]),
+      ),
     );
   }
 }
@@ -291,19 +363,31 @@ class _WriteFailureNoticeState extends State<_WriteFailureNotice> {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final recent =
-        BleService.isRecentWriteFailure(widget.error, widget.at, now);
+    final recent = BleService.isRecentWriteFailure(
+      widget.error,
+      widget.at,
+      now,
+    );
     final colors = Theme.of(context).colorScheme;
     return Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(AppText.of(context).writeFailedAgo(now.difference(widget.at)),
-              style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: recent ? colors.error : colors.onSurfaceVariant)),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            AppText.of(context).writeFailedAgo(now.difference(widget.at)),
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: recent ? colors.error : colors.onSurfaceVariant,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text(widget.error.substring(BleService.writeFailurePrefix.length).trim(),
-              style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
-        ]));
+          Text(
+            widget.error.substring(BleService.writeFailurePrefix.length).trim(),
+            style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
   }
 }

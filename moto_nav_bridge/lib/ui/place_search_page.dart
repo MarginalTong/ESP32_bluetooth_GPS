@@ -193,11 +193,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       setState(() {
         _results = const [];
         _suggestions = const [];
-        final english = AppText.of(context).isEnglish;
+        final text = AppText.of(context);
         _error = LocationLinkParser.accepts(query)
-            ? (english
-                  ? 'Could not resolve this location link. Check the link or search by name/address. Only supported HTTPS map links are accepted.'
-                  : '无法解析此位置链接。请检查链接，或改用名称、地址搜索；仅支持指定地图域名的 HTTPS 链接。')
+            ? (text.couldNotResolveLocation)
             : (showErrorWhenEmpty
                   ? AppText.of(context).noMatchingPlaces
                   : null);
@@ -228,22 +226,22 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
   Future<void> _selectPlace(PlaceResult place) async {
     if (place.resolutionStatus != null) {
-      final english = AppText.of(context).isEnglish;
+      final text = AppText.of(context);
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text(english ? 'Confirm destination' : '确认目的地'),
+          title: Text(text.confirmDestination),
           content: Text(
-            '${place.name}\n${place.address}\n\n${place.resolutionStatus == 'viewport' ? (english ? 'This is the map view centre, not a verified place. Check the pin on the map before navigating.' : '这是地图视角中心，不是已验证的地点。请在地图上检查位置后再开始导航。') : (english ? 'Check this destination on the map before starting navigation.' : '请在地图上确认此目的地后再开始导航。')}',
+            '${place.name}\n${place.address}\n\n${place.resolutionStatus == 'viewport' ? (text.mapViewCentreNot) : (text.checkDestinationOnMap)}',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text(english ? 'Cancel' : '取消'),
+              child: Text(text.cancelAction),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: Text(english ? 'Show on map' : '在地图上查看'),
+              child: Text(text.showOnMap),
             ),
           ],
         ),
@@ -300,7 +298,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
                 suffixIcon: IconButton(
-                  tooltip: text.isEnglish ? 'Paste location link' : '粘贴位置链接',
+                  tooltip: text.pasteLocationLink,
                   icon: const Icon(Icons.content_paste_rounded),
                   onPressed: () async {
                     final data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -427,8 +425,8 @@ class _SavedPlaceShortcutsState extends State<_SavedPlaceShortcuts> {
 
   @override
   Widget build(BuildContext context) {
-    final en = AppText.of(context).isEnglish;
-    final labels = en ? ['Home', 'Work', 'School'] : ['家', '公司', '学校'];
+    final text = AppText.of(context);
+    final labels = text.savedPlaceLabels;
     const icons = [
       CupertinoIcons.house_fill,
       CupertinoIcons.briefcase_fill,
@@ -445,8 +443,7 @@ class _SavedPlaceShortcutsState extends State<_SavedPlaceShortcuts> {
                 key: ValueKey('saved-place-${SavedPlaces.slots[i]}'),
                 icon: icons[i],
                 label: labels[i],
-                detail:
-                    _places[SavedPlaces.slots[i]]?.name ?? (en ? 'Add' : '添加'),
+                detail: _places[SavedPlaces.slots[i]]?.name ?? (text.addAction),
                 set: _places[SavedPlaces.slots[i]] != null,
                 onTap: () {
                   final place = _places[SavedPlaces.slots[i]];

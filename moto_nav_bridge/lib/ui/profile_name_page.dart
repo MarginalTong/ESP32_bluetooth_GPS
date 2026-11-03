@@ -14,11 +14,11 @@ class ProfileNameHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final profile = context.watch<ProfileController?>();
     if (profile == null) return const SizedBox.shrink();
-    final en = AppText.of(context).isEnglish;
+    final text = AppText.of(context);
     final color = CupertinoColors.label.resolveFrom(context);
     return Semantics(
       button: true,
-      label: en ? 'Edit name' : '修改名字',
+      label: text.editName,
       child: CupertinoButton(
         key: const ValueKey('profile-nickname-row'),
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -52,9 +52,7 @@ class ProfileNameHeader extends StatelessWidget {
             Flexible(
               child: Text(
                 profile.profile?.displayName ??
-                    (profile.busy
-                        ? (en ? 'Loading…' : '读取中…')
-                        : (en ? 'Tap to retry' : '点击重试')),
+                    (profile.busy ? (text.loading) : (text.tapRetry)),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -103,7 +101,7 @@ class _ProfileNamePageState extends State<ProfileNamePage> {
   bool _current(ProfileController p) =>
       p.accountGeneration == widget.accountGeneration &&
       context.read<AccountController>().user?.id == widget.actor;
-  String t(String en, String zh) => AppText.of(context).isEnglish ? en : zh;
+  AppText get _text => AppText.of(context);
   Future<void> _save() async {
     final profile = context.read<ProfileController>();
     if (!_current(profile) || !profile.canEdit) return;
@@ -132,25 +130,22 @@ class _ProfileNamePageState extends State<ProfileNamePage> {
     final error = _validation ?? (_attemptedSave ? profile.error : null);
     return NavioPage(
       navigationBar: CupertinoNavigationBar(
-        middle: Text(t('Nickname', '昵称')),
+        middle: Text(_text.nicknameLabel),
         trailing: profile.busy
             ? const CupertinoActivityIndicator()
             : CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: current && profile.canEdit ? _save : null,
-                child: Text(t('Done', '完成')),
+                child: Text(_text.doneAction),
               ),
       ),
       child: SafeArea(
         child: ListView(
           children: [
             CupertinoListSection.insetGrouped(
-              header: SectionLabel(t('YOUR NICKNAME', '你的昵称')),
+              header: SectionLabel(_text.nicknameHeader),
               footer: Text(
-                t(
-                  '1–32 characters. Saved to your account when you finish editing. Nicknames do not need to be unique.',
-                  '1–32 个字符，编辑完成后保存到账号。昵称无需唯一。',
-                ),
+                _text.nicknameHint,
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.4,
@@ -166,7 +161,7 @@ class _ProfileNamePageState extends State<ProfileNamePage> {
                   autocorrect: false,
                   maxLength: 80,
                   textInputAction: TextInputAction.done,
-                  placeholder: t('Nickname', '昵称'),
+                  placeholder: _text.nicknameLabel,
                   padding: const EdgeInsets.all(16),
                   decoration: null,
                   onChanged: (_) {
@@ -179,34 +174,17 @@ class _ProfileNamePageState extends State<ProfileNamePage> {
             if (!current)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 36),
-                child: Text(
-                  t(
-                    'Your account changed. Go back to your profile before editing.',
-                    '账号已切换，请返回个人资料后重新编辑。',
-                  ),
-                ),
+                child: Text(_text.accountChangedGoBack),
               )
             else if (error != null) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 36),
                 child: Text(
                   switch (error) {
-                    'invalid' => t(
-                      'Use 1–32 characters, without line breaks or hidden control characters.',
-                      '请输入 1–32 个字符，不含换行或隐藏控制字符。',
-                    ),
-                    'conflict' => t(
-                      'Your nickname changed on another device. Load the latest name before editing again.',
-                      '昵称已在其他设备修改，请读取最新昵称后重新编辑。',
-                    ),
-                    'session' => t(
-                      'Please sign in again before saving.',
-                      '请重新登录后保存。',
-                    ),
-                    _ => t(
-                      'Could not save. Your draft is still here; check your connection and try Done again.',
-                      '未能保存，输入内容仍保留。请检查网络后重试。',
-                    ),
+                    'invalid' => _text.nicknameInvalid,
+                    'conflict' => _text.nicknameChangedOnAnother,
+                    'session' => _text.pleaseSignInAgain,
+                    _ => _text.couldNotSaveDraft,
                   },
                   style: const TextStyle(
                     fontSize: 14,
@@ -231,7 +209,7 @@ class _ProfileNamePageState extends State<ProfileNamePage> {
                             _validation = null;
                           });
                         },
-                  child: Text(t('Load latest name', '读取最新昵称')),
+                  child: Text(_text.loadLatestName),
                 ),
             ],
           ],

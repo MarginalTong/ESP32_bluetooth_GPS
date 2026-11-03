@@ -13,13 +13,11 @@ class AccountButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final account = context.watch<AccountController?>();
     if (account == null) return const SizedBox.shrink();
-    final en = AppText.of(context).isEnglish;
+    final text = AppText.of(context);
     final profile = context.watch<ProfileController?>();
     final name = account.user == null ? null : profile?.profile?.displayName;
     return Semantics(
-      label: account.user == null
-          ? (en ? 'Sign in to NAVIO' : '登录 NAVIO 账号')
-          : (en ? 'Account and profile' : '账号与个人资料'),
+      label: account.user == null ? (text.signInNavio) : (text.accountProfile),
       child: CupertinoButton(
         key: const ValueKey('device-account-button'),
         padding: EdgeInsets.zero,
@@ -36,7 +34,7 @@ class AccountButton extends StatelessWidget {
                   maxWidth: MediaQuery.sizeOf(context).width < 360 ? 82 : 112,
                 ),
                 child: Text(
-                  name ?? (en ? 'Profile' : '个人资料'),
+                  name ?? (text.profileLabel),
                   key: const ValueKey('device-account-name'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

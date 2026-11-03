@@ -33,9 +33,7 @@ class _RoutePreferencesPageState extends State<RoutePreferencesPage> {
       );
     } catch (_) {
       if (mounted) {
-        error = AppText.of(context).isEnglish
-            ? 'Could not save. Please try again.'
-            : '保存失败，请重试。';
+        error = AppText.of(context).couldNotSavePlease;
       }
     } finally {
       if (mounted) setState(() => saving = false);
@@ -44,7 +42,7 @@ class _RoutePreferencesPageState extends State<RoutePreferencesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final en = AppText.of(context).isEnglish;
+    final text = AppText.of(context);
     return NavioPage(
       navigationBar: CupertinoNavigationBar(
         transitionBetweenRoutes: false,
@@ -52,28 +50,21 @@ class _RoutePreferencesPageState extends State<RoutePreferencesPage> {
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: () => Navigator.pop(context),
-          child: Icon(CupertinoIcons.back, semanticLabel: en ? 'Back' : '返回'),
+          child: Icon(CupertinoIcons.back, semanticLabel: text.backAction),
         ),
-        middle: Text(en ? 'Route preferences' : '路线偏好'),
+        middle: Text(text.routePreferences),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          child: Icon(
-            CupertinoIcons.info,
-            semanticLabel: en ? 'About avoidance' : '避让说明',
-          ),
+          child: Icon(CupertinoIcons.info, semanticLabel: text.aboutAvoidance),
           onPressed: () => showCupertinoDialog<void>(
             context: context,
             builder: (ctx) => CupertinoAlertDialog(
-              title: Text(en ? 'Route preferences' : '路线偏好'),
-              content: Text(
-                en
-                    ? 'Saved automatically on this phone. Highways, tolls and ferries are preferences, not guaranteed exclusions. Tunnels exclude mapped tunnel sections except at the start/end; map data may be incomplete. Change preferences before navigation. Saving clears the old route preview.'
-                    : '自动保存在本机。高速、收费路和轮渡为尽量避开，并非保证排除。隧道会排除地图已标注路段（起终点所在路段除外），地图可能不完整。请在导航前修改，保存后清除旧路线预览。',
-              ),
+              title: Text(text.routePreferences),
+              content: Text(text.savedAutomaticallyOnPhone),
               actions: [
                 CupertinoDialogAction(
                   onPressed: () => Navigator.pop(ctx),
-                  child: Text(en ? 'OK' : '知道了'),
+                  child: Text(text.okAction),
                 ),
               ],
             ),
@@ -84,30 +75,26 @@ class _RoutePreferencesPageState extends State<RoutePreferencesPage> {
         child: ListView(
           children: [
             CupertinoListSection.insetGrouped(
-              header: SectionLabel(en ? 'ROUTE OPTIONS' : '路线选项'),
-              footer: Text(
-                en
-                    ? 'Saved automatically. Applies to your next route.'
-                    : '自动保存，并应用于下一次路线规划。',
-              ),
+              header: SectionLabel(text.routeOptionsHeader),
+              footer: Text(text.savedAutomaticallyAppliesNext),
               children: [
                 option(
-                  en ? 'Prefer avoiding highways' : '尽量避开高速',
+                  text.preferAvoidingHighways,
                   widget.nav.avoidHighways,
                   (v) => save(highways: v),
                 ),
                 option(
-                  en ? 'Prefer avoiding tolls' : '尽量避开收费路',
+                  text.preferAvoidingTolls,
                   widget.nav.avoidTolls,
                   (v) => save(tolls: v),
                 ),
                 option(
-                  en ? 'Prefer avoiding ferries' : '尽量避开轮渡',
+                  text.preferAvoidingFerries,
                   widget.nav.avoidFerries,
                   (v) => save(ferries: v),
                 ),
                 option(
-                  en ? 'Avoid tunnels' : '避开隧道',
+                  text.avoidTunnels,
                   widget.nav.avoidTunnels,
                   (v) => save(tunnels: v),
                 ),
@@ -125,11 +112,7 @@ class _RoutePreferencesPageState extends State<RoutePreferencesPage> {
             if (!widget.nav.canEditPreferences)
               Padding(
                 padding: const EdgeInsets.all(20),
-                child: Text(
-                  en
-                      ? 'Change preferences before starting navigation.'
-                      : '请在开始导航前修改偏好。',
-                ),
+                child: Text(text.changePreferencesBeforeStarting),
               ),
           ],
         ),

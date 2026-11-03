@@ -76,11 +76,11 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final en = AppText.of(context).isEnglish;
+    final text = AppText.of(context);
     return NavioPage(
       navigationBar: CupertinoNavigationBar(
         transitionBetweenRoutes: false,
-        middle: Text(en ? 'Map settings' : '地图设置'),
+        middle: Text(text.mapSettings),
       ),
       child: SafeArea(
         child: ListView(
@@ -92,34 +92,34 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
               )
             else ...[
               CupertinoListSection.insetGrouped(
-                header: SectionLabel(en ? 'MAP APPEARANCE' : '地图外观'),
+                header: SectionLabel(text.mapAppearanceHeader),
                 children: [
                   _styleTile(
                     'standard',
-                    en ? 'Standard' : '标准',
-                    en ? 'Clear streets and landmarks' : '清晰显示道路与地标',
+                    text.mapStyleStandard,
+                    text.clearStreetsLandmarks,
                   ),
                   _styleTile(
                     'standard_dark',
-                    en ? 'Standard · Dark' : '标准 · 深色',
-                    en ? 'A calmer map for night riding' : '适合夜间骑行的深色地图',
+                    text.mapStyleStandardDark,
+                    text.calmerMapNightRiding,
                   ),
                   _styleTile(
                     'hybrid',
-                    en ? 'Hybrid' : '混合',
-                    en ? 'Aerial imagery with road labels' : '航拍影像与道路标注',
+                    text.mapStyleHybrid,
+                    text.aerialImageryRoadLabels,
                   ),
                   _styleTile(
                     'satellite',
-                    en ? 'Satellite' : '卫星',
-                    en ? 'Aerial imagery without labels' : '不显示道路标注的航拍影像',
+                    text.mapStyleSatellite,
+                    text.aerialImageryWithoutLabels,
                   ),
                 ],
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(36, 18, 36, 0),
                 child: Text(
-                  en ? 'SAVED PLACES' : '常用地址',
+                  text.savedPlacesHeader,
                   style: const TextStyle(
                     fontSize: 13,
                     color: CupertinoColors.secondaryLabel,

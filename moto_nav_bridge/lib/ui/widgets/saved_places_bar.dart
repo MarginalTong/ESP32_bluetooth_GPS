@@ -74,8 +74,8 @@ class _SavedPlacesBarState extends State<SavedPlacesBar> {
 
   @override
   Widget build(BuildContext context) {
-    final en = AppText.of(context).isEnglish;
-    final names = en ? ['Home', 'Work', 'School'] : ['家', '公司', '学校'];
+    final text = AppText.of(context);
+    final names = text.savedPlaceLabels;
     return Column(
       children: [
         CupertinoListSection.insetGrouped(
@@ -92,8 +92,7 @@ class _SavedPlacesBarState extends State<SavedPlacesBar> {
                 ),
                 title: Text(names[i]),
                 subtitle: Text(
-                  places[SavedPlaces.slots[i]]?.name ??
-                      (en ? 'Not set' : '未设置'),
+                  places[SavedPlaces.slots[i]]?.name ?? (text.notSet),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -110,7 +109,7 @@ class _SavedPlacesBarState extends State<SavedPlacesBar> {
                 trailing: CupertinoButton(
                   padding: EdgeInsets.zero,
                   onPressed: busy ? null : () => edit(SavedPlaces.slots[i]),
-                  child: Text(en ? 'Edit' : '修改'),
+                  child: Text(text.editAction),
                 ),
               ),
           ],
@@ -118,11 +117,7 @@ class _SavedPlacesBarState extends State<SavedPlacesBar> {
         if (error != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
-              en
-                  ? 'Could not load or save address. Please try again.'
-                  : '地址读取或保存失败，请重试。',
-            ),
+            child: Text(text.couldNotLoadOr),
           ),
       ],
     );

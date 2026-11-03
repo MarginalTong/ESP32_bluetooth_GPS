@@ -13,57 +13,49 @@ class ProfileAvatarEditor extends StatelessWidget {
   Future<void> _openActions(
     BuildContext context,
     AvatarController controller,
-    bool en,
+    AppText text,
   ) async {
     final hasPhoto = controller.avatar != null;
     final action = await showCupertinoModalPopup<String>(
       context: context,
       builder: (sheet) => CupertinoActionSheet(
-        message: Text(
-          en
-              ? 'Your photo is visible to signed-in riders only while you share your location. Only a small cropped copy is saved, not the original photo.'
-              : '仅在共享位置时向已登录骑友展示头像。只保存裁剪后的小图，不上传原照片。',
-        ),
+        message: Text(text.photoVisibleSignedIn),
         actions: [
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(sheet, 'choose'),
-            child: Text(
-              hasPhoto
-                  ? (en ? 'Change photo' : '更换头像')
-                  : (en ? 'Choose photo' : '设置头像'),
-            ),
+            child: Text(hasPhoto ? (text.changePhoto) : (text.choosePhoto)),
           ),
           if (hasPhoto)
             CupertinoActionSheetAction(
               isDestructiveAction: true,
               onPressed: () => Navigator.pop(sheet, 'remove'),
-              child: Text(en ? 'Remove photo' : '移除头像'),
+              child: Text(text.removePhoto),
             ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(sheet),
-          child: Text(en ? 'Cancel' : '取消'),
+          child: Text(text.cancelAction),
         ),
       ),
     );
     if (!context.mounted) return;
     if (action == 'choose') {
-      await _choose(context, controller, en);
+      await _choose(context, controller, text);
     } else if (action == 'remove') {
-      await _remove(context, controller, en);
+      await _remove(context, controller, text);
     }
   }
 
   Future<void> _choose(
     BuildContext context,
     AvatarController controller,
-    bool en,
+    AppText text,
   ) => controller.choose(
     confirm: (jpeg) async =>
         await showCupertinoDialog<bool>(
           context: context,
           builder: (dialog) => CupertinoAlertDialog(
-            title: Text(en ? 'Use this profile photo?' : '使用这个头像？'),
+            title: Text(text.useProfilePhoto),
             content: Padding(
               padding: const EdgeInsets.only(top: 16),
               child: Column(
@@ -78,22 +70,18 @@ class ProfileAvatarEditor extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    en
-                        ? 'Visible to riders when you share your location.'
-                        : '共享位置时，骑友可以看到此头像。',
-                  ),
+                  Text(text.visibleRidersWhenShare),
                 ],
               ),
             ),
             actions: [
               CupertinoDialogAction(
                 onPressed: () => Navigator.pop(dialog, false),
-                child: Text(en ? 'Cancel' : '取消'),
+                child: Text(text.cancelAction),
               ),
               CupertinoDialogAction(
                 onPressed: () => Navigator.pop(dialog, true),
-                child: Text(en ? 'Use photo' : '使用头像'),
+                child: Text(text.usePhoto),
               ),
             ],
           ),
@@ -104,26 +92,22 @@ class ProfileAvatarEditor extends StatelessWidget {
   Future<void> _remove(
     BuildContext context,
     AvatarController controller,
-    bool en,
+    AppText text,
   ) async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (dialog) => CupertinoAlertDialog(
-        title: Text(en ? 'Remove profile photo?' : '移除头像？'),
-        content: Text(
-          en
-              ? 'Your account and rider marker will use the default avatar.'
-              : '账号与骑友地图将恢复默认头像。',
-        ),
+        title: Text(text.removeProfilePhoto),
+        content: Text(text.accountRiderMarkerWill),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(dialog, false),
-            child: Text(en ? 'Cancel' : '取消'),
+            child: Text(text.cancelAction),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(dialog, true),
-            child: Text(en ? 'Remove' : '移除'),
+            child: Text(text.removeAction),
           ),
         ],
       ),
@@ -135,7 +119,7 @@ class ProfileAvatarEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<AvatarController?>();
     if (controller == null) return const SizedBox.shrink();
-    final en = AppText.of(context).isEnglish;
+    final text = AppText.of(context);
     final avatar = controller.avatar;
     final background = CupertinoColors.systemGroupedBackground.resolveFrom(
       context,
@@ -146,13 +130,13 @@ class ProfileAvatarEditor extends StatelessWidget {
         children: [
           Semantics(
             button: true,
-            label: en ? 'Edit profile photo' : '编辑个人头像',
+            label: text.editProfilePhoto,
             child: CupertinoButton(
               key: const ValueKey('profile-photo-button'),
               padding: EdgeInsets.zero,
               minimumSize: const Size(_size, _size),
               onPressed: controller.canEdit && !controller.busy
-                  ? () => _openActions(context, controller, en)
+                  ? () => _openActions(context, controller, text)
                   : null,
               child: SizedBox.square(
                 dimension: _size,
@@ -221,18 +205,9 @@ class ProfileAvatarEditor extends StatelessWidget {
               liveRegion: true,
               child: Text(
                 switch (controller.error) {
-                  'photo_permission' =>
-                    en
-                        ? 'Photo access was denied. Allow access in Settings, then try again.'
-                        : '未获得照片访问权限，请在系统设置中允许后重试。',
-                  'photo_invalid' =>
-                    en
-                        ? 'This photo could not be processed. Choose a different image.'
-                        : '这张照片无法处理，请选择另一张图片。',
-                  _ =>
-                    en
-                        ? 'Photo could not be loaded or saved. Check your connection and retry.'
-                        : '头像读取或保存失败，请检查网络后重试。',
+                  'photo_permission' => text.photoPermissionDenied,
+                  'photo_invalid' => text.photoInvalid,
+                  _ => text.photoUnavailable,
                 },
                 style: const TextStyle(
                   fontSize: 13,
@@ -242,7 +217,7 @@ class ProfileAvatarEditor extends StatelessWidget {
             ),
             CupertinoButton(
               onPressed: controller.busy ? null : controller.refresh,
-              child: Text(en ? 'Reload photo' : '重新读取头像'),
+              child: Text(text.reloadPhoto),
             ),
           ],
         ],

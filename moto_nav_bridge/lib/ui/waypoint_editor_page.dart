@@ -23,7 +23,7 @@ class WaypointEditorPage extends StatefulWidget {
 class _WaypointEditorPageState extends State<WaypointEditorPage> {
   late final _stops = List<PlaceResult>.of(widget.stops);
   bool _choosing = false;
-  String t(String en, String zh) => AppText.of(context).isEnglish ? en : zh;
+  AppText get _text => AppText.of(context);
 
   Future<void> _choose([int? index]) async {
     if (_choosing) return;
@@ -42,16 +42,9 @@ class _WaypointEditorPageState extends State<WaypointEditorPage> {
               e.key != index &&
               e.value.location.distanceTo(result.location) < 10,
         )) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            t(
-              'Choose a different place; this stop is already in the trip.',
-              '此地点已在行程中，请选择其他途经点。',
-            ),
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_text.chooseDifferentPlaceStop)));
       return;
     }
     setState(() {
@@ -71,7 +64,7 @@ class _WaypointEditorPageState extends State<WaypointEditorPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(t('Trip stops', '途经点')),
+      title: Text(_text.tripStops),
       leading: CupertinoNavigationBarBackButton(
         onPressed: () => Navigator.maybePop(context),
       ),
@@ -83,7 +76,7 @@ class _WaypointEditorPageState extends State<WaypointEditorPage> {
                   context,
                   List<PlaceResult>.unmodifiable(_stops),
                 ),
-          child: Text(t('Done', '完成')),
+          child: Text(_text.doneAction),
         ),
       ],
     ),
@@ -91,10 +84,7 @@ class _WaypointEditorPageState extends State<WaypointEditorPage> {
       padding: const EdgeInsets.all(20),
       children: [
         Text(
-          t(
-            'Places are visited in the order below. Navigation continues automatically after each stop.',
-            '按下方顺序经过各地点，经过途经点后自动继续导航。',
-          ),
+          _text.placesVisitedInOrder,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -102,7 +92,7 @@ class _WaypointEditorPageState extends State<WaypointEditorPage> {
         const SizedBox(height: 16),
         ListTile(
           leading: const Icon(Icons.my_location),
-          title: Text(t('Current location', '当前位置')),
+          title: Text(_text.currentLocation),
         ),
         for (var i = 0; i < _stops.length; i++)
           Container(
@@ -139,21 +129,21 @@ class _WaypointEditorPageState extends State<WaypointEditorPage> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       IconButton(
-                        tooltip: t('Move up', '上移'),
+                        tooltip: _text.moveUp,
                         onPressed: !_choosing && i > 0
                             ? () => _move(i, -1)
                             : null,
                         icon: const Icon(Icons.arrow_upward),
                       ),
                       IconButton(
-                        tooltip: t('Move down', '下移'),
+                        tooltip: _text.moveDown,
                         onPressed: !_choosing && i + 1 < _stops.length
                             ? () => _move(i, 1)
                             : null,
                         icon: const Icon(Icons.arrow_downward),
                       ),
                       IconButton(
-                        tooltip: t('Remove stop', '删除途经点'),
+                        tooltip: _text.removeStop,
                         onPressed: _choosing
                             ? null
                             : () => setState(() => _stops.removeAt(i)),
@@ -170,26 +160,18 @@ class _WaypointEditorPageState extends State<WaypointEditorPage> {
               ? () => _choose()
               : null,
           icon: const Icon(Icons.add_location_alt_outlined),
-          label: Text(
-            t(
-              'Add stop (${_stops.length}/${WaypointPlan.maxStops})',
-              '添加途经点（${_stops.length}/${WaypointPlan.maxStops}）',
-            ),
-          ),
+          label: Text(_text.addStop(_stops.length, WaypointPlan.maxStops)),
         ),
         ListTile(
           leading: const Icon(Icons.flag_outlined),
           title: Text(widget.destination.name),
-          subtitle: Text(t('Final destination', '最终目的地')),
+          subtitle: Text(_text.finalDestination),
         ),
         if (_stops.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 16),
             child: Text(
-              t(
-                'Alternative routes are unavailable for trips with stops.',
-                '含途经点的行程暂不提供备选路线。',
-              ),
+              _text.alternativeRoutesUnavailableTrips,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
