@@ -12,9 +12,10 @@ UiScreen resolveScreen(const UiInputs& inputs) {
     return UiScreen::Brand;
   }
 
+  // A connected, idle display shows the clock (after a trip too); the large
+  // brand covers only the moment before the phone has sent the time.
   if (!inputs.hasNavigation) {
     if (!inputs.paired) return UiScreen::NotPaired;
-    if (inputs.tripEnded) return UiScreen::Brand;
     return inputs.clockSynced ? UiScreen::Clock : UiScreen::Brand;
   }
 
@@ -26,8 +27,9 @@ UiScreen resolveScreen(const UiInputs& inputs) {
   if (inputs.navigation.direction == Direction::Stop) return UiScreen::NoGuidance;
   // Arrival completes locally even if the phone sends nothing more.
   if (inputs.navigation.direction == Direction::Arrived)
-    return inputs.arrivalElapsedMs >= ArrivalFeedback::durationMs
-        ? UiScreen::Brand : UiScreen::Arrived;
+    return inputs.arrivalElapsedMs < ArrivalFeedback::durationMs ? UiScreen::Arrived
+           : inputs.clockSynced                                  ? UiScreen::Clock
+                                                                 : UiScreen::Brand;
   if (inputs.packetTimedOut) return UiScreen::StaleGuidance;
   return UiScreen::Navigating;
 }

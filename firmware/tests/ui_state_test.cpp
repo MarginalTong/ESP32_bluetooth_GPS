@@ -76,6 +76,8 @@ static void transitions() {
   check(resolveUiState(inputs).arrivalProgress == 100, "check finishes after 800 ms");
   inputs.arrivalElapsedMs = 4000;
   expectPage(inputs, UiScreen::Brand, "arrival returns to standby without another packet");
+  inputs.clockSynced = true;
+  expectPage(inputs, UiScreen::Clock, "after arrival a connected display shows the clock");
   ArrivalFeedback feedback;
   feedback.update(true, UINT32_MAX - 100);
   feedback.update(true, 200);
@@ -87,13 +89,13 @@ static void transitions() {
   inputs = guiding();
   inputs.tripEnded = true;
   inputs.hasNavigation = false;
-  expectPage(inputs, UiScreen::Brand, "ending returns to NAVIO while still connected");
+  expectPage(inputs, UiScreen::Brand, "ending before the time is known shows the brand");
   inputs.connected = false;
   expectPage(inputs, UiScreen::Brand, "intentional disconnect after end stays on NAVIO");
   inputs.clockSynced = true;
   for (int attempt = 0; attempt < 5; ++attempt) {
     inputs.connected = true;
-    expectPage(inputs, UiScreen::Brand, "connected end screen uses compact brand layout");
+    expectPage(inputs, UiScreen::Clock, "ending while connected returns to the clock");
     inputs.connected = false;
     expectPage(inputs, UiScreen::Brand, "disconnect restores the large brand despite synced time");
   }
@@ -279,19 +281,21 @@ static void pages() {
   drawPage(UiScreen::Brand, false);
   expectLargeBrand();
   check(drew("NAVIO") && drew("CONNECT PHONE"), "disconnected brand asks for a phone");
+  // No separate connected "ready to go" page: only the large wordmark,
+  // with no subtitle, until the phone has sent the time.
   drawPage(UiScreen::Brand, true);
-  expectCompactBrand();
+  expectLargeBrand();
+  check(!drew("READY TO GO") && !drew("ready to go") && !drew("CONNECT PHONE"),
+        "connected brand has no ready subtitle and no compact wordmark");
 #if NAV_ROUND_DISPLAY
-  check(drew("READY TO GO"), "connected round-panel brand is ready");
   native = false;
   drawPage(UiScreen::Brand, true);
-  expectCompactBrand();
+  expectLargeBrand();
+  check(!drew("CONNECT PHONE"), "fallback font draws no subtitle while connected");
   drawPage(UiScreen::Brand, false);
   expectLargeBrand();
   check(drew("NAVIO") && drew("CONNECT PHONE"), "fallback font keeps the same brand state");
   native = true;
-#else
-  check(drew("ready to go"), "connected legacy-panel brand is ready");
 #endif
   drawPage(UiScreen::Clock, true);
   check(brandDraws.empty() && drew("12:34"), "connected clock page shows the time without NAVIO");

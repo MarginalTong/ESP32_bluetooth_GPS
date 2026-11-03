@@ -12,36 +12,30 @@ void drawCompactBrand() {
 #endif
 }
 
-void drawDisconnectedBrand(const char* subtitle) {
+// Large centered wordmark; `subtitle` may be null.
+void drawLargeBrand(const char* subtitle) {
 #if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
     drawRoundCenteredStatus("NAVIO", 5, subtitle, 1);
   } else {
     drawStandbyBrandText("NAVIO", true);
-    drawStandbyBrandText(subtitle, false);
+    if (subtitle) drawStandbyBrandText(subtitle, false);
   }
 #else
   drawUiText("NAVIO", 4, 60, 35);
-  drawUiText(subtitle, 1, (240 - uiTextWidth(subtitle, 1)) / 2, 91);
+  if (subtitle) drawUiText(subtitle, 1, (240 - uiTextWidth(subtitle, 1)) / 2, 91);
 #endif
 }
 
+// There is no separate connected "ready to go" page: an idle connected
+// display shows the clock, and this brand only until the time arrives.
 void drawBrand(const UiState& state) {
-  if (!state.connected) {
-    drawDisconnectedBrand("CONNECT PHONE");
-    return;
-  }
-  drawCompactBrand();
-#if NAV_ROUND_DISPLAY
-  drawRoundCenteredStatus("READY TO GO", 2, nullptr, 1);
-#else
-  drawUiText("ready to go", 2, 54, 65);
-#endif
+  drawLargeBrand(state.connected ? nullptr : "CONNECT PHONE");
 }
 
 void drawClock(const UiState& state, const UiRenderContext& context) {
   if (!state.connected) {
-    drawDisconnectedBrand("CONNECT PHONE");
+    drawLargeBrand("CONNECT PHONE");
     return;
   }
   // The clock page shows only the time: no wordmark in the corner.
@@ -80,7 +74,7 @@ void drawNotPaired() {
 }
 
 void drawConnectionLost() {
-  drawDisconnectedBrand("CONNECTION LOST");
+  drawLargeBrand("CONNECTION LOST");
 #if NAV_ROUND_DISPLAY
   drawRoundCenteredText("RECONNECT PHONE", 1, 177);
 #else

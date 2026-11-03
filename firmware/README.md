@@ -172,12 +172,13 @@ Serial logs record page transitions once (for example,
 Page priority preserves the existing behavior: an unavailable/off panel wins,
 then BOOT pairing; disconnected/idle states are resolved before route states;
 rerouting wins over STOP/ARRIVED; STOP shows no guidance; ARRIVED is never marked stale,
-draws an 800 ms check animation and returns to NAVIO standby after four seconds;
-otherwise stale guidance and live navigation are distinct pages. Explicit trip
-end returns to the connected standby page. On connected standby/clock pages,
-NAVIO is a compact upper-left wordmark; the center shows readiness or the
-synced time. Disconnecting restores the large centered NAVIO wordmark, even
-after a clock sync. Unexpected link loss keeps CONNECTION LOST / RECONNECT
+draws an 800 ms check animation and returns to the clock after four seconds;
+otherwise stale guidance and live navigation are distinct pages. A connected,
+idle display (including after an explicit trip end) shows the clock page: the
+time and "ready to go", with no wordmark. There is no separate connected
+"ready to go" page; until the phone has sent the time, a connected display
+shows only the large centered NAVIO. Disconnecting restores the large centered
+NAVIO wordmark with CONNECT PHONE, even after a clock sync. Unexpected link loss keeps CONNECTION LOST / RECONNECT
 PHONE below it, rather than implying navigation is still active. Navigation
 pages do not receive a brand overlay. This is a state-driven layout change,
 not a per-frame logo animation.
@@ -330,8 +331,8 @@ Supported `dir` values:
 
 `STOP` is a temporary no-guidance state (pause or lost GPS). Ending a trip
 sends the distinct signed payload `{"dir":"STOP","dist":0,"end":true}`.
-That end marker returns the display to the NAVIO standby page, including
-after the app disconnects; an unexpected BLE drop still shows
+That end marker returns a connected display to the clock and a disconnected one
+to the NAVIO standby page; an unexpected BLE drop still shows
 `CONNECTION LOST`. Both app and display firmware must support this marker.
 
 Production behavior:

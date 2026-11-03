@@ -5,3 +5,6 @@
 #
 # The project-wide pass on 2026-11-04 (UI text, colors, formatting) did not
 # review tests, function size or structure, so no file is listed for it.
+firmware/platformio/ui_state.cpp
+firmware/platformio/ui_screens.cpp
+firmware/tests/ui_state_test.cpp
