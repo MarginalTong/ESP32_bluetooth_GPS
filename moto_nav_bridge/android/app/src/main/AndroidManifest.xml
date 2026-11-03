@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Valhalla routing and the voice gateway. Flutter only adds this to the
+    <!-- Valhalla routing and NAVIO accounts. Flutter only adds this to the
          debug/profile manifests, so release builds need it here. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
