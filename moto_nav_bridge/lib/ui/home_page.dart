@@ -1,30 +1,25 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 
-import '../controllers/navigation_controller.dart';
 import '../controllers/account_controller.dart';
+import '../controllers/guidance_voice_controller.dart';
+import '../controllers/navigation_controller.dart';
 import '../controllers/rider_map_controller.dart';
 import '../l10n/app_text.dart';
 import '../models/lat_lng.dart';
-import '../models/device_direction.dart';
 import '../models/place_result.dart';
-import '../models/route_candidate.dart';
 import '../services/ble_service.dart';
-import '../services/local_account_data.dart';
-import '../services/settings_store.dart';
-import '../services/guidance/voice_guidance_planner.dart';
-import '../services/navigation_voice.dart';
-import 'place_search_page.dart';
 import 'map_settings_page.dart';
 import 'navio_theme.dart';
-import 'route_preferences_page.dart';
+import 'place_search_page.dart';
 import 'waypoint_editor_page.dart';
 import 'widgets/connection_card.dart';
+import 'widgets/destination_panel.dart';
 import 'widgets/glass_panel.dart';
 import 'widgets/instruction_card.dart';
+import 'widgets/map_control_button.dart';
+import 'widgets/navigation_controls.dart';
 import 'widgets/navigation_map.dart';
 import 'widgets/rider_map_button.dart';
 
@@ -41,35 +36,35 @@ class _HomePageState extends State<HomePage> {
   PlaceResult? _destination;
   String _mapStyle = 'standard';
   int _settingsRevision = -1;
-  final _guidance = VoiceGuidancePlanner();
-  NavigationController? _voiceNav;
-  bool _voiceEnabled = false;
-  // Native speech reports when a navigation announcement starts and ends.
-  static const _voiceEvents = MethodChannel('moto_nav_bridge/voice');
-  bool _navigationSpeechSpeaking = false;
+  final _voice = GuidanceVoiceController();
+
   @override
   void initState() {
     super.initState();
+    _voice
+      ..addListener(_voiceChanged)
+      ..onUnavailable = _voiceUnavailable;
     _loadMapSettings();
-    _voiceEvents.setMethodCallHandler((call) async {
-      if (!mounted || call.method != 'speechState') return;
-      final state = call.arguments as String;
-      if (state == 'navigationSpeechStarted') _navigationSpeechSpeaking = true;
-      if (state == 'navigationSpeechEnded') _navigationSpeechSpeaking = false;
-    });
+  }
+
+  void _voiceChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _voiceUnavailable() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppText.of(context).voiceUnavailableOnDevice)),
+    );
   }
 
   Future<void> _loadMapSettings() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     final saved = prefs.getString(MapSettingsPage.styleKey);
-    final voice = prefs.getBool(LocalAccountData.voiceKey) ?? false;
-    if (voice != _voiceEnabled) {
-      _guidance.reset();
-      if (!voice) _silence();
-    }
+    await _voice.reload();
+    if (!mounted) return;
     setState(() {
-      _voiceEnabled = voice;
       _mapStyle =
           {'standard', 'standard_dark', 'hybrid', 'satellite'}.contains(saved)
           ? saved!
@@ -93,28 +88,6 @@ class _HomePageState extends State<HomePage> {
     await nav.previewDestination(place.location, waypoints: nav.waypoints);
   }
 
-  Future<void> _saveGuidance(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    try {
-      await SettingsStore.edit(prefs, () async {
-        await prefs.setBool(LocalAccountData.voiceKey, enabled);
-      });
-    } catch (_) {
-      // The account changed meanwhile: this session keeps its own choice.
-    }
-  }
-
-  void _toggleGuidance() {
-    setState(() => _voiceEnabled = !_voiceEnabled);
-    unawaited(_saveGuidance(_voiceEnabled));
-    _guidance.reset();
-    if (_voiceEnabled) {
-      _announce();
-    } else {
-      _silence();
-    }
-  }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -127,73 +100,14 @@ class _HomePageState extends State<HomePage> {
       }
       _settingsRevision = revision;
     }
-    final nav = context.read<NavigationController>();
-    if (identical(nav, _voiceNav)) return;
-    _voiceNav?.removeListener(_announce);
-    _voiceNav = nav;
-    nav.addListener(_announce);
-  }
-
-  Future<void> _silence() async {
-    try {
-      await NavigationVoice.stop();
-    } catch (_) {
-      /* Optional native audio. */
-    }
-  }
-
-  void _announce() {
-    if (!mounted || !_voiceEnabled) return;
-    final nav = _voiceNav!;
-    final state = nav.current;
-    final route = nav.selectedRoute;
-    // Rerouting keeps speaking: the planner announces it once.
-    if (state == null ||
-        route == null ||
-        (state.direction == DeviceDirection.stop && !state.rerouting) ||
-        (nav.phase != NavPhase.navigating && nav.phase != NavPhase.arrived)) {
-      _silence();
-      return;
-    }
-    final fix = nav.voiceFix;
-    final utterance = _guidance.next(
-      GuidanceInput(
-        route: route,
-        steps: route.steps,
-        stepIndex: nav.voiceStepIndex,
-        state: state,
-        now: DateTime.now(),
-        reliable: nav.voiceGuidanceReliable,
-        speedMps: fix?.speed,
-        accuracyMeters: fix?.accuracy,
-        rerouteFailed: nav.rerouteFailed,
-        speaking: _navigationSpeechSpeaking,
-      ),
-      english: AppText.of(context).isEnglish,
-    );
-    if (utterance != null) _speak(utterance.text);
-  }
-
-  Future<void> _speak(String message) async {
-    try {
-      await NavigationVoice.speak(
-        message,
-        english: AppText.of(context).isEnglish,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _voiceEnabled = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppText.of(context).voiceUnavailableOnDevice)),
-      );
-    }
+    _voice.bind(context.read<NavigationController>());
   }
 
   @override
   void dispose() {
-    _voiceEvents.setMethodCallHandler(null);
-    _voiceNav?.removeListener(_announce);
-    _silence();
+    _voice
+      ..removeListener(_voiceChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -321,28 +235,19 @@ class _HomePageState extends State<HomePage> {
                   Positioned(
                     top: safe.top + 92,
                     right: 16,
-                    child: Material(
-                      key: const ValueKey('map-settings-button-background'),
-                      color: darkMapControls
-                          ? NavioColors.mapControlDark
-                          : Theme.of(
-                              context,
-                            ).colorScheme.surface.withValues(alpha: 0.88),
-                      shape: const CircleBorder(),
-                      elevation: 1,
-                      child: IconButton(
-                        onPressed: _openMapSettings,
-                        tooltip: AppText.of(context).mapSettings,
-                        icon: Icon(
-                          Icons.settings_outlined,
-                          size: 19,
-                          color: darkMapControls ? Colors.white : null,
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 44,
-                          minHeight: 44,
-                        ),
+                    child: MapControlButton(
+                      backgroundKey: const ValueKey(
+                        'map-settings-button-background',
                       ),
+                      dark: darkMapControls,
+                      lightBackground: Theme.of(
+                        context,
+                      ).colorScheme.surface.withValues(alpha: 0.88),
+                      icon: Icons.settings_outlined,
+                      iconSize: 19,
+                      minSize: 44,
+                      tooltip: AppText.of(context).mapSettings,
+                      onPressed: _openMapSettings,
                     ),
                   ),
                   Positioned(
@@ -353,27 +258,16 @@ class _HomePageState extends State<HomePage> {
                   Positioned(
                     top: safe.top + 204,
                     right: 16,
-                    child: Material(
-                      color: darkMapControls
-                          ? NavioColors.mapControlDark
-                          : NavioColors.mapControlLight,
-                      shape: const CircleBorder(),
-                      elevation: 1,
-                      child: IconButton(
-                        tooltip: AppText.of(
-                          context,
-                        ).guidanceVoiceToggle(_voiceEnabled),
-                        icon: Icon(
-                          _voiceEnabled
-                              ? Icons.volume_up_rounded
-                              : Icons.volume_off_rounded,
-                          size: 20,
-                          color: darkMapControls
-                              ? Colors.white
-                              : NavioColors.mapControlIconLight,
-                        ),
-                        onPressed: _toggleGuidance,
-                      ),
+                    child: MapControlButton(
+                      dark: darkMapControls,
+                      icon: _voice.enabled
+                          ? Icons.volume_up_rounded
+                          : Icons.volume_off_rounded,
+                      lightIconColor: NavioColors.mapControlIconLight,
+                      tooltip: AppText.of(
+                        context,
+                      ).guidanceVoiceToggle(_voice.enabled),
+                      onPressed: _voice.toggle,
                     ),
                   ),
                   Positioned(
@@ -390,21 +284,7 @@ class _HomePageState extends State<HomePage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (navigating && nav.waypoints.isNotEmpty) ...[
-                              GlassPanel(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
-                                ),
-                                child: Text(
-                                  nav.completedWaypoints < nav.waypoints.length
-                                      ? '${AppText.of(context).nextStop}: ${nav.waypoints[nav.completedWaypoints].name} (${nav.completedWaypoints + 1}/${nav.waypoints.length})'
-                                      : (AppText.of(
-                                          context,
-                                        ).allStopsVisitedContinuing),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
+                              WaypointProgressBanner(nav: nav),
                               const SizedBox(height: 8),
                             ],
                             if (showInstruction) ...[
@@ -412,7 +292,7 @@ class _HomePageState extends State<HomePage> {
                               const SizedBox(height: 10),
                             ],
                             if (!navigating)
-                              _DestinationPanel(
+                              DestinationPanel(
                                 destination: _destination,
                                 selectedRoute: nav.selectedRoute,
                                 previewingRoute: nav.previewingRoute,
@@ -426,7 +306,7 @@ class _HomePageState extends State<HomePage> {
                             else
                               GlassPanel(
                                 padding: const EdgeInsets.all(12),
-                                child: _NavigationControls(
+                                child: NavigationControls(
                                   phase: nav.phase,
                                   error: nav.error,
                                   onEnd: () =>
@@ -446,254 +326,6 @@ class _HomePageState extends State<HomePage> {
           );
         },
       ),
-    );
-  }
-}
-
-class _DestinationPanel extends StatelessWidget {
-  const _DestinationPanel({
-    required this.destination,
-    required this.selectedRoute,
-    required this.previewingRoute,
-    required this.canStart,
-    required this.onChoose,
-    required this.onStart,
-    required this.waypointCount,
-    required this.onEditWaypoints,
-  });
-
-  final PlaceResult? destination;
-  final RouteCandidate? selectedRoute;
-  final bool previewingRoute;
-  final bool canStart;
-  final VoidCallback onChoose;
-  final VoidCallback onStart;
-  final int waypointCount;
-  final VoidCallback onEditWaypoints;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = AppText.of(context);
-    return GlassPanel(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => RoutePreferencesPage(
-                    nav: context.read<NavigationController>(),
-                  ),
-                ),
-              ),
-              icon: const Icon(Icons.tune_rounded, size: 18),
-              label: Text(text.routePreferences),
-            ),
-          ),
-          if (selectedRoute?.expectedTravelTimeSeconds != null ||
-              previewingRoute)
-            Align(
-              alignment: Alignment.centerRight,
-              child: _RouteEta(
-                seconds: selectedRoute?.expectedTravelTimeSeconds,
-                loading: previewingRoute,
-              ),
-            ),
-          InkWell(
-            onTap: onChoose,
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: double.infinity,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.search_rounded),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: destination == null
-                          ? Text(
-                              text.searchPlaceAddressBusiness,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  destination!.name,
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  destination!.address,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
-                    ),
-                    const Icon(Icons.chevron_right_rounded),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (destination != null)
-            TextButton.icon(
-              onPressed: previewingRoute ? null : onEditWaypoints,
-              icon: const Icon(Icons.add_location_alt_outlined, size: 18),
-              label: Text(text.editStops(waypointCount)),
-            ),
-          if (destination == null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 2, 4, 4),
-              child: Text(
-                !canStart
-                    ? text.connectNavScreenFirst
-                    : text.chooseDestinationFirst,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            )
-          else
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: FilledButton.icon(
-                onPressed: canStart && destination != null && !previewingRoute
-                    ? onStart
-                    : null,
-                icon: const Icon(Icons.navigation_rounded),
-                label: Text(
-                  !canStart
-                      ? text.connectNavScreenFirst
-                      : destination == null
-                      ? text.chooseDestinationFirst
-                      : text.startNavigation,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RouteEta extends StatelessWidget {
-  const _RouteEta({required this.seconds, required this.loading});
-
-  final int? seconds;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = AppText.of(context);
-    final seconds = this.seconds;
-    if (loading) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox.square(
-            dimension: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            text.planningRouteShort,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-      );
-    }
-
-    if (seconds == null) return const SizedBox.shrink();
-
-    final duration = _durationLabel(text, Duration(seconds: seconds));
-    final arrival = TimeOfDay.fromDateTime(
-      DateTime.now().add(Duration(seconds: seconds)),
-    ).format(context);
-
-    return Text(
-      text.etaSummary(duration, arrival),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      textAlign: TextAlign.right,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: Theme.of(context).colorScheme.primary,
-        fontWeight: FontWeight.w700,
-      ),
-    );
-  }
-}
-
-String _durationLabel(AppText text, Duration duration) {
-  final minutes = (duration.inSeconds / 60).round().clamp(1, 999);
-  if (minutes < 60) {
-    return text.durationMinutes(minutes);
-  }
-
-  final hours = minutes ~/ 60;
-  final remainingMinutes = minutes % 60;
-  return text.durationHoursMinutes(hours, remainingMinutes);
-}
-
-class _NavigationControls extends StatelessWidget {
-  const _NavigationControls({
-    required this.phase,
-    required this.error,
-    required this.onEnd,
-    required this.onEndAndDisconnect,
-  });
-
-  final NavPhase phase;
-  final String? error;
-  final VoidCallback onEnd;
-  final VoidCallback onEndAndDisconnect;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = AppText.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (error != null) ...[
-          Text(
-            error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-          const SizedBox(height: 12),
-        ],
-        SizedBox(
-          height: 54,
-          child: TextButton.icon(
-            onPressed: phase == NavPhase.routing ? null : onEnd,
-            icon: const Icon(Icons.stop_circle_rounded),
-            label: Text(text.endNavigation),
-          ),
-        ),
-        const Divider(height: 12, color: NavioColors.panelDivider),
-        SizedBox(
-          height: 54,
-          child: TextButton.icon(
-            onPressed: phase == NavPhase.routing ? null : onEndAndDisconnect,
-            icon: const Icon(Icons.bluetooth_disabled_rounded),
-            label: Text(text.endAndDisconnect),
-          ),
-        ),
-      ],
     );
   }
 }

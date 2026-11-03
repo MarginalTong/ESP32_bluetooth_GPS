@@ -540,4 +540,6 @@ class AppText {
   String editStops(int count) => isEnglish
       ? (count == 0 ? 'Add stops' : 'Edit stops ($count)')
       : (count == 0 ? '添加途经点' : '编辑途经点（$count）');
+  String nextStopProgress(String name, int position, int total) =>
+      '$nextStop: $name ($position/$total)';
 }
