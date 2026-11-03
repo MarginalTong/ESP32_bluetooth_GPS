@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Renders the round panel's screen the old and new way side by side (PPM).
 # Usage: bash firmware/tests/run_route_render_preview.sh [out.ppm [standby.ppm]]
+# Without arguments the image goes to $TMPDIR, never into the repository.
 # Needs the Adafruit GFX library (fonts); set ADAFRUIT_GFX_DIR if it is not
 # in the default Arduino libraries folder.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-out="${1:-route_preview.ppm}"
+out="${1:-${TMPDIR:-/tmp}/route_preview.ppm}"
 gfx="${ADAFRUIT_GFX_DIR:-$HOME/Documents/Arduino/libraries/Adafruit_GFX_Library}"
 work=$(mktemp -d "${TMPDIR:-/tmp}/route-render-preview.XXXXXX")
 trap 'rm -rf "$work"' EXIT

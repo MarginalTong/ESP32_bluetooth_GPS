@@ -15,3 +15,6 @@ supabase/.temp/
 supabase/.branches/
 supabase/.env*
 !supabase/.env.example
+
+# Render previews from firmware/tests/run_route_render_preview.sh
+*.ppm
