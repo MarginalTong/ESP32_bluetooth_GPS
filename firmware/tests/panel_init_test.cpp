@@ -13,18 +13,13 @@ struct Command {
   std::vector<uint8_t> data;
 };
 
-struct Expect {
-  size_t commands;
-  int fullRowWindows, timingWaits;
-};
-
-template <size_t N>
-void check(const uint8_t (&ops)[N], const Expect& expect, const char* name) {
+int main() {
   std::vector<Command> sent;
   bool writing = false, sleeping = true, timingEnabled = false;
   unsigned elapsed = 0, sleepOutAt = 0;
   int gammaTables = 0, fullRowWindows = 0, timingWaits = 0;
-  for (size_t i = 0; i < N;) {
+  const auto& ops = jc3636_qspi_init;
+  for (size_t i = 0; i < sizeof(ops);) {
     const uint8_t op = ops[i++];
     if (op == BEGIN_WRITE) {
       assert(!writing);
@@ -33,15 +28,15 @@ void check(const uint8_t (&ops)[N], const Expect& expect, const char* name) {
       assert(writing);
       writing = false;
     } else if (op == DELAY) {
-      assert(!writing && i < N);
+      assert(!writing && i < sizeof(ops));
       const unsigned ms = ops[i++];
       elapsed += ms;
       if (timingEnabled && ms >= 10) ++timingWaits;
     } else {
-      assert(op == WRITE_C8_BYTES && writing && i + 2 <= N);
+      assert(op == WRITE_C8_BYTES && writing && i + 2 <= sizeof(ops));
       Command cmd{ops[i++], {}};
       const size_t length = ops[i++];
-      assert(length > 0 && i + length <= N);
+      assert(length > 0 && i + length <= sizeof(ops));
       cmd.data.assign(ops + i, ops + i + length);
       i += length;
       if (length == 14) {
@@ -62,28 +57,10 @@ void check(const uint8_t (&ops)[N], const Expect& expect, const char* name) {
       sent.push_back(cmd);
     }
   }
-  assert(!writing && sent.size() == expect.commands);
+  assert(!writing && sent.size() == 219);
   assert(sent[0].address == 0x36 && sent[0].data[0] == 0);
   assert(sent[1].address == 0x3A && sent[1].data[0] == 0x55);
   assert(sent.back().address == 0x29);
-  assert(gammaTables == 2 && fullRowWindows == expect.fullRowWindows &&
-         timingWaits == expect.timingWaits);
-  std::printf("%s init: %zu combined QSPI commands, gamma/windows/timing/sleep-out passed\n",
-              name, sent.size());
-}
-
-int main() {
-  check(jc3636_qspi_init, {219, 1, 1}, "JC3636W518C");
-  // Vendor table (184) plus pixel format and orientation.
-  check(jc3636k518_qspi_init, {186, 0, 0}, "JC3636K518");
-  // Spot-check values copied from the K518 vendor INI, not the W518 defaults.
-  const auto& k = jc3636k518_qspi_init;
-  bool found = false;
-  for (size_t i = 0; i + 3 < sizeof(k); ++i)
-    if (k[i] == WRITE_C8_BYTES && k[i + 1] == 0xB0 && k[i + 2] == 1) {
-      assert(k[i + 3] == 0x56);  // first B0 in the vendor table
-      found = true;
-      break;
-    }
-  assert(found);
+  assert(gammaTables == 2 && fullRowWindows == 1 && timingWaits == 1);
+  std::puts("JC3636 init: 219 combined QSPI commands, gamma/windows/timing/sleep-out passed");
 }

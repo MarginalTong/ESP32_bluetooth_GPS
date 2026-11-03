@@ -6,33 +6,16 @@
 #ifndef NAV_JC3636W518C
 #define NAV_JC3636W518C 0
 #endif
-#ifndef NAV_JC3636K518
-#define NAV_JC3636K518 0
-#endif
-// Both JC3636 variants: ST77916 360x360 over QSPI, direct GPIO reset.
-#define NAV_JC3636 (NAV_JC3636W518C || NAV_JC3636K518)
 #ifndef NAV_WAVESHARE_146
-#define NAV_WAVESHARE_146 (!NAV_JC3636)
+#define NAV_WAVESHARE_146 (!NAV_JC3636W518C)
 #endif
-#if (NAV_JC3636W518C + NAV_JC3636K518 + NAV_WAVESHARE_146) > 1
+#if NAV_JC3636W518C && NAV_WAVESHARE_146
 #error "Select only one display board"
 #endif
-#define NAV_ROUND_DISPLAY (NAV_WAVESHARE_146 || NAV_JC3636)
+#define NAV_ROUND_DISPLAY (NAV_WAVESHARE_146 || NAV_JC3636W518C)
 
 #if NAV_ROUND_DISPLAY
-#if NAV_JC3636K518
-// Vendor schematic 2_ESP32-S3(R8).png and demo pincfg.h (JC3636K518, knob).
-// GPIO9-12 are touch, GPIO7/8 the encoder: never drive them as LCD pins.
-constexpr int8_t TFT_DATA0_PIN = 15;
-constexpr int8_t TFT_DATA1_PIN = 16;
-constexpr int8_t TFT_DATA2_PIN = 17;
-constexpr int8_t TFT_DATA3_PIN = 18;
-constexpr int8_t TFT_SCLK_PIN = 13;
-constexpr int8_t TFT_CS_PIN = 14;
-constexpr int8_t TFT_BACKLIGHT_PIN = 47;
-constexpr int8_t TFT_RESET_PIN = 21;
-constexpr int16_t PANEL_SIZE = 360;
-#elif NAV_JC3636W518C
+#if NAV_JC3636W518C
 // Manufacturer demo: ST77916_LVGL_DEMO/pincfg.h (JC3636W518EN).
 constexpr int8_t TFT_DATA0_PIN = 11;
 constexpr int8_t TFT_DATA1_PIN = 12;

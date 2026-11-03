@@ -23,12 +23,10 @@ These are explicit user preferences for this repository:
   internal `.navo` monitor directory unless an explicit migration is requested.
 
 - Use PlatformIO for builds and uploads; do not use Arduino CLI or Arduino IDE.
-- The connected replacement board is JC3636K518 (knob variant; ESP32-S3R8,
-  ST77916, 360×360, 16MB Flash). The current environment is `jc3636k518` in the
-  root `platformio.ini`. Its LCD pins differ from JC3636W518C: never flash a
-  `jc3636w518c` build to it. Vendor documentation is in
-  `~/Desktop/JC3636K518CN_knob_CN`. `waveshare_146` is retained only for the
-  old board; do not power or flash the damaged old screen.
+- The connected replacement board is JC3636W518C (ESP32-S3R8, ST77916,
+  360×360, 16MB Flash). The current environment is `jc3636w518c` in the root
+  `platformio.ini`. `waveshare_146` is retained only for the old board; do not
+  power or flash the damaged old screen.
 - VS Code and the assistant share the monitor managed by
   `firmware/tools/navo_monitor.py`; read `.navo/serial.log` instead of opening a
   competing serial connection. PlatformIO upload hooks release/resume it.

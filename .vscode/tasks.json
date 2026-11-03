@@ -5,7 +5,7 @@
       "label": "NAVIO: Verify",
       "type": "process",
       "command": "${userHome}/.platformio/penv/bin/pio",
-      "args": ["run", "-d", "${workspaceFolder}", "-e", "jc3636k518"],
+      "args": ["run", "-d", "${workspaceFolder}", "-e", "jc3636w518c"],
       "group": {"kind": "build", "isDefault": true},
       "problemMatcher": ["$gcc"],
       "presentation": {"reveal": "always", "panel": "dedicated"}
@@ -14,7 +14,7 @@
       "label": "NAVIO: Upload",
       "type": "process",
       "command": "${userHome}/.platformio/penv/bin/pio",
-      "args": ["run", "-d", "${workspaceFolder}", "-e", "jc3636k518", "-t", "upload"],
+      "args": ["run", "-d", "${workspaceFolder}", "-e", "jc3636w518c", "-t", "upload"],
       "problemMatcher": ["$gcc"],
       "presentation": {"reveal": "always", "panel": "dedicated"},
       "runOptions": {"instanceLimit": 1}

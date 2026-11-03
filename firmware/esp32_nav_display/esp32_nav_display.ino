@@ -4,7 +4,7 @@
 #if NAV_ROUND_DISPLAY
 #include <Wire.h>
 #include <Arduino_GFX_Library.h>
-#if NAV_JC3636
+#if NAV_JC3636W518C
 #include "../platformio/jc3636_panel_init.h"
 #endif
 #include <Fonts/FreeSans9pt7b.h>
@@ -145,15 +145,10 @@ static_assert(PANEL_VIEW_WIDTH * SCREEN_HEIGHT == PANEL_VIEW_HEIGHT * SCREEN_WID
               "Preserve the logical canvas aspect ratio");
 Arduino_ESP32QSPI lcdBus(TFT_CS_PIN, TFT_SCLK_PIN, TFT_DATA0_PIN,
                         TFT_DATA1_PIN, TFT_DATA2_PIN, TFT_DATA3_PIN);
-#if NAV_JC3636
-#if NAV_JC3636K518
-#define JC3636_PANEL_INIT jc3636k518_qspi_init
-#else
-#define JC3636_PANEL_INIT jc3636_qspi_init
-#endif
+#if NAV_JC3636W518C
 // Apply inversion explicitly below; Arduino_GFX XORs it with the IPS flag.
 Arduino_ST77916 tft(&lcdBus, TFT_RESET_PIN, 0, false, PANEL_SIZE, PANEL_SIZE,
-                    0, 0, 0, 0, JC3636_PANEL_INIT, sizeof(JC3636_PANEL_INIT));
+                    0, 0, 0, 0, jc3636_qspi_init, sizeof(jc3636_qspi_init));
 #else
 Arduino_SPD2010 tft(&lcdBus, GFX_NOT_DEFINED);
 #endif
@@ -2067,9 +2062,7 @@ bool initDisplay() {
     return false;
   }
 #if NAV_ROUND_DISPLAY
-#if NAV_JC3636K518
-  Serial.println("[TFT] init JC3636K518 ST77916 QSPI (vendor command transactions)...");
-#elif NAV_JC3636W518C
+#if NAV_JC3636W518C
   Serial.println("[TFT] init JC3636W518C ST77916 QSPI (vendor command transactions)...");
 #else
   Serial.println("[TFT] init Waveshare 1.46 SPD2010 QSPI...");
@@ -2087,7 +2080,7 @@ bool initDisplay() {
     Serial.println("[TFT] QSPI initialization failed");
     return false;
   }
-#if NAV_JC3636
+#if NAV_JC3636W518C
   tft.invertDisplay(true);  // Same polarity as the manufacturer's LCD demo.
 #endif
   tft.fillScreen(COLOR_BG);
@@ -2107,7 +2100,7 @@ bool initDisplay() {
   } else {
     Serial.println("[TFT] NAVIO UI: low-resolution fallback (check OPI PSRAM setting)");
   }
-#if NAV_JC3636
+#if NAV_JC3636W518C
   Serial.println("[TFT] ST77916 360x360 ready");
 #else
   Serial.println("[TFT] SPD2010 412x412 ready");
