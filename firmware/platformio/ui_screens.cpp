@@ -44,7 +44,7 @@ void drawClock(const UiState& state, const UiRenderContext& context) {
     drawDisconnectedBrand("CONNECT PHONE");
     return;
   }
-  drawCompactBrand();
+  // The clock page shows only the time: no wordmark in the corner.
 #if NAV_ROUND_DISPLAY
   drawRoundCenteredStatus(context.clockText, 7, "ready to go", 2);
 #else

@@ -294,7 +294,7 @@ static void pages() {
   check(drew("ready to go"), "connected legacy-panel brand is ready");
 #endif
   drawPage(UiScreen::Clock, true);
-  expectCompactBrand();
+  check(brandDraws.empty() && drew("12:34"), "connected clock page shows the time without NAVIO");
   check(drew("12:34") && drew("ready to go"), "clock gets the supplied time and connection subtitle");
   drawPage(UiScreen::Clock, false);
   expectLargeBrand();
