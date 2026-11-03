@@ -95,6 +95,25 @@ uniform and lines continuous. The default environment/tasks remain NAVIO;
 restoring `pio run -e jc3636w518c -t upload` replaces this temporary diagnostic.
 The pattern geometry is host-tested by `run_panel_init_test.sh`.
 
+### Original-firmware comparison
+
+The user also reported horizontal white stripes with the direct ESP-IDF test.
+That rules out the NAVIO compositor/fonts as a necessary cause, but does not
+distinguish incorrect panel initialization, transport settings or a hardware
+fault. On 2026-11-03 the complete pre-flash backup was selected for restoration
+to the same board (USB identity checked before writing). This restores the
+original bootloader, partition layout, application and data, not just an app
+binary at a guessed offset. The 16MB write completed and the tool reported
+`Hash of data verified` before reset. The result still requires a physical
+picture check; no conclusion about hardware failure has been established.
+
+When observing that binary use the shared monitor with
+`--environment jc3636_factory_monitor`. This disables NAVIO ELF exception
+decoding, which would otherwise produce misleading locations for the original
+firmware. This environment is for logging, not a factory firmware build target;
+the original binary stays private in `.navo/`, not in Git. Do not keep changing
+navigation render settings based on this failure.
+
 Arduino sketch:
 
 - `esp32_nav_display/esp32_nav_display.ino`
