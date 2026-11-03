@@ -231,7 +231,7 @@ static void drawPage(UiScreen page, bool connected = true) {
 static void expectCompactBrand() {
   check(brandDraws.size() == 1, "connected idle page draws the brand exactly once");
   const auto& brand = brandDraws.front();
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   check(brand.size == 2 && !brand.centered && brand.left == 38 && brand.top == 38,
         "compact round-panel brand is inset at the upper left");
 #else
@@ -243,7 +243,7 @@ static void expectCompactBrand() {
 static void expectLargeBrand() {
   check(brandDraws.size() == 1, "disconnected page draws the brand exactly once");
   const auto& brand = brandDraws.front();
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   check(brand.centered && brand.size == 5, "disconnected round-panel brand restores its full size");
 #else
   check(brand.size == 4 && brand.left == 60 && brand.top == 35,
@@ -281,7 +281,7 @@ static void pages() {
   check(drew("NAVIO") && drew("CONNECT PHONE"), "disconnected brand asks for a phone");
   drawPage(UiScreen::Brand, true);
   expectCompactBrand();
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   check(drew("READY TO GO"), "connected round-panel brand is ready");
   native = false;
   drawPage(UiScreen::Brand, true);
@@ -314,5 +314,5 @@ int main() {
   combinations();
   pages();
   std::printf("UI state/render: 55,296 combinations + transitions/pages passed (round=%d)\n",
-              NAV_WAVESHARE_146);
+              NAV_ROUND_DISPLAY);
 }

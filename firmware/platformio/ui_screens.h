@@ -1,5 +1,6 @@
 #pragma once
 
+#include "board_config.h"
 #include "ui_state.h"
 
 // Frame-local data provided by the board adapter. Clock formatting and device

@@ -1,17 +1,14 @@
-// 1: Waveshare ESP32-S3-Touch-LCD-1.46; 0: original ideaspark ST7789.
-#ifndef NAV_WAVESHARE_146
-#define NAV_WAVESHARE_146 1
-#endif
+#include "../platformio/board_config.h"
 #include <SPI.h>
 #include <Adafruit_GFX.h>
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
 #include <Wire.h>
 #include <Arduino_GFX_Library.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold18pt7b.h>
 #include <Fonts/FreeSansBold24pt7b.h>
 #if !defined(CONFIG_IDF_TARGET_ESP32S3)
-#error "Select ESP32S3 Dev Module for the Waveshare 1.46 board"
+#error "Select an ESP32-S3 target for the round display boards"
 #endif
 #else
 #include <Adafruit_ST7789.h>
@@ -119,7 +116,7 @@ struct MapMotion {
 // Keep the old panel's layout; give the round panel a square map/instruction
 // layout instead of letterboxing the 240x135 strip in the middle of the LCD.
 constexpr int16_t SCREEN_WIDTH = 240;
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
 constexpr int16_t SCREEN_HEIGHT = 240;
 #else
 constexpr int16_t SCREEN_HEIGHT = 135;
@@ -131,29 +128,13 @@ constexpr int16_t SCREEN_HEIGHT = 135;
 constexpr int16_t ROUTE_SOURCE_WIDTH = 128;
 constexpr int16_t ROUTE_SOURCE_HEIGHT = 64;
 
-#if NAV_WAVESHARE_146
-constexpr int8_t TFT_DATA0_PIN = 46;
-constexpr int8_t TFT_DATA1_PIN = 45;
-constexpr int8_t TFT_DATA2_PIN = 42;
-constexpr int8_t TFT_DATA3_PIN = 41;
-constexpr int8_t TFT_SCLK_PIN = 40;
-constexpr int8_t TFT_CS_PIN = 21;
-constexpr int8_t TFT_BACKLIGHT_PIN = 5;
-constexpr int8_t BOARD_I2C_SDA_PIN = 11;
-constexpr int8_t BOARD_I2C_SCL_PIN = 10;
-// EXIO2 is bit 1 of TCA9554 at 0x20, NOT ESP32 GPIO2.
-constexpr uint8_t LCD_RESET_MASK = 1U << 1;
-constexpr uint8_t IO_EXPANDER_ADDRESS = 0x20;
-constexpr int16_t PANEL_SIZE = 412;
+#if NAV_ROUND_DISPLAY
 // Output always fills the physical panel; rendering resolution is independent.
 constexpr int16_t PANEL_VIEW_WIDTH = PANEL_SIZE;
 constexpr int16_t PANEL_VIEW_HEIGHT = PANEL_SIZE;
 constexpr int16_t PANEL_VIEW_X = (PANEL_SIZE - PANEL_VIEW_WIDTH) / 2;
 constexpr int16_t PANEL_VIEW_Y = (PANEL_SIZE - PANEL_VIEW_HEIGHT) / 2;
 constexpr int16_t PANEL_VISIBLE_RADIUS = PANEL_SIZE / 2 - 3;
-#ifndef NAVIO_RENDER_SIZE
-#define NAVIO_RENDER_SIZE 412
-#endif
 constexpr int16_t NATIVE_LAYER_SIZE = NAVIO_RENDER_SIZE;
 static_assert(NAVIO_RENDER_SIZE >= SCREEN_WIDTH && NAVIO_RENDER_SIZE <= PANEL_SIZE,
               "Render size must be between the logical canvas and physical panel");
@@ -161,7 +142,12 @@ static_assert(PANEL_VIEW_WIDTH * SCREEN_HEIGHT == PANEL_VIEW_HEIGHT * SCREEN_WID
               "Preserve the logical canvas aspect ratio");
 Arduino_ESP32QSPI lcdBus(TFT_CS_PIN, TFT_SCLK_PIN, TFT_DATA0_PIN,
                         TFT_DATA1_PIN, TFT_DATA2_PIN, TFT_DATA3_PIN);
+#if NAV_JC3636W518C
+// Apply inversion explicitly below; Arduino_GFX XORs it with the IPS flag.
+Arduino_ST77916 tft(&lcdBus, TFT_RESET_PIN, 0, false);
+#else
 Arduino_SPD2010 tft(&lcdBus, GFX_NOT_DEFINED);
+#endif
 #else
 // ideaspark / ESP32 built-in 1.14-inch ST7789 configuration. If your board is
 // mirrored or upside-down, change TFT_ROTATION to 3.
@@ -714,7 +700,7 @@ uint8_t sessionNonce[AUTH_NONCE_BYTES] = {};
 uint32_t sessionCounter = 0;
 BleMailbox mailbox;
 MapMotion mapMotion;
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
 // The whole UI at the panel's native resolution, in PSRAM. Drawing code keeps
 // the 240x240 canvas coordinates and scales them. Without PSRAM everything is
 // drawn into the canvas and upscaled, as before.
@@ -742,7 +728,7 @@ void setDisplayPower(DisplayPowerState state);
 void presentDisplay();
 void drawDirection(Direction direction);
 void drawMiniRouteMap(bool showRider, Direction direction);
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
 void drawRoundCenteredText(const char* value, uint8_t size, int16_t top);
 #endif
 
@@ -1325,7 +1311,7 @@ void setupBle() {
 constexpr int16_t MAP_LEFT = 0;
 constexpr int16_t MAP_TOP = 0;
 constexpr int16_t MAP_RIGHT = SCREEN_WIDTH - 1;
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
 constexpr int16_t MAP_BOTTOM = 166;
 constexpr uint8_t ROUTE_STROKE = 7;
 constexpr uint8_t FALLBACK_ROUTE_STROKE = 4;
@@ -1335,7 +1321,7 @@ constexpr uint8_t ROUTE_STROKE = 6;
 constexpr uint8_t FALLBACK_ROUTE_STROKE = 2;
 #endif
 // Zoom geometry around the rider, without enlarging the instruction strip.
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
 constexpr float MAP_ZOOM = 1.90f;
 #else
 constexpr float MAP_ZOOM = 1.50f;
@@ -1353,7 +1339,7 @@ float mapPreviewX(float x) {
 
 float mapPreviewY(float y) {
   const float anchor = MAP_BOTTOM - 12;
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   // Use the extra round-screen height for the map, but retain the rider at
   // the bottom so the instruction strip cannot be covered by road geometry.
   const float projected = MAP_TOP + 25 + (y - 2) * (MAP_BOTTOM - MAP_TOP - 47) / 32.0f;
@@ -1364,7 +1350,7 @@ float mapPreviewY(float y) {
 #endif
 }
 
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
 constexpr float NATIVE_SCALE = float(NATIVE_LAYER_SIZE) / SCREEN_WIDTH;
 
 bool useNativeLayer() { return nativeLayer.pixels != nullptr; }
@@ -1386,7 +1372,7 @@ bool useNativeLayer() { return false; }
 void beginFrame() {
   display.fillScreen(COLOR_BG);
   display.setTextColor(COLOR_WHITE);
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
     nativeLayer.clear();
     nativeLayerDrawn = true;
@@ -1396,7 +1382,7 @@ void beginFrame() {
 
 // Text whose capitals span [top, top + 7 * size] canvas pixels.
 void drawUiText(const char* value, uint8_t size, float left, float top) {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
     // Numbers use the numeric font, everything else the text font. The
     // classic font's size n is 7n canvas pixels tall; keep those heights.
@@ -1413,7 +1399,7 @@ void drawUiText(const char* value, uint8_t size, float left, float top) {
 }
 
 float uiTextWidth(const char* value, uint8_t size) {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
     const AlphaFont& font = isNumericText(value) ? NAVIO_NUMERIC_FONT : NAVIO_TEXT_FONT;
     return font.textWidth(value, 7.0f * size / font.capHeight);
@@ -1423,7 +1409,7 @@ float uiTextWidth(const char* value, uint8_t size) {
 }
 
 void fillUiTriangle(float x0, float y0, float x1, float y1, float x2, float y2) {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
     nativeLayer.fillTriangle(layerCoord(x0), layerCoord(y0), layerCoord(x1),
                              layerCoord(y1), layerCoord(x2), layerCoord(y2), 255);
@@ -1436,7 +1422,7 @@ void fillUiTriangle(float x0, float y0, float x1, float y1, float x2, float y2) 
 
 void presentDisplay() {
   lastFrameTransferUs = 0;
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   // Composed and sent in bands, so no full panel framebuffer is needed: the
   // canvas UI upscaled, over the native-resolution map. Native RGB565 words
   // are passed to draw16bitRGBBitmap (not the big-endian variant).
@@ -1474,7 +1460,7 @@ void drawThickLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 // A stroke as wide as drawThickLine() draws it (2 * (thickness / 2) + 1
 // canvas pixels), anti-aliased on the native layer.
 void drawStroke(float x0, float y0, float x1, float y1, uint8_t thickness) {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
     const float width = (thickness / 2 * 2 + 1) * NATIVE_SCALE;
     nativeLayer.strokeSegment(layerCoord(x0), layerCoord(y0), layerCoord(x1),
@@ -1488,7 +1474,7 @@ void drawStroke(float x0, float y0, float x1, float y1, uint8_t thickness) {
 
 void drawArrivalCheck(uint8_t progress) {
   const float p = fminf(progress / 100.0f, 1.0f);
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   constexpr float ax = 82, ay = 106, bx = 110, by = 132, cx = 162, cy = 74;
 #else
   constexpr float ax = 88, ay = 56, bx = 112, by = 78, cx = 152, cy = 34;
@@ -1512,7 +1498,7 @@ void drawSideRoadLine(float x0, float y0, float x1, float y1) {
   if (length < 1.0f) return;
   const float ux = dx / length;
   const float uy = dy / length;
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   constexpr float visibleLength = 48.0f;
 #else
   constexpr float visibleLength = 30.0f;
@@ -1526,7 +1512,7 @@ void drawSideRoadLine(float x0, float y0, float x1, float y1) {
       y0 < margin || y0 >= MAP_CLIP_BOTTOM - margin ||
       endX < margin || endX >= SCREEN_WIDTH - margin ||
       endY < margin || endY >= MAP_CLIP_BOTTOM - margin) return;
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   constexpr float visibleRadius = SCREEN_WIDTH / 2.0f - margin;
   const float startCircleX = x0 - SCREEN_WIDTH / 2.0f;
   const float startCircleY = y0 - SCREEN_HEIGHT / 2.0f;
@@ -1539,7 +1525,7 @@ void drawSideRoadLine(float x0, float y0, float x1, float y1) {
 #endif
   constexpr float railOffset = 3.0f;
   constexpr float softWidth = 1.9f;
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
     nativeLayer.strokeFadingRails(layerCoord(x0), layerCoord(y0), ux, uy,
                                visibleLength * NATIVE_SCALE,
@@ -1584,7 +1570,7 @@ void drawSideRoadSegments() {
   }
 }
 
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
 // The instruction row sits where the round aperture narrows. These values
 // keep every arrow (stroke included) and the widest distance text ("NOW")
 // 3 canvas px inside the visible circle of the full 412 px view, below the
@@ -1600,7 +1586,7 @@ constexpr float DISTANCE_TOP = 171.0f;
 // Arrow artwork is drawn in the original strip's coordinates, centred on
 // (66, 111.5).
 float instructionX(float x) {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   return INSTRUCTION_CENTER_X + (x - 66.0f) * INSTRUCTION_SCALE;
 #else
   return x;
@@ -1608,7 +1594,7 @@ float instructionX(float x) {
 }
 
 float instructionY(float y) {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   return INSTRUCTION_CENTER_Y + (y - 111.5f) * INSTRUCTION_SCALE;
 #else
   return y;
@@ -1619,7 +1605,7 @@ void drawInstructionLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
                          uint8_t thickness = 3) {
   drawStroke(instructionX(x0), instructionY(y0), instructionX(x1),
              instructionY(y1),
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
              thickness + 1
 #else
              thickness
@@ -1678,7 +1664,7 @@ void drawUTurn() {
 }
 
 void drawStop() {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
     nativeLayer.fillRoundRect(instructionX(42) * NATIVE_SCALE,
                               instructionY(98) * NATIVE_SCALE,
@@ -1771,7 +1757,7 @@ void drawFallbackMapRoute(Direction direction) {
 }
 
 void drawMiniRouteMap(bool showRider, Direction direction) {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   // Legacy preview coordinates can extend below the map; keep them out of
   // the instruction strip.
   nativeLayer.clipBottom = int16_t(MAP_CLIP_BOTTOM * NATIVE_SCALE);
@@ -1793,7 +1779,7 @@ void drawMiniRouteMap(bool showRider, Direction direction) {
     const int16_t markerY = MAP_BOTTOM - 12;
     // Only live guidance may show a rider marker. A cached snapshot no longer
     // establishes the bike's current position relative to this road shape.
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
     if (useNativeLayer()) {
       const float x = layerCoord(markerX), y = layerCoord(markerY);
       constexpr float s = NATIVE_SCALE;
@@ -1819,12 +1805,12 @@ void drawMiniRouteMap(bool showRider, Direction direction) {
   // the instruction strip without drawing a visible frame or separator.
   display.fillRect(0, MAP_CLIP_BOTTOM, SCREEN_WIDTH, SCREEN_HEIGHT - MAP_CLIP_BOTTOM,
                    COLOR_BG);
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   nativeLayer.clipBottom = nativeLayer.height;
 #endif
 }
 
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
 // Returns the drawn width.
 uint16_t drawFallbackDistanceText(const char* value, const GFXfont* font,
                                   int16_t anchorX, int16_t top, bool rightAligned) {
@@ -1843,7 +1829,7 @@ uint16_t drawFallbackDistanceText(const char* value, const GFXfont* font,
 void drawDistance(const NavState& navigation, bool blinkState) {
   const int distanceMeters = navigation.distanceMeters;
   display.setTextColor(COLOR_WHITE);
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   // The circle narrows at the bottom: lay the group out leftwards from the
   // safe right edge, unit first, both on the same baseline.
   const char* label = nullptr;
@@ -1904,7 +1890,7 @@ void drawBottomError() {
   if (lastError[0] == '\0') return;
 
   display.setTextColor(COLOR_ACCENT);
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   // Below the distance the round aperture is narrow: centre the message there
   // and drop trailing characters until it fits the visible width at its
   // lowest row (3 px margin).
@@ -1924,7 +1910,7 @@ void drawBottomError() {
 #endif
 }
 
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
 uint16_t roundTextHeight(const char* value, uint8_t size) {
   if (useNativeLayer()) return 7 * size;
   int16_t x, y;
@@ -1991,7 +1977,7 @@ void renderDisplay(const UiState& state, bool blinkState) {
   }
   const UiRenderContext context = {
       DEVICE_NAME, clockText, SCREEN_HEIGHT,
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
       DISTANCE_TOP,
 #else
       100.0f,
@@ -2071,19 +2057,28 @@ bool initDisplay() {
     Serial.println("[TFT] Canvas allocation failed");
     return false;
   }
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
+#if NAV_JC3636W518C
+  Serial.println("[TFT] init JC3636W518C ST77916 QSPI...");
+#else
   Serial.println("[TFT] init Waveshare 1.46 SPD2010 QSPI...");
+#endif
   pinMode(TFT_BACKLIGHT_PIN, OUTPUT);
   analogWrite(TFT_BACKLIGHT_PIN, 0);
+#if NAV_WAVESHARE_146
   if (!Wire.begin(BOARD_I2C_SDA_PIN, BOARD_I2C_SCL_PIN, 400000) ||
       !resetRoundPanel()) {
     Serial.println("[TFT] TCA9554 reset failed (address 0x20)");
     return false;
   }
+#endif
   if (!tft.begin(40000000)) {
     Serial.println("[TFT] QSPI initialization failed");
     return false;
   }
+#if NAV_JC3636W518C
+  tft.invertDisplay(true);  // Same polarity as the manufacturer's LCD demo.
+#endif
   tft.fillScreen(COLOR_BG);
   analogWrite(TFT_BACKLIGHT_PIN, BACKLIGHT_NORMAL);
   panelComposer.init(PANEL_VIEW_WIDTH, PANEL_VIEW_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT,
@@ -2101,7 +2096,11 @@ bool initDisplay() {
   } else {
     Serial.println("[TFT] NAVIO UI: low-resolution fallback (check OPI PSRAM setting)");
   }
+#if NAV_JC3636W518C
+  Serial.println("[TFT] ST77916 360x360 ready");
+#else
   Serial.println("[TFT] SPD2010 412x412 ready");
+#endif
 #else
   Serial.println("[TFT] init ST7789...");
   pinMode(TFT_BACKLIGHT_PIN, OUTPUT);

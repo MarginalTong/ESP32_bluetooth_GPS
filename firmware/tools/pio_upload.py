@@ -52,7 +52,8 @@ def before_upload(source, target, env):
 
 def after_upload(source, target, env):
     release()
-    subprocess.run([sys.executable, str(root / "firmware/tools/navo_monitor.py"), "start"],
+    subprocess.run([sys.executable, str(root / "firmware/tools/navo_monitor.py"), "start",
+                    "--environment", env.subst("$PIOENV")],
                    cwd=root, check=True)
 
 

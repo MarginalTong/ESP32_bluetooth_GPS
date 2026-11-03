@@ -8,6 +8,7 @@ while the PlatformIO upload hook owns upload.lock.
 
 import argparse
 import contextlib
+import configparser
 from datetime import datetime, timezone
 import fcntl
 import json
@@ -26,7 +27,12 @@ LOCAL = ROOT / ".navo"
 LOG = LOCAL / "serial.log"
 STOP = LOCAL / "monitor.stop"
 STATE = LOCAL / "monitor.json"
-ENVIRONMENT = "waveshare_146"
+
+
+def default_environment():
+    config = configparser.ConfigParser(interpolation=None)
+    config.read(ROOT / "platformio.ini")
+    return config["platformio"]["default_envs"].strip()
 
 
 def pio():
@@ -79,9 +85,10 @@ def note(message):
         output.write(f"\n{stamp} [MONITOR] {message}\n".encode())
 
 
-def status(state, device=None):
+def status(state, device=None, environment=None):
     temporary = STATE.with_suffix(".tmp")
-    temporary.write_text(json.dumps({"pid": os.getpid(), "state": state, "port": device}))
+    temporary.write_text(json.dumps({"pid": os.getpid(), "state": state,
+                                     "port": device, "environment": environment}))
     temporary.replace(STATE)
 
 
@@ -100,7 +107,7 @@ def stop_child(process, terminal):
                 process.wait()
 
 
-def daemon(explicit):
+def daemon(explicit, environment):
     with lock("monitor.lock"):
         STOP.unlink(missing_ok=True)
         signal.signal(signal.SIGTERM, lambda *_: STOP.touch())
@@ -119,7 +126,7 @@ def daemon(explicit):
                         master, slave = pty.openpty()
                         try:
                             command = [pio(), "device", "monitor", "-d", str(ROOT),
-                                       "-e", ENVIRONMENT, "--port", device, "--no-reconnect"]
+                                       "-e", environment, "--port", device, "--no-reconnect"]
                             process = subprocess.Popen(command, stdin=slave, stdout=slave,
                                                        stderr=slave, cwd=ROOT,
                                                        env={**os.environ, "TZ": "UTC"},
@@ -127,8 +134,8 @@ def daemon(explicit):
                         finally:
                             os.close(slave)
                         try:
-                            status("running PlatformIO monitor", device)
-                            note(f"PlatformIO monitor on {device}")
+                            status("running PlatformIO monitor", device, environment)
+                            note(f"PlatformIO monitor on {device} ({environment})")
                             with LOG.open("ab", buffering=0) as output:
                                 while not STOP.exists() and not busy("upload.lock"):
                                     ready, _, _ = select.select([master], [], [], 0.1)
@@ -156,12 +163,22 @@ def daemon(explicit):
             note("Stopped")
 
 
-def start(explicit=None):
+def start(explicit=None, environment=None):
+    environment = environment or default_environment()
     if busy("monitor.lock"):
-        return
+        current = json.loads(STATE.read_text()) if STATE.exists() else {}
+        if current.get("environment") == environment:
+            return
+        STOP.touch()
+        deadline = time.monotonic() + 8
+        while busy("monitor.lock") and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if busy("monitor.lock"):
+            raise RuntimeError("Cannot switch monitor environment: stop timed out")
     pio()
     port(explicit)
-    command = [sys.executable, str(Path(__file__).resolve()), "_daemon"]
+    command = [sys.executable, str(Path(__file__).resolve()), "_daemon",
+               "--environment", environment]
     if explicit:
         command += ["--port", explicit]
     with (LOCAL / "monitor-driver.log").open("ab") as output:
@@ -196,10 +213,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["start", "view", "stop", "status", "_daemon"])
     parser.add_argument("--port")
+    parser.add_argument("--environment", default=default_environment())
     args = parser.parse_args()
     LOCAL.mkdir(exist_ok=True)
     if args.command in ("start", "view"):
-        start(args.port)
+        start(args.port, args.environment)
         if args.command == "view":
             view()
         else:
@@ -214,7 +232,7 @@ def main():
                 raise RuntimeError("Monitor stop timed out")
         print("Shared PlatformIO monitor stopped.")
     elif args.command == "_daemon":
-        daemon(args.port)
+        daemon(args.port, args.environment)
     else:
         print(f"PlatformIO: {pio()}\nShared log: {LOG}\nReader running: {busy('monitor.lock')}")
         if STATE.exists():

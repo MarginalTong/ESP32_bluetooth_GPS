@@ -1,5 +1,44 @@
 # ESP32 navigation display firmware
 
+## Connected replacement board: JC3636W518C
+
+The default PlatformIO environment and VS Code NAVIO tasks now target
+`jc3636w518c`, not the old Waveshare. Do not reconnect the cracked, overheated
+old screen. `waveshare_146` remains available for build regression checks only.
+
+- ESP32-S3R8: 8MB OPI PSRAM; connected board reports 16MB QIO Flash.
+- ST77916 round 360×360 LCD. Native 360×360 anti-aliased rendering is retained;
+  this panel cannot physically display 412×412 pixels.
+- QSPI: CS=10, CLK=9, D0/D1/D2/D3=11/12/13/14; reset=47; backlight=15.
+- Reset is direct GPIO, **not** the old board's TCA9554 expander. Touch, SD,
+  audio and wireless power peripherals are not initialized by NAVIO.
+- BLE identity and pairing are unchanged in protocol, but the new chip has a
+  new identity. Use **Change display**, select the new NAVIO device, then
+  press BOOT only when asked. Never hold BOOT during reset for normal pairing.
+
+Pin mapping and inversion were checked against the manufacturer's demo
+`JC3636W518EN/.../ST77916_LVGL_DEMO/pincfg.h` and `scr_st77916.h`, mirrored at
+https://github.com/td0034/JC3636W518/tree/main/JC3636W518EN/JC3636W518EN .
+Driver: the already-pinned Arduino_GFX 1.6.9 `Arduino_ST77916`, 1.8-inch
+initialization, 40MHz QSPI. A successful build is not proof of correct physical
+orientation or picture quality; check the actual screen after flashing.
+
+```sh
+~/.platformio/penv/bin/pio run -e jc3636w518c
+~/.platformio/penv/bin/pio run -e jc3636w518c -t upload
+~/.platformio/penv/bin/python firmware/tools/navo_monitor.py view
+```
+
+The shared monitor reads the default environment from `platformio.ini`.
+Upload hooks explicitly select the uploaded environment, so exception decoding
+uses the matching ELF. For a manual override pass `--environment jc3636w518c`.
+The full pre-flash 16MB factory image is backed up locally under
+`.navo/jc3636w518c-factory-20261103.bin` (ignored; keep it private and backed up).
+
+Board configuration and all three layout variants are checked by
+`bash firmware/tests/run_ui_state_test.sh`. Monitor environment selection is
+checked by `python3 firmware/tests/monitor_config_test.py`.
+
 Arduino sketch:
 
 - `esp32_nav_display/esp32_nav_display.ino`
@@ -21,8 +60,8 @@ Open the **repository root** (`ESP32_bluetooth_GPS`) in VS Code so its
 The equivalent agent/terminal commands, from the repository root, are:
 
 ```sh
-~/.platformio/penv/bin/pio run -e waveshare_146
-~/.platformio/penv/bin/pio run -e waveshare_146 -t upload
+~/.platformio/penv/bin/pio run -e jc3636w518c
+~/.platformio/penv/bin/pio run -e jc3636w518c -t upload
 ~/.platformio/penv/bin/python firmware/tools/navo_monitor.py view
 ~/.platformio/penv/bin/python firmware/tools/navo_monitor.py stop
 ~/.platformio/penv/bin/python firmware/tools/navo_monitor.py status
@@ -109,10 +148,11 @@ They check transitions, conflicting flag combinations and drawing commands
 for both round and legacy screen layouts. The existing animation,
 authentication and rendering host tests remain separate.
 
-## Current board: Waveshare ESP32-S3-Touch-LCD-1.46
+## Previous board: Waveshare ESP32-S3-Touch-LCD-1.46
 
-The sketch defaults to `NAV_WAVESHARE_146=1`. Set it to `0` at the top
-to build for the original ideaspark 240×135 ST7789 board instead.
+The explicit `waveshare_146` environment selects `NAV_WAVESHARE_146=1`.
+Set both board selectors to `0` to build for the original ideaspark
+240×135 ST7789 board instead. Hardware selection lives in `platformio/board_config.h`.
 
 Arduino IDE settings for the new board:
 

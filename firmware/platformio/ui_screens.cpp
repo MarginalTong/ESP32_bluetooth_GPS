@@ -5,7 +5,7 @@ namespace {
 // Insets keep the compact wordmark inside the round aperture. Draw it only on
 // idle/status pages: route and maneuver pixels always belong to navigation.
 void drawCompactBrand() {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   drawUiText("NAVIO", 2, 38, 38);
 #else
   drawUiText("NAVIO", 2, 12, 8);
@@ -13,7 +13,7 @@ void drawCompactBrand() {
 }
 
 void drawDisconnectedBrand(const char* subtitle) {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
     drawRoundCenteredStatus("NAVIO", 5, subtitle, 1);
   } else {
@@ -32,7 +32,7 @@ void drawBrand(const UiState& state) {
     return;
   }
   drawCompactBrand();
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   drawRoundCenteredStatus("READY TO GO", 2, nullptr, 1);
 #else
   drawUiText("ready to go", 2, 54, 65);
@@ -45,7 +45,7 @@ void drawClock(const UiState& state, const UiRenderContext& context) {
     return;
   }
   drawCompactBrand();
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   drawRoundCenteredStatus(context.clockText, 7, "ready to go", 2);
 #else
   drawUiText(context.clockText, 7, 15, 30);
@@ -54,7 +54,7 @@ void drawClock(const UiState& state, const UiRenderContext& context) {
 }
 
 void drawPairing(const UiRenderContext& context) {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   drawRoundCenteredText(context.deviceName, 1, 60);
   drawRoundCenteredStatus("PRESS BOOT", 2, "TO PAIR", 1);
 #else
@@ -66,7 +66,7 @@ void drawPairing(const UiRenderContext& context) {
 
 void drawNotPaired() {
   drawCompactBrand();
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   drawRoundCenteredStatus("NOT PAIRED", 2, "PAIR IN THE APP", 1);
 #else
   drawUiText("NOT PAIRED", 2, 60, 40);
@@ -76,7 +76,7 @@ void drawNotPaired() {
 
 void drawConnectionLost() {
   drawDisconnectedBrand("CONNECTION LOST");
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   drawRoundCenteredText("RECONNECT PHONE", 1, 177);
 #else
   drawUiText("RECONNECT PHONE", 1, 75, 113);
@@ -84,11 +84,11 @@ void drawConnectionLost() {
 }
 
 void drawUpdating(const UiState& state, const UiRenderContext& context) {
-#if !NAV_WAVESHARE_146
+#if !NAV_ROUND_DISPLAY
   (void)context;  // The original rectangular panel has fixed text positions.
 #endif
   if (state.screen == UiScreen::Updating) {
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
     drawRoundCenteredText("UPDATING...", 1,
         (context.screenHeight - roundTextHeight("UPDATING...", 1)) / 2);
 #else
@@ -99,7 +99,7 @@ void drawUpdating(const UiState& state, const UiRenderContext& context) {
 
   drawMiniRouteMap(false, state.navigation.direction);
   const bool waiting = state.screen == UiScreen::WaitingPhone;
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   drawRoundCenteredText(waiting ? "WAITING PHONE" : "CACHED ROUTE", 1, 177);
   drawRoundCenteredText("UPDATING...", 1, 200);
 #else
@@ -109,10 +109,10 @@ void drawUpdating(const UiState& state, const UiRenderContext& context) {
 }
 
 void drawNoGuidance(const UiRenderContext& context) {
-#if !NAV_WAVESHARE_146
+#if !NAV_ROUND_DISPLAY
   (void)context;
 #endif
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   drawRoundCenteredText("NO GUIDANCE", 1,
       (context.screenHeight - roundTextHeight("NO GUIDANCE", 1)) / 2);
 #else
@@ -123,7 +123,7 @@ void drawNoGuidance(const UiRenderContext& context) {
 void drawStaleGuidance(const UiState& state, const UiRenderContext& context) {
   drawMiniRouteMap(false, state.navigation.direction);
   drawDirection(state.navigation.direction);
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
   constexpr float labelCenter = 154.5f;
   drawUiText("NO UPDATE", 2, labelCenter - uiTextWidth("NO UPDATE", 2) / 2,
              context.distanceTop);
@@ -169,7 +169,7 @@ void renderUiScreen(const UiState& state, const UiRenderContext& context,
       break;
     case UiScreen::Arrived:
       drawArrivalCheck(state.arrivalProgress);
-#if NAV_WAVESHARE_146
+#if NAV_ROUND_DISPLAY
       drawRoundCenteredText("ARRIVED", 2, 156);
 #else
       drawUiText("ARRIVED", 2, 78, 101);
