@@ -1,0 +1,7 @@
+# Files already given a whole-file tidy-up under the maintainability rules in
+# AGENTS.md. One repository-relative path per line; add a file in the same
+# commit that finishes its tidy-up. A file moved or split keeps its entry only
+# under the new paths.
+#
+# The project-wide pass on 2026-11-04 (UI text, colors, formatting) did not
+# review tests, function size or structure, so no file is listed for it.

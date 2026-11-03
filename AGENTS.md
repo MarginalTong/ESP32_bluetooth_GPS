@@ -47,6 +47,11 @@ files `esp32_nav_display.ino`, `AppDelegate.swift` and
 before the behavior change, so either can be reverted alone, and say in the
 handoff what was reorganized. Files the change does not edit are left alone.
 
+A file needs this whole-file tidy-up only once. Files that have had it are
+listed in `tools/tidied_files.txt`; add each file there in the commit that
+finishes its tidy-up. Later changes to a listed file only keep the edited code
+in line with the rules; they do not review the whole file again.
+
 ### Verification
 
 - `bash tools/check.sh` runs every local check: App analysis and tests,
