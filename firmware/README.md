@@ -19,22 +19,24 @@ old screen. `waveshare_146` remains available for build regression checks only.
 Pin mapping and inversion were checked against the manufacturer's demo
 `JC3636W518EN/.../ST77916_LVGL_DEMO/pincfg.h` and `scr_st77916.h`, mirrored at
 https://github.com/td0034/JC3636W518/tree/main/JC3636W518EN/JC3636W518EN .
-Driver: the already-pinned Arduino_GFX 1.6.9 `Arduino_ST77916`, with the
-manufacturer-package default initialization in `platformio/jc3636_panel_init.h`,
-40MHz QSPI. Every register and its parameters use a combined `WRITE_C8_BYTES`
-transaction. Do not use the library's generic ST77916 table unchanged:
-its separate `WRITE_COMMAND_8` / `WRITE_BYTES` pairs send multi-byte register
-parameters through this QSPI bus's pixel-write path instead of the command path.
-The first firmware produced regular stripes on the physical screen; serial
-`ready` output was not evidence of a correct picture. The corrected sequence
-is a hardware-validation candidate until the user confirms the display.
+Driver: the already-pinned Arduino_GFX 1.6.9 `Arduino_ST77916`, 40MHz QSPI,
+with the initialization in `platformio/jc3636_panel_init.h`. Every register
+and its parameters use a combined `WRITE_C8_BYTES` transaction. Do not use the
+library's generic ST77916 table unchanged: its separate `WRITE_COMMAND_8` /
+`WRITE_BYTES` pairs send multi-byte register parameters through this QSPI
+bus's pixel-write path instead of the command path.
 
-Initialization parameters are adapted from Espressif's Apache-2.0
-`ESP32_Display_Panel/src/lcd/base/esp_lcd_st77916.c` in the vendor package.
-Copyright: 2023 Espressif Systems (Shanghai) CO LTD. Changes: encoding each
-command and all parameters as a combined Arduino_GFX QSPI transaction, adding
-explicit RGB565/orientation and display-on commands. The original source and
-attribution are linked above; license copy: `third_party/Apache-2.0.txt`.
+The register values are this board's **own factory initialization**, read
+from the private pre-flash backup: the app image holds a 184-entry esp_lcd
+vendor table at 0x3c1308f8 (file offset 0x108f8). Its 121 parameters stored in
+flash match the ST77916 1.85" 360×360 glass vendor's initial code; the other 63
+point to RAM and are 0x00 in that vendor code. The factory image also names
+`JC3636W518C` and has no knob code. NAVIO earlier used Espressif's generic
+`esp_lcd_st77916.c` defaults (for example B0=0x54 instead of 0x56), which
+produced horizontal stripes. The vendor later sent the JC3636K518 (knob)
+package by mistake: its LCD pins are different and gave a black screen, so
+keep the W518 pins above. This table is a hardware-validation candidate until
+the picture is confirmed on the board.
 
 A successful build is not proof of correct physical
 orientation or picture quality; check the actual screen after flashing.

@@ -57,10 +57,14 @@ int main() {
       sent.push_back(cmd);
     }
   }
-  assert(!writing && sent.size() == 219);
+  // Factory table (184) plus pixel format and orientation.
+  assert(!writing && sent.size() == 186);
   assert(sent[0].address == 0x36 && sent[0].data[0] == 0);
   assert(sent[1].address == 0x3A && sent[1].data[0] == 0x55);
   assert(sent.back().address == 0x29);
-  assert(gammaTables == 2 && fullRowWindows == 1 && timingWaits == 1);
-  std::puts("JC3636 init: 219 combined QSPI commands, gamma/windows/timing/sleep-out passed");
+  assert(gammaTables == 2 && fullRowWindows == 0 && timingWaits == 0);
+  // Factory values, not Espressif's generic defaults (B0 0x54, B1 0x3F).
+  assert(sent[12].address == 0xB0 && sent[12].data[0] == 0x56);
+  assert(sent[13].address == 0xB1 && sent[13].data[0] == 0x4D);
+  std::puts("JC3636 init: 186 combined QSPI commands, gamma/windows/timing/sleep-out passed");
 }
