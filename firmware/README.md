@@ -114,6 +114,20 @@ firmware. This environment is for logging, not a factory firmware build target;
 the original binary stays private in `.navo/`, not in Git. Do not keep changing
 navigation render settings based on this failure.
 
+User follow-up: the replacement screen displayed normally on first connection,
+before these firmware tests; no overheating, impact or cracked panel was
+reported. Faint horizontal white lines remained after the original-image
+restore. Do not describe this as a pre-existing or proven hardware defect, or
+claim the adaptation succeeded. Stop further experimental flashes until the
+physical behavior after complete power removal is established.
+
+Offline backup audit: both the bootloader at 0x0 and original app at 0x10000
+passed their ESP segment checksums and appended SHA-256 checks. The complete
+backup is 16,777,216 bytes; the restore tool had also verified the written data.
+These checks establish binary integrity, not that panel state or hardware has
+recovered. A normal first-connection picture and subsequent faults must be
+kept in the investigation record rather than blamed on user handling.
+
 Arduino sketch:
 
 - `esp32_nav_display/esp32_nav_display.ino`
