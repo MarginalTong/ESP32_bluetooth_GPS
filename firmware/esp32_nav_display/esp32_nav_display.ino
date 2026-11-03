@@ -165,7 +165,13 @@ constexpr int8_t TFT_BACKLIGHT_PIN = 32;
 constexpr uint8_t TFT_ROTATION = 1;
 Adafruit_ST7789 tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RESET_PIN);
 #endif
+#if NAV_JC3636W518C
+// Full backlight lifts this IPS panel's black to a bluish grey around white
+// UI; a lower level keeps black darker. Raise it if sunlight demands.
+constexpr uint8_t BACKLIGHT_NORMAL = 160;
+#else
 constexpr uint8_t BACKLIGHT_NORMAL = 255;
+#endif
 constexpr uint8_t BACKLIGHT_DIM = 24;
 
 GFXcanvas16 display(SCREEN_WIDTH, SCREEN_HEIGHT);
