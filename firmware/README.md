@@ -19,8 +19,24 @@ old screen. `waveshare_146` remains available for build regression checks only.
 Pin mapping and inversion were checked against the manufacturer's demo
 `JC3636W518EN/.../ST77916_LVGL_DEMO/pincfg.h` and `scr_st77916.h`, mirrored at
 https://github.com/td0034/JC3636W518/tree/main/JC3636W518EN/JC3636W518EN .
-Driver: the already-pinned Arduino_GFX 1.6.9 `Arduino_ST77916`, 1.8-inch
-initialization, 40MHz QSPI. A successful build is not proof of correct physical
+Driver: the already-pinned Arduino_GFX 1.6.9 `Arduino_ST77916`, with the
+manufacturer-package default initialization in `platformio/jc3636_panel_init.h`,
+40MHz QSPI. Every register and its parameters use a combined `WRITE_C8_BYTES`
+transaction. Do not use the library's generic ST77916 table unchanged:
+its separate `WRITE_COMMAND_8` / `WRITE_BYTES` pairs send multi-byte register
+parameters through this QSPI bus's pixel-write path instead of the command path.
+The first firmware produced regular stripes on the physical screen; serial
+`ready` output was not evidence of a correct picture. The corrected sequence
+is a hardware-validation candidate until the user confirms the display.
+
+Initialization parameters are adapted from Espressif's Apache-2.0
+`ESP32_Display_Panel/src/lcd/base/esp_lcd_st77916.c` in the vendor package.
+Copyright: 2023 Espressif Systems (Shanghai) CO LTD. Changes: encoding each
+command and all parameters as a combined Arduino_GFX QSPI transaction, adding
+explicit RGB565/orientation and display-on commands. The original source and
+attribution are linked above; license copy: `third_party/Apache-2.0.txt`.
+
+A successful build is not proof of correct physical
 orientation or picture quality; check the actual screen after flashing.
 
 ```sh
@@ -49,6 +65,8 @@ motion, authentication, anti-alias rendering and monitor configuration tests.
 Board configuration and all three layout variants are checked by
 `bash firmware/tests/run_ui_state_test.sh`. Monitor environment selection is
 checked by `python3 firmware/tests/monitor_config_test.py`.
+`bash firmware/tests/run_panel_init_test.sh` checks the command stream, address
+windows, gamma payload lengths, QSPI timing sequence and sleep-out delay.
 
 Arduino sketch:
 

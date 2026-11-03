@@ -4,6 +4,9 @@
 #if NAV_ROUND_DISPLAY
 #include <Wire.h>
 #include <Arduino_GFX_Library.h>
+#if NAV_JC3636W518C
+#include "../platformio/jc3636_panel_init.h"
+#endif
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold18pt7b.h>
 #include <Fonts/FreeSansBold24pt7b.h>
@@ -144,7 +147,8 @@ Arduino_ESP32QSPI lcdBus(TFT_CS_PIN, TFT_SCLK_PIN, TFT_DATA0_PIN,
                         TFT_DATA1_PIN, TFT_DATA2_PIN, TFT_DATA3_PIN);
 #if NAV_JC3636W518C
 // Apply inversion explicitly below; Arduino_GFX XORs it with the IPS flag.
-Arduino_ST77916 tft(&lcdBus, TFT_RESET_PIN, 0, false);
+Arduino_ST77916 tft(&lcdBus, TFT_RESET_PIN, 0, false, PANEL_SIZE, PANEL_SIZE,
+                    0, 0, 0, 0, jc3636_qspi_init, sizeof(jc3636_qspi_init));
 #else
 Arduino_SPD2010 tft(&lcdBus, GFX_NOT_DEFINED);
 #endif
@@ -2059,7 +2063,7 @@ bool initDisplay() {
   }
 #if NAV_ROUND_DISPLAY
 #if NAV_JC3636W518C
-  Serial.println("[TFT] init JC3636W518C ST77916 QSPI...");
+  Serial.println("[TFT] init JC3636W518C ST77916 QSPI (vendor command transactions)...");
 #else
   Serial.println("[TFT] init Waveshare 1.46 SPD2010 QSPI...");
 #endif
