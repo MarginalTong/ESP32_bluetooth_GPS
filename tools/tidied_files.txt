@@ -13,3 +13,4 @@ moto_nav_bridge/lib/controllers/guidance_voice_controller.dart
 moto_nav_bridge/lib/ui/widgets/destination_panel.dart
 moto_nav_bridge/lib/ui/widgets/navigation_controls.dart
 moto_nav_bridge/lib/ui/widgets/map_control_button.dart
+moto_nav_bridge/lib/ui/widgets/connection_card.dart

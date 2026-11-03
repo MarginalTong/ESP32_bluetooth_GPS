@@ -37,6 +37,8 @@ class _HomePageState extends State<HomePage> {
   String _mapStyle = 'standard';
   int _settingsRevision = -1;
   final _voice = GuidanceVoiceController();
+  // The connection card shrank to its top-left pill: map buttons move up.
+  bool _cardCompact = false;
 
   @override
   void initState() {
@@ -193,6 +195,11 @@ class _HomePageState extends State<HomePage> {
           final darkMapControls = _mapStyle != 'standard';
           final safe = MediaQuery.paddingOf(context);
           final panelWidth = landscape ? 320.0 : constraints.maxWidth - 32;
+          // Below the full connection card, or level with its pill.
+          final controlsTop = safe.top + (_cardCompact ? 12 : 92);
+          final moveDuration = MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : ConnectionCard.resizeDuration;
           // Reserve space for native map attribution and route framing.
           final mapInsets = EdgeInsets.fromLTRB(
             landscape ? panelWidth + 32 : 16,
@@ -229,11 +236,17 @@ class _HomePageState extends State<HomePage> {
                   Positioned(
                     top: safe.top + 12,
                     left: 16,
-                    width: panelWidth,
-                    child: const ConnectionCard(),
+                    child: ConnectionCard(
+                      fullWidth: panelWidth,
+                      onCompactChanged: (compact) {
+                        if (mounted) setState(() => _cardCompact = compact);
+                      },
+                    ),
                   ),
-                  Positioned(
-                    top: safe.top + 92,
+                  AnimatedPositioned(
+                    duration: moveDuration,
+                    curve: Curves.easeInOutCubic,
+                    top: controlsTop + 0 * 56,
                     right: 16,
                     child: MapControlButton(
                       backgroundKey: const ValueKey(
@@ -250,13 +263,17 @@ class _HomePageState extends State<HomePage> {
                       onPressed: _openMapSettings,
                     ),
                   ),
-                  Positioned(
-                    top: safe.top + 148,
+                  AnimatedPositioned(
+                    duration: moveDuration,
+                    curve: Curves.easeInOutCubic,
+                    top: controlsTop + 1 * 56,
                     right: 16,
                     child: RiderMapButton(dark: _mapStyle != 'standard'),
                   ),
-                  Positioned(
-                    top: safe.top + 204,
+                  AnimatedPositioned(
+                    duration: moveDuration,
+                    curve: Curves.easeInOutCubic,
+                    top: controlsTop + 2 * 56,
                     right: 16,
                     child: MapControlButton(
                       dark: darkMapControls,
