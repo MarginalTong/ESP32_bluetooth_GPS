@@ -201,7 +201,7 @@ class _DevicesPageState extends State<DevicesPage> {
                         child: Divider(
                           height: 1,
                           thickness: .5,
-                          color: Color(0xffdcdce0),
+                          color: NavioColors.groupSeparator,
                         ),
                       ),
                       _DeviceAction(
@@ -279,7 +279,7 @@ class _DeviceAction extends StatelessWidget {
     final color = onTap == null
         ? CupertinoColors.tertiaryLabel.resolveFrom(context)
         : destructive
-        ? const Color(0xffff3b30)
+        ? NavioColors.destructive
         : CupertinoColors.label.resolveFrom(context);
     return CupertinoButton(
       padding: const EdgeInsets.all(16),
@@ -324,7 +324,7 @@ class _DeviceAction extends StatelessWidget {
             const Icon(
               Icons.chevron_right_rounded,
               size: 20,
-              color: Color(0xffc7c7cc),
+              color: NavioColors.chevron,
             ),
           ],
         ],

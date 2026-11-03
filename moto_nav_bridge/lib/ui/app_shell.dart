@@ -10,6 +10,7 @@ import '../controllers/rider_map_controller.dart';
 import 'home_page.dart';
 import 'devices_page.dart';
 import 'map_settings_page.dart';
+import 'navio_theme.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -90,14 +91,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       ),
       bottomNavigationBar: CupertinoTabBar(
         backgroundColor: darkBar
-            ? const Color(0xff121820)
-            : const Color(0xf5fafafa),
+            ? NavioColors.mapControlDark
+            : NavioColors.tabBarLight,
         activeColor: darkBar
-            ? const Color(0xff74b5ff)
-            : const Color(0xff007aff),
+            ? NavioColors.tabActiveOnDark
+            : NavioColors.tabActiveLight,
         inactiveColor: darkBar
-            ? const Color(0xff8996a8)
-            : const Color(0xff8e8e93),
+            ? NavioColors.tabInactiveOnDark
+            : NavioColors.tabInactiveLight,
         currentIndex: _selected,
         onTap: (value) {
           if (value == 1) context.read<SettingsSyncController?>()?.request();

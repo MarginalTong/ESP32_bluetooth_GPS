@@ -6,6 +6,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../l10n/app_text.dart';
 import '../services/ble_service.dart';
+import 'navio_theme.dart';
 
 /// One bottom sheet owns selection, physical confirmation and success. The
 /// rider never types or sees a code, but must choose the intended display.
@@ -17,7 +18,7 @@ Future<void> connectDisplay(BuildContext context, BleService ble) =>
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      barrierColor: const Color(0x72000000),
+      barrierColor: NavioColors.pairingBarrier,
       builder: (_) => _PairingSheet(ble: ble),
     );
 
@@ -162,7 +163,7 @@ class _PairingSheetState extends State<_PairingSheet>
               borderRadius: BorderRadius.circular(28),
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x29000000),
+                  color: NavioColors.pairingSheetShadow,
                   blurRadius: 34,
                   offset: Offset(0, -10),
                 ),
@@ -177,7 +178,7 @@ class _PairingSheetState extends State<_PairingSheet>
                     width: 36,
                     height: 5,
                     decoration: BoxDecoration(
-                      color: const Color(0xffd7dce4),
+                      color: NavioColors.pairingHandle,
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -188,7 +189,7 @@ class _PairingSheetState extends State<_PairingSheet>
                       onPressed: _close,
                       child: const Icon(
                         CupertinoIcons.xmark_circle_fill,
-                        color: Color(0xffa8adb7),
+                        color: NavioColors.pairingClose,
                         size: 27,
                       ),
                     ),
@@ -228,7 +229,7 @@ class _PairingSheetState extends State<_PairingSheet>
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xff4465a4),
+                        color: NavioColors.pairingAccentText,
                       ),
                     ),
                   ],
@@ -256,7 +257,7 @@ class _PairingSheetState extends State<_PairingSheet>
                               children: [
                                 const Icon(
                                   CupertinoIcons.device_phone_portrait,
-                                  color: Color(0xff2776d9),
+                                  color: NavioColors.pairingPhoneIcon,
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -278,7 +279,7 @@ class _PairingSheetState extends State<_PairingSheet>
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           fontSize: 11,
-                                          color: Color(0xff8c94a1),
+                                          color: NavioColors.pairingCaption,
                                         ),
                                       ),
                                     ],
@@ -287,7 +288,7 @@ class _PairingSheetState extends State<_PairingSheet>
                                 const Icon(
                                   CupertinoIcons.chevron_right,
                                   size: 16,
-                                  color: Color(0xff8c94a1),
+                                  color: NavioColors.pairingCaption,
                                 ),
                               ],
                             ),
@@ -343,7 +344,7 @@ class _DisplayAnimation extends StatelessWidget {
                     const Color(
                       0xff70aeff,
                     ).withValues(alpha: 0.25 - pulse.value * 0.13),
-                    const Color(0xff70aeff).withValues(alpha: 0),
+                    NavioColors.pairingHalo.withValues(alpha: 0),
                   ],
                 ),
               ),
@@ -354,20 +355,26 @@ class _DisplayAnimation extends StatelessWidget {
             height: 120,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xffedf5ff),
-              border: Border.all(color: const Color(0xffd5e8ff), width: 1),
+              color: NavioColors.pairingHaloFill,
+              border: Border.all(
+                color: NavioColors.pairingHaloBorder,
+                width: 1,
+              ),
             ),
           ),
           Container(
             width: 87,
             height: 87,
             decoration: BoxDecoration(
-              color: const Color(0xff1e2735),
+              color: NavioColors.pairingDisplayFace,
               shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xff647285), width: 4),
+              border: Border.all(
+                color: NavioColors.pairingDisplayBezel,
+                width: 4,
+              ),
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x39092c58),
+                  color: NavioColors.pairingDisplayShadow,
                   blurRadius: 17,
                   offset: Offset(0, 9),
                 ),

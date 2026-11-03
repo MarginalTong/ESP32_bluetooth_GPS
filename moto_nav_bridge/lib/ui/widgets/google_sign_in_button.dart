@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import '../navio_theme.dart';
 
 /// Native authentication action, using Google's official full-colour mark.
 class GoogleSignInButton extends StatelessWidget {
@@ -10,9 +11,11 @@ class GoogleSignInButton extends StatelessWidget {
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: dark ? const Color(0xff131314) : const Color(0xffffffff),
+        color: dark ? NavioColors.googleFillDark : NavioColors.googleFillLight,
         border: Border.all(
-          color: dark ? const Color(0xff8e918f) : const Color(0xff747775),
+          color: dark
+              ? NavioColors.googleBorderDark
+              : NavioColors.googleBorderLight,
         ),
         borderRadius: BorderRadius.circular(14),
       ),
@@ -39,8 +42,8 @@ class GoogleSignInButton extends StatelessWidget {
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: dark
-                      ? const Color(0xffe3e3e3)
-                      : const Color(0xff1f1f1f),
+                      ? NavioColors.googleTextDark
+                      : NavioColors.googleTextLight,
                 ),
               ),
             ),

@@ -179,40 +179,44 @@ class _MapPreviewPainter extends CustomPainter {
     final imagery = style == 'hybrid' || style == 'satellite';
     canvas.drawColor(
       dark
-          ? const Color(0xff172536)
+          ? NavioColors.previewDarkBase
           : imagery
-          ? const Color(0xff577963)
-          : const Color(0xffe9ede7),
+          ? NavioColors.previewImageryBase
+          : NavioColors.previewLightBase,
       BlendMode.src,
     );
     if (imagery) {
       canvas.drawCircle(
         const Offset(12, 14),
         18,
-        Paint()..color = const Color(0xff749270),
+        Paint()..color = NavioColors.previewImageryField,
       );
       canvas.drawCircle(
         const Offset(41, 36),
         19,
-        Paint()..color = const Color(0xff385c62),
+        Paint()..color = NavioColors.previewImageryWater,
       );
     } else {
       canvas.drawCircle(
         const Offset(37, 7),
         17,
         Paint()
-          ..color = dark ? const Color(0xff243d43) : const Color(0xffb9d9c3),
+          ..color = dark
+              ? NavioColors.previewDarkPark
+              : NavioColors.previewLightPark,
       );
     }
     if (style == 'satellite') return;
     final road = Paint()
-      ..color = dark ? const Color(0xffa2aeb8) : Colors.white
+      ..color = dark ? NavioColors.previewDarkRoad : Colors.white
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(const Offset(-4, 34), const Offset(50, 13), road);
     canvas.drawLine(const Offset(13, -4), const Offset(32, 50), road);
     final route = Paint()
-      ..color = dark ? const Color(0xff63aaff) : const Color(0xffe99836)
+      ..color = dark
+          ? NavioColors.previewDarkRoute
+          : NavioColors.previewLightRoute
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(const Offset(4, 31), const Offset(42, 16), route);

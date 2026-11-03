@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../navio_theme.dart';
 
 /// Readable map material. High contrast removes transparency entirely.
 class GlassPanel extends StatelessWidget {
@@ -33,7 +34,7 @@ class GlassPanel extends StatelessWidget {
           filter: ImageFilter.blur(sigmaX: 4.5, sigmaY: 4.5),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: (dark ? const Color(0xff1c1c1e) : const Color(0xfffafafa))
+              color: (dark ? NavioColors.panelDark : NavioColors.panelLight)
                   .withValues(alpha: highContrast ? 1 : .91),
               borderRadius: radius,
               border: Border.all(

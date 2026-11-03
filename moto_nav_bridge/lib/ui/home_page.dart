@@ -324,7 +324,7 @@ class _HomePageState extends State<HomePage> {
                     child: Material(
                       key: const ValueKey('map-settings-button-background'),
                       color: darkMapControls
-                          ? const Color(0xff121820)
+                          ? NavioColors.mapControlDark
                           : Theme.of(
                               context,
                             ).colorScheme.surface.withValues(alpha: 0.88),
@@ -355,8 +355,8 @@ class _HomePageState extends State<HomePage> {
                     right: 16,
                     child: Material(
                       color: darkMapControls
-                          ? const Color(0xff121820)
-                          : const Color(0xf5ffffff),
+                          ? NavioColors.mapControlDark
+                          : NavioColors.mapControlLight,
                       shape: const CircleBorder(),
                       elevation: 1,
                       child: IconButton(
@@ -370,7 +370,7 @@ class _HomePageState extends State<HomePage> {
                           size: 20,
                           color: darkMapControls
                               ? Colors.white
-                              : const Color(0xff3a3a3c),
+                              : NavioColors.mapControlIconLight,
                         ),
                         onPressed: _toggleGuidance,
                       ),
@@ -684,7 +684,7 @@ class _NavigationControls extends StatelessWidget {
             label: Text(text.endNavigation),
           ),
         ),
-        const Divider(height: 12, color: Color(0x33708090)),
+        const Divider(height: 12, color: NavioColors.panelDivider),
         SizedBox(
           height: 54,
           child: TextButton.icon(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../controllers/rider_map_controller.dart';
 import '../../l10n/app_text.dart';
+import '../navio_theme.dart';
 
 class RiderMapButton extends StatelessWidget {
   const RiderMapButton({super.key, required this.dark});
@@ -12,7 +13,7 @@ class RiderMapButton extends StatelessWidget {
     if (riders == null) return const SizedBox.shrink();
     final text = AppText.of(context);
     return Material(
-      color: dark ? const Color(0xff121820) : Colors.white,
+      color: dark ? NavioColors.mapControlDark : Colors.white,
       shape: const CircleBorder(),
       elevation: 1,
       child: IconButton(

@@ -5,6 +5,7 @@ import '../../l10n/app_text.dart';
 import 'glass_panel.dart';
 import '../../services/ble_service.dart';
 import '../device_pairing.dart';
+import '../navio_theme.dart';
 
 class ConnectionCard extends StatelessWidget {
   const ConnectionCard({super.key});
@@ -14,22 +15,28 @@ class ConnectionCard extends StatelessWidget {
     final ble = context.watch<BleService>();
     final text = AppText.of(context);
     final connected = ble.state == BleConnectionState.connected;
-    final busy = ble.state == BleConnectionState.scanning ||
+    final busy =
+        ble.state == BleConnectionState.scanning ||
         ble.state == BleConnectionState.connecting ||
         ble.state == BleConnectionState.awaitingBoot;
     // An old write failure is history, not the link's current state.
-    final writeFailed = !busy &&
+    final writeFailed =
+        !busy &&
         BleService.isRecentWriteFailure(
-            ble.lastError, ble.lastErrorAt, DateTime.now());
-    final hasError = !busy &&
+          ble.lastError,
+          ble.lastErrorAt,
+          DateTime.now(),
+        );
+    final hasError =
+        !busy &&
         ble.lastError != null &&
         (writeFailed || !BleService.isWriteFailure(ble.lastError));
     final colors = Theme.of(context).colorScheme;
     final issue = !hasError
         ? null
         : writeFailed
-            ? (text.displayUpdateInterrupted, text.reconnectDisplayHint)
-            : _issue(text, ble.lastError!);
+        ? (text.displayUpdateInterrupted, text.reconnectDisplayHint)
+        : _issue(text, ble.lastError!);
 
     return GlassPanel(
       child: InkWell(
@@ -47,10 +54,10 @@ class ConnectionCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: connected
-                      ? const Color(0xff34c759)
+                      ? NavioColors.connected
                       : busy
-                          ? colors.primary
-                          : colors.outline,
+                      ? colors.primary
+                      : colors.outline,
                 ),
               ),
               const SizedBox(width: 12),
@@ -63,16 +70,16 @@ class ConnectionCard extends StatelessWidget {
                       issue != null
                           ? issue.$1
                           : connected
-                              ? text.readyToGo
-                              : busy
-                                  ? text.connectingDisplay
-                                  : text.tapToConnect,
+                          ? text.readyToGo
+                          : busy
+                          ? text.connectingDisplay
+                          : text.tapToConnect,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.start,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 1),
                     Text(
@@ -83,8 +90,8 @@ class ConnectionCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -132,9 +139,10 @@ class ConnectionCard extends StatelessWidget {
       BleConnectionState.idle => text.displayNotConnected,
       BleConnectionState.scanning => text.searchingDevice,
       BleConnectionState.connecting => text.connecting,
-      BleConnectionState.awaitingBoot => context.read<BleService>().confirmsByPower
-          ? text.pairingInProgress
-          : text.pressBoot,
+      BleConnectionState.awaitingBoot =>
+        context.read<BleService>().confirmsByPower
+            ? text.pairingInProgress
+            : text.pressBoot,
       BleConnectionState.connected => text.deviceConnected,
       BleConnectionState.disconnected => text.displayNotConnected,
     };

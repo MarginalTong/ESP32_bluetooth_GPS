@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../config/app_brand.dart';
+import '../navio_theme.dart';
 
 /// A product silhouette rather than another nested settings card.
 class DeviceHeader extends StatelessWidget {
@@ -29,12 +30,16 @@ class DeviceHeader extends StatelessWidget {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xff48484a), Color(0xff1c1c1e), Color(0xff080809)],
+              colors: [
+                NavioColors.deviceBodyTop,
+                NavioColors.deviceBodyMiddle,
+                NavioColors.deviceBodyBottom,
+              ],
             ),
-            border: Border.all(color: const Color(0xff747478), width: 1.5),
+            border: Border.all(color: NavioColors.deviceBezel, width: 1.5),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x20000000),
+                color: NavioColors.deviceShadow,
                 blurRadius: 24,
                 offset: Offset(0, 10),
               ),
