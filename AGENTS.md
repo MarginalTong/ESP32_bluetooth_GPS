@@ -37,6 +37,14 @@ These are explicit user preferences for this repository:
 These apply to all code in this repository. Existing code that breaks a rule
 is not rewritten wholesale; it is brought into line when that code is changed.
 
+Standing instruction from the user: every change includes this tidy-up of the
+code it touches, without being asked. When a change touches one of the large
+files (`esp32_nav_display.ino`, `AppDelegate.swift`,
+`navigation_controller.dart`, or any file past the size guide below), move the
+touched responsibility into its own module first, with tests, as a separate
+commit before the behavior change. Keep each tidy-up limited to the area being
+changed, and say in the handoff what was moved.
+
 ### Verification
 
 - `bash tools/check.sh` runs every local check: App analysis and tests,
