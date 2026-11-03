@@ -68,6 +68,33 @@ checked by `python3 firmware/tests/monitor_config_test.py`.
 `bash firmware/tests/run_panel_init_test.sh` checks the command stream, address
 windows, gamma payload lengths, QSPI timing sequence and sleep-out delay.
 
+### Temporary direct-panel diagnostic
+
+The user reported that the command-stream correction still produced stripes.
+Do not label that firmware a successful visual bring-up. The separate
+`jc3636_panel_diagnostic` environment isolates the display from NAVIO:
+
+```sh
+~/.platformio/penv/bin/pio run -e jc3636_panel_diagnostic -t upload
+```
+
+This temporary program does not start BLE, navigation, fonts, AA or the PSRAM
+compositor, and does not access pairing NVS. It uses ESP-IDF LCD IO with
+hardware CS, 10MHz QSPI, RGB565 in wire byte order and one RAMWR (0x2C) transfer
+per explicit band window. An internal DMA buffer is reused only after its
+completion callback; a timeout stops the test instead of reusing pending data.
+The vendor init parameters remain the same, allowing the transport path to be
+tested independently of the NAVIO renderer. Clock and DMA handling also differ
+from the previous driver, so a good result would not by itself identify which
+transport detail caused the fault.
+
+At half brightness it shows black, white, red, green and blue for three seconds
+each, then holds a white 30px grid with a red center cross and white 60px center
+square. The circular panel naturally clips outer grid lines. Colors must be
+uniform and lines continuous. The default environment/tasks remain NAVIO;
+restoring `pio run -e jc3636w518c -t upload` replaces this temporary diagnostic.
+The pattern geometry is host-tested by `run_panel_init_test.sh`.
+
 Arduino sketch:
 
 - `esp32_nav_display/esp32_nav_display.ino`
