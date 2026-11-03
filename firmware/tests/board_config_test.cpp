@@ -7,6 +7,7 @@ static_assert(TFT_CS_PIN == 10 && TFT_SCLK_PIN == 9, "QSPI control");
 static_assert(TFT_DATA0_PIN == 11 && TFT_DATA1_PIN == 12 &&
               TFT_DATA2_PIN == 13 && TFT_DATA3_PIN == 14, "QSPI data");
 static_assert(TFT_RESET_PIN == 47 && TFT_BACKLIGHT_PIN == 15, "direct control");
+static_assert(TFT_PANEL_ROTATION == 2, "picture turned 180 degrees");
 #elif NAV_WAVESHARE_146
 static_assert(NAV_ROUND_DISPLAY && PANEL_SIZE == 412, "legacy round panel");
 static_assert(TFT_CS_PIN == 21 && TFT_SCLK_PIN == 40, "legacy pins");

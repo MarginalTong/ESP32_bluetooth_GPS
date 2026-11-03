@@ -147,7 +147,8 @@ Arduino_ESP32QSPI lcdBus(TFT_CS_PIN, TFT_SCLK_PIN, TFT_DATA0_PIN,
                         TFT_DATA1_PIN, TFT_DATA2_PIN, TFT_DATA3_PIN);
 #if NAV_JC3636W518C
 // Apply inversion explicitly below; Arduino_GFX XORs it with the IPS flag.
-Arduino_ST77916 tft(&lcdBus, TFT_RESET_PIN, 0, false, PANEL_SIZE, PANEL_SIZE,
+Arduino_ST77916 tft(&lcdBus, TFT_RESET_PIN, TFT_PANEL_ROTATION, false,
+                    PANEL_SIZE, PANEL_SIZE,
                     0, 0, 0, 0, jc3636_qspi_init, sizeof(jc3636_qspi_init));
 #else
 Arduino_SPD2010 tft(&lcdBus, GFX_NOT_DEFINED);

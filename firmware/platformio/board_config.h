@@ -33,6 +33,9 @@ constexpr int8_t TFT_CS_PIN = 10;
 constexpr int8_t TFT_BACKLIGHT_PIN = 15;
 constexpr int8_t TFT_RESET_PIN = 47;
 constexpr int16_t PANEL_SIZE = 360;
+// Arduino_GFX rotation 2 = MADCTL MX|MY: the picture is turned 180 degrees to
+// suit how the enclosure is mounted.
+constexpr uint8_t TFT_PANEL_ROTATION = 2;
 #else
 constexpr int8_t TFT_DATA0_PIN = 46;
 constexpr int8_t TFT_DATA1_PIN = 45;
