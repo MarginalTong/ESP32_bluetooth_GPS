@@ -60,7 +60,10 @@ completed with written-data hash verification. Its live serial log reports
 startup and BLE advertising initialization, not phone pairing or visual output.
 The first static brand frame measured about 385ms (353ms CPU, 32ms LCD);
 the 25ms scheduler cap therefore does **not** establish actual 40fps performance.
-Physical image/orientation and a fresh phone BOOT pairing still need user checks.
+After switching to the factory register table, a display-only test pattern
+(solid colors and a grid) appeared on the panel and NAVIO was flashed again;
+the NAVIO picture, orientation and a fresh phone BOOT pairing still need user
+checks. Restoring the factory image cleared NVS, so the board starts unpaired.
 Both JC3636W518C and Waveshare PlatformIO builds passed, as did the host UI,
 motion, authentication, anti-alias rendering and monitor configuration tests.
 
@@ -70,65 +73,16 @@ checked by `python3 firmware/tests/monitor_config_test.py`.
 `bash firmware/tests/run_panel_init_test.sh` checks the command stream, address
 windows, gamma payload lengths, QSPI timing sequence and sleep-out delay.
 
-### Temporary direct-panel diagnostic
-
-The user reported that the command-stream correction still produced stripes.
-Do not label that firmware a successful visual bring-up. The separate
-`jc3636_panel_diagnostic` environment isolates the display from NAVIO:
+To restore the original firmware (whole 16MB image, bootloader and data
+included), stop the shared monitor, check the board's MAC, then write it at 0x0:
 
 ```sh
-~/.platformio/penv/bin/pio run -e jc3636_panel_diagnostic -t upload
+~/.platformio/penv/bin/python firmware/tools/navo_monitor.py stop
+~/.platformio/penv/bin/python ~/.platformio/packages/tool-esptoolpy/esptool.py \
+  --chip esp32s3 --port /dev/cu.usbmodem101 --baud 460800 write_flash \
+  --flash_mode keep --flash_freq keep --flash_size keep \
+  0x0 .navo/jc3636w518c-factory-20261103.bin
 ```
-
-This temporary program does not start BLE, navigation, fonts, AA or the PSRAM
-compositor, and does not access pairing NVS. It uses ESP-IDF LCD IO with
-hardware CS, 10MHz QSPI, RGB565 in wire byte order and one RAMWR (0x2C) transfer
-per explicit band window. An internal DMA buffer is reused only after its
-completion callback; a timeout stops the test instead of reusing pending data.
-The vendor init parameters remain the same, allowing the transport path to be
-tested independently of the NAVIO renderer. Clock and DMA handling also differ
-from the previous driver, so a good result would not by itself identify which
-transport detail caused the fault.
-
-At half brightness it shows black, white, red, green and blue for three seconds
-each, then holds a white 30px grid with a red center cross and white 60px center
-square. The circular panel naturally clips outer grid lines. Colors must be
-uniform and lines continuous. The default environment/tasks remain NAVIO;
-restoring `pio run -e jc3636w518c -t upload` replaces this temporary diagnostic.
-The pattern geometry is host-tested by `run_panel_init_test.sh`.
-
-### Original-firmware comparison
-
-The user also reported horizontal white stripes with the direct ESP-IDF test.
-That rules out the NAVIO compositor/fonts as a necessary cause, but does not
-distinguish incorrect panel initialization, transport settings or a hardware
-fault. On 2026-11-03 the complete pre-flash backup was selected for restoration
-to the same board (USB identity checked before writing). This restores the
-original bootloader, partition layout, application and data, not just an app
-binary at a guessed offset. The 16MB write completed and the tool reported
-`Hash of data verified` before reset. The result still requires a physical
-picture check; no conclusion about hardware failure has been established.
-
-When observing that binary use the shared monitor with
-`--environment jc3636_factory_monitor`. This disables NAVIO ELF exception
-decoding, which would otherwise produce misleading locations for the original
-firmware. This environment is for logging, not a factory firmware build target;
-the original binary stays private in `.navo/`, not in Git. Do not keep changing
-navigation render settings based on this failure.
-
-User follow-up: the replacement screen displayed normally on first connection,
-before these firmware tests; no overheating, impact or cracked panel was
-reported. Faint horizontal white lines remained after the original-image
-restore. Do not describe this as a pre-existing or proven hardware defect, or
-claim the adaptation succeeded. Stop further experimental flashes until the
-physical behavior after complete power removal is established.
-
-Offline backup audit: both the bootloader at 0x0 and original app at 0x10000
-passed their ESP segment checksums and appended SHA-256 checks. The complete
-backup is 16,777,216 bytes; the restore tool had also verified the written data.
-These checks establish binary integrity, not that panel state or hardware has
-recovered. A normal first-connection picture and subsequent faults must be
-kept in the investigation record rather than blamed on user handling.
 
 Arduino sketch:
 
