@@ -11,6 +11,10 @@ build=false
 
 step() { printf '\n== %s\n' "$*"; }
 
+step "App: formatting and rule guards"
+(cd moto_nav_bridge && dart format --output=none --set-exit-if-changed lib test)
+python3 tools/check_rules.py
+
 step "App: static analysis"
 (cd moto_nav_bridge && flutter analyze)
 
