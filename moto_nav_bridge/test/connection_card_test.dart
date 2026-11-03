@@ -72,7 +72,7 @@ void main() {
     (
       'Display security was updated. Connect and press BOOT to pair again.',
       'Pair display again',
-      'Tap, then press BOOT',
+      'Replug the display, then tap',
     ),
     (
       'Cannot read saved display binding',

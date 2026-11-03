@@ -22,6 +22,8 @@ class LayoutBle extends ChangeNotifier implements BleService {
   @override
   DateTime? get lastErrorAt => null;
   @override
+  bool get confirmsByPower => false;
+  @override
   String get diagnostics => '';
   @override
   void clearDiagnostics() {}

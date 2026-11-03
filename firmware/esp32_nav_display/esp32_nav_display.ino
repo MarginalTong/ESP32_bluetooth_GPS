@@ -212,6 +212,10 @@ volatile bool pairingVerified = false;
 volatile bool pairingButtonReleased = false;
 volatile uint32_t pairingStartedMs = 0;
 uint32_t bootLowSinceMs = 0;
+// Power-up pairing: one pairing per power-on, only within PAIR_WINDOW_MS.
+volatile bool pairWindowUsed = false;
+// A pairing request arrived after the window closed; told to the phone.
+volatile bool pairingRefused = false;
 constexpr char PAIRING_UUID[] = "abcd1234-5678-1234-5678-abcdef123457";
 constexpr char SERVICE_UUID[] = "12345678-1234-1234-1234-123456789abc";
 constexpr char CHARACTERISTIC_UUID[] = "abcd1234-5678-1234-5678-abcdef123456";
@@ -988,6 +992,7 @@ class ServerCallbacks : public BLEServerCallbacks {
     pairingActive = false;
     pairingVerified = false;
     pairingConnection = false;
+    pairingRefused = false;
     mailbox.connected = true;
     mailbox.error[0] = '\0';
     mailbox.errorReady = true;
@@ -1003,6 +1008,7 @@ class ServerCallbacks : public BLEServerCallbacks {
     pairingActive = false;
     pairingVerified = false;
     pairingButtonReleased = false;
+    pairingRefused = false;
     mailbox.connected = false;
     // loop() clears the maneuver and geometry when this counter changes.
     mailbox.disconnects++;
@@ -1225,6 +1231,7 @@ class PairingCallbacks : public BLECharacteristicCallbacks {
     // pairingVerified is cleared on every connect/disconnect, so the key is
     // only ever readable on the connection where BOOT was just pressed.
     const bool verified = pairingVerified && keyRing.hasCurrent;
+    const bool refused = pairingRefused;
     memcpy(nonce, sessionNonce, sizeof(nonce));
     memcpy(key, keyRing.current, sizeof(key));
     portEXIT_CRITICAL(&stateMux);
@@ -1239,17 +1246,20 @@ class PairingCallbacks : public BLECharacteristicCallbacks {
 
     const char* boot = resetReasonName(esp_reset_reason());
     const unsigned long uptime = millis() / 1000;
-    char response[224];
+    // How this display confirms a pairing, so the app can say what to do.
+    const char* confirm = NAV_PAIR_ON_POWER_UP ? "power" : "boot";
+    char response[256];
     if (verified) {
       snprintf(response, sizeof(response),
                "{\"id\":\"%s\",\"verified\":true,\"s\":\"%s\",\"k\":\"%s\","
-               "\"boot\":\"%s\",\"up\":%lu}",
-               deviceIdentity, nonceHex, keyHex, boot, uptime);
+               "\"boot\":\"%s\",\"up\":%lu,\"confirm\":\"%s\"}",
+               deviceIdentity, nonceHex, keyHex, boot, uptime, confirm);
     } else {
       snprintf(response, sizeof(response),
                "{\"id\":\"%s\",\"verified\":false,\"s\":\"%s\","
-               "\"boot\":\"%s\",\"up\":%lu}",
-               deviceIdentity, nonceHex, boot, uptime);
+               "\"boot\":\"%s\",\"up\":%lu,\"confirm\":\"%s\"%s}",
+               deviceIdentity, nonceHex, boot, uptime, confirm,
+               refused ? ",\"replug\":true" : "");
     }
     memset(keyHex, 0, sizeof(keyHex));
     characteristic->setValue(response);
@@ -1260,7 +1270,17 @@ class PairingCallbacks : public BLECharacteristicCallbacks {
     if (value.length() > 80 || deserializeJson(doc, value.c_str())) return;
     const char* action = doc["pair"] | "";
     if (strcmp(action, "start") == 0) {
+#if NAV_PAIR_ON_POWER_UP
+      if (pairWindowUsed || millis() >= PAIR_WINDOW_MS) {
+        portENTER_CRITICAL(&stateMux);
+        pairingRefused = true;
+        portEXIT_CRITICAL(&stateMux);
+        Serial.println("[BLE] Pairing refused: replug the display to pair");
+        return;
+      }
+#endif
       portENTER_CRITICAL(&stateMux);
+      pairingRefused = false;
       pairingStartedMs = millis();
       pairingActive = true;
       pairingVerified = false;
@@ -2162,6 +2182,15 @@ void updatePairing() {
     pairingActive = false;
     changed = true;
   }
+#if NAV_PAIR_ON_POWER_UP
+  // The request already arrived inside the power-up window: confirm it, and
+  // close the window so a second phone cannot pair before the next power-on.
+  if (pairingActive) {
+    pairingActive = false;
+    pairWindowUsed = true;
+    changed = confirmed = true;
+  }
+#else
   if (pairingActive) {
     if (digitalRead(BOOT_BUTTON_PIN) == HIGH) {
       pairingButtonReleased = true;
@@ -2175,6 +2204,7 @@ void updatePairing() {
       }
     }
   }
+#endif
   portEXIT_CRITICAL(&stateMux);
   if (changed) displayDirty = true;
   if (!confirmed) return;
@@ -2204,7 +2234,9 @@ void updatePairing() {
     pairingConnection = true;
   }
   portEXIT_CRITICAL(&stateMux);
-  Serial.println(sameConnection ? "[BLE] Pairing confirmed with BOOT"
+  Serial.println(sameConnection ? (NAV_PAIR_ON_POWER_UP
+                                     ? "[BLE] Pairing confirmed within power-up window"
+                                     : "[BLE] Pairing confirmed with BOOT")
                                 : "[BLE] Pairing phone left before confirmation");
 }
 

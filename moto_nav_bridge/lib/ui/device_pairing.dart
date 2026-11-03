@@ -129,13 +129,17 @@ class _PairingSheetState extends State<_PairingSheet>
         animation: widget.ble,
         builder: (context, _) {
           final waiting = widget.ble.state == BleConnectionState.awaitingBoot;
+          final byPower = widget.ble.confirmsByPower;
+          final replug = BleService.isPairingWindowClosed(_error);
           final choosing = _candidates.isNotEmpty;
           final title = _success
               ? text.deviceConnected
               : waiting
-              ? text.pressBoot
+              ? (byPower ? text.pairingInProgress : text.pressBoot)
               : choosing
               ? text.selectDisplay
+              : replug
+              ? text.pairingWindowClosedTitle
               : _error != null
               ? (text.isEnglish ? 'Connection interrupted' : '连接未完成')
               : widget.ble.state == BleConnectionState.scanning
@@ -146,7 +150,9 @@ class _PairingSheetState extends State<_PairingSheet>
                     ? 'This display is now saved on your phone.'
                     : '这块屏幕已保存到你的手机。')
               : waiting
-              ? text.bootHint
+              ? (byPower ? text.pairingInProgressHint : text.bootHint)
+              : replug
+              ? text.replugToPair
               : choosing
               ? (text.isEnglish
                     ? 'Choose the screen in front of you.'

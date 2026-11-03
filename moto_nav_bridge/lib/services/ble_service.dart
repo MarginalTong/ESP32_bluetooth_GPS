@@ -62,6 +62,17 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   DateTime? _lastErrorAt;
   DateTime? get lastErrorAt => _lastErrorAt;
 
+  /// [lastError] text when the display refused pairing because its power-up
+  /// pairing window had closed; the user has to replug it.
+  static const String pairingWindowClosed = 'Display pairing window closed';
+  static bool isPairingWindowClosed(String? error) =>
+      error?.contains(pairingWindowClosed) ?? false;
+
+  /// The connecting display confirms pairing by being powered up (no button),
+  /// not by a BOOT press. Reported by the display on every pairing read.
+  bool _confirmsByPower = false;
+  bool get confirmsByPower => _confirmsByPower;
+
   /// Prefix of [lastError] after a navigation write was not acknowledged.
   static const String writeFailurePrefix = 'Write failed:';
 
@@ -401,6 +412,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
           jsonDecode(utf8.decode(await pairing.read())) as Map<String, dynamic>;
       final first = await status();
       final identity = first['id'] as String;
+      _confirmsByPower = first['confirm'] == 'power';
       // A small uptime after a dropped link means the display restarted.
       final boot = first['boot'];
       final up = first['up'];
@@ -435,6 +447,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
           if (result['id'] != identity) {
             throw Exception('Display identity changed during pairing');
           }
+          if (result['replug'] == true) throw Exception(pairingWindowClosed);
           if (result['verified'] == true) {
             // Issued only on the connection where BOOT was just pressed.
             key = PacketSigner.parseHex(result['k'], PacketSigner.keyBytes);

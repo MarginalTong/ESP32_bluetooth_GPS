@@ -64,8 +64,16 @@ class AppText {
       isEnglish ? 'Keep binding for the next connection.' : '保留绑定，下次仍连接这块屏幕。';
   String get replaceDevice => isEnglish ? 'Change display' : '更换屏幕';
   String get replaceHint => isEnglish
-      ? 'Forget this display, then confirm another with its BOOT button.'
-      : '清除本机绑定，再按新屏幕的 BOOT 键确认。';
+      ? 'Forget this display, then pair another. Replug the new display first.'
+      : '清除本机绑定，再配对新屏幕。请先给新屏幕重新插电。';
+  String get pairingInProgress => isEnglish ? 'Pairing…' : '正在配对…';
+  String get pairingInProgressHint =>
+      isEnglish ? 'Keep your phone near the display.' : '请让手机靠近屏幕。';
+  String get pairingWindowClosedTitle =>
+      isEnglish ? 'Replug the display' : '请重新插电';
+  String get replugToPair => isEnglish
+      ? 'For security, a display pairs only within 60 seconds of being powered on. Unplug it, plug it back in, then try again.'
+      : '为了安全，屏幕只在通电后 60 秒内允许配对。请拔掉电源再插上，然后重试。';
   String get forgetDevice => isEnglish ? 'Forget device' : '忘记设备';
   String get forgetHint => isEnglish
       ? 'Clear local binding without connecting another display.'
@@ -110,7 +118,7 @@ class AppText {
   String get pairDisplayAgain =>
       isEnglish ? 'Pair display again' : '请重新配对导航屏';
   String get pairDisplayAgainHint =>
-      isEnglish ? 'Tap, then press BOOT' : '点按后按屏幕上的 BOOT 键';
+      isEnglish ? 'Replug the display, then tap' : '屏幕重新插电后点按';
 
   /// "45 s" / "3 min" / "2 h" (English) or "45 秒" / "3 分钟" / "2 小时".
   String _age(Duration age) {

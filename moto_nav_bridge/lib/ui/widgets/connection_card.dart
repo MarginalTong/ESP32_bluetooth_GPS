@@ -132,7 +132,9 @@ class ConnectionCard extends StatelessWidget {
       BleConnectionState.idle => text.displayNotConnected,
       BleConnectionState.scanning => text.searchingDevice,
       BleConnectionState.connecting => text.connecting,
-      BleConnectionState.awaitingBoot => text.pressBoot,
+      BleConnectionState.awaitingBoot => context.read<BleService>().confirmsByPower
+          ? text.pairingInProgress
+          : text.pressBoot,
       BleConnectionState.connected => text.deviceConnected,
       BleConnectionState.disconnected => text.displayNotConnected,
     };

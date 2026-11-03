@@ -14,6 +14,13 @@
 #endif
 #define NAV_ROUND_DISPLAY (NAV_WAVESHARE_146 || NAV_JC3636W518C)
 
+// The enclosed JC3636W518C exposes no BOOT button: being able to power-cycle
+// the display is the physical proof of presence instead (see updatePairing).
+#ifndef NAV_PAIR_ON_POWER_UP
+#define NAV_PAIR_ON_POWER_UP NAV_JC3636W518C
+#endif
+constexpr unsigned long PAIR_WINDOW_MS = 60000;
+
 #if NAV_ROUND_DISPLAY
 #if NAV_JC3636W518C
 // Manufacturer demo: ST77916_LVGL_DEMO/pincfg.h (JC3636W518EN).

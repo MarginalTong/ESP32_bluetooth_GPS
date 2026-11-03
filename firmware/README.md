@@ -275,6 +275,14 @@ BLE contract:
   flow and press BOOT on the new screen; an existing binding to the old board
   will not match. BOOT is GPIO0; press it only after the screen asks for it,
   not while powering up/resetting the board.
+- JC3636W518C has no reachable BOOT button. Its pairing is confirmed by power
+  instead: a `start` request is accepted only within 60 seconds of power-on,
+  and only once per power-on (`NAV_PAIR_ON_POWER_UP`). Later requests are
+  refused and the pairing read reports `"replug":true`; the app then asks the
+  rider to unplug and replug the display. Every pairing read reports
+  `"confirm":"power"` or `"confirm":"boot"` so the app shows the right step.
+  Physical access to the power lead is the proof of presence, as BOOT is on
+  the other boards.
 - First binding: the app writes `{"pair":"start"}` to the pairing
   characteristic, the screen shows `PRESS BOOT`, and a fresh debounced BOOT
   press sets `verified=true` for that connection. The board then generates a

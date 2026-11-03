@@ -56,7 +56,12 @@ void drawClock(const UiState& state, const UiRenderContext& context) {
 void drawPairing(const UiRenderContext& context) {
 #if NAV_ROUND_DISPLAY
   drawRoundCenteredText(context.deviceName, 1, 60);
+#if NAV_PAIR_ON_POWER_UP
+  // Confirmed by the power-up window; this shows only for a moment.
+  drawRoundCenteredStatus("PAIRING", 2, "KEEP PHONE CLOSE", 1);
+#else
   drawRoundCenteredStatus("PRESS BOOT", 2, "TO PAIR", 1);
+#endif
 #else
   drawUiText(context.deviceName, 1, 12, 12);
   drawUiText("PRESS BOOT", 2, 54, 51);
