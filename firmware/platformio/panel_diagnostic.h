@@ -76,7 +76,11 @@ bool begin() {
   delay(120);
   digitalWrite(TFT_RESET_PIN, HIGH);
   delay(120);
+#if NAV_JC3636K518
+  const auto& ops = jc3636k518_qspi_init;
+#else
   const auto& ops = jc3636_qspi_init;
+#endif
   for (size_t i = 0; i < sizeof(ops);) {
     const auto op = ops[i++];
     if (op == BEGIN_WRITE || op == END_WRITE) continue;

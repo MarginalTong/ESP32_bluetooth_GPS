@@ -13,15 +13,15 @@ spec.loader.exec_module(monitor)
 
 class MonitorConfigTest(unittest.TestCase):
     def test_default_follows_project(self):
-        self.assertEqual(monitor.default_environment(), "jc3636w518c")
+        self.assertEqual(monitor.default_environment(), "jc3636k518")
 
     def test_matching_running_monitor_is_reused(self):
         with patch.object(monitor, "busy", return_value=True), \
              patch.object(monitor, "STATE") as state, \
              patch.object(monitor, "STOP") as stop:
             state.exists.return_value = True
-            state.read_text.return_value = '{"environment":"jc3636w518c"}'
-            monitor.start(environment="jc3636w518c")
+            state.read_text.return_value = '{"environment":"jc3636k518"}'
+            monitor.start(environment="jc3636k518")
             stop.touch.assert_not_called()
 
     def test_old_environment_is_stopped_before_switch(self):
@@ -32,7 +32,7 @@ class MonitorConfigTest(unittest.TestCase):
             state.exists.return_value = True
             state.read_text.return_value = '{"environment":"waveshare_146"}'
             with self.assertRaisesRegex(RuntimeError, "stop test"):
-                monitor.start(environment="jc3636w518c")
+                monitor.start(environment="jc3636k518")
             stop.touch.assert_called_once()
 
 

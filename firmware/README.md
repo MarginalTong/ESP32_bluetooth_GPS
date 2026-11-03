@@ -1,6 +1,34 @@
 # ESP32 navigation display firmware
 
-## Connected replacement board: JC3636W518C
+## Connected replacement board: JC3636K518 (knob)
+
+The connected board is the **JC3636K518** knob variant, confirmed from the
+vendor package (`~/Desktop/JC3636K518CN_knob_CN`: schematic
+`6-原理图/V1.0/2_ESP32-S3(R8).png`, demo `pincfg.h`). Earlier bring-up wrongly
+assumed **JC3636W518C**, whose LCD pins are different:
+
+| Signal | W518 (wrong for this board) | K518 (schematic) |
+| --- | --- | --- |
+| QSPI CLK / CS | 9 / 10 | 13 / 14 |
+| D0–D3 | 11–14 | 15–18 |
+| Reset / backlight | 47 / 15 | 21 / 47 |
+
+The W518 firmware therefore drove touch (GPIO9–12) and the real LCD CLK/CS
+(13/14) with QSPI data, and the backlight PWM onto LCD D0. All stripe results
+from the W518 firmware and the direct-panel diagnostic were obtained with those
+wrong pins. On K518, GPIO9–12 are CST816S touch, GPIO7/8 the encoder, GPIO0 the
+button, GPIO48 LCD TE; TF card, PCM5100A audio, PDM microphone and haptics are
+not initialized by NAVIO. Flashing requires the base power switch **on**
+(left) and Type-C inserted with the metal seam facing down (ESP32-S3 USB).
+
+Environment `jc3636k518` (default) uses those pins and
+`jc3636k518_qspi_init`: the vendor demo's 184 commands, identical to
+`4-芯片手册/ST77916_T 1.8'' 360x360 initial code_V1.0_20241015.INI`, after
+RGB565/orientation. QSPI stays at 40MHz (vendor demo: 50MHz). The diagnostic
+and factory-monitor environments now extend `jc3636k518`. This is a
+hardware-validation candidate until the picture is confirmed on the board.
+
+## Earlier assumption: JC3636W518C
 
 The default PlatformIO environment and VS Code NAVIO tasks now target
 `jc3636w518c`, not the old Waveshare. Do not reconnect the cracked, overheated

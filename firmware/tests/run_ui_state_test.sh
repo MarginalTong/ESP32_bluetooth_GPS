@@ -3,11 +3,12 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 binary=$(mktemp "${TMPDIR:-/tmp}/ui-state-test.XXXXXX")
 trap 'rm -f "$binary"' EXIT
-for board in waveshare legacy jc3636w518c; do
+for board in waveshare legacy jc3636w518c jc3636k518; do
   case "$board" in
     waveshare) flags=(-DNAV_WAVESHARE_146=1) ;;
     legacy) flags=(-DNAV_WAVESHARE_146=0) ;;
     jc3636w518c) flags=(-DNAV_WAVESHARE_146=0 -DNAV_JC3636W518C=1) ;;
+    jc3636k518) flags=(-DNAV_WAVESHARE_146=0 -DNAV_JC3636K518=1) ;;
   esac
   "${CXX:-clang++}" -std=c++17 -Wall -Wextra -Werror \
     "${flags[@]}" -Ifirmware/platformio firmware/tests/board_config_test.cpp -o "$binary"
