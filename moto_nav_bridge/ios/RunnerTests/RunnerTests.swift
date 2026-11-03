@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreLocation
 import XCTest
 @testable import Runner
@@ -34,5 +35,27 @@ final class RouteGeometryTests: XCTestCase {
     // A zero-length segment is a point.
     XCTAssertEqual(
       NavigationMapPlatformView.distance(from: CGPoint(x: 3, y: 4), toSegmentFrom: a, to: a), 5)
+  }
+}
+
+final class SpeechAudioPolicyTests: XCTestCase {
+  func testGuidanceIsHeardWithTheSilentSwitchOnAndOverMusic() {
+    // .playback ignores the silent switch; .ambient/.soloAmbient would not.
+    XCTAssertEqual(SpeechAudioPolicy.category, .playback)
+    XCTAssertEqual(SpeechAudioPolicy.mode, .voicePrompt)
+    // Music is ducked rather than stopped; podcasts pause and resume.
+    XCTAssertTrue(SpeechAudioPolicy.options.contains(.duckOthers))
+    XCTAssertTrue(SpeechAudioPolicy.options.contains(.interruptSpokenAudioAndMixWithOthers))
+  }
+
+  func testThePolicyIsAcceptedByTheAudioSession() throws {
+    try AVAudioSession.sharedInstance().setCategory(
+      SpeechAudioPolicy.category, mode: SpeechAudioPolicy.mode,
+      options: SpeechAudioPolicy.options)
+  }
+
+  func testTheAppMayKeepSpeakingInTheBackground() {
+    let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
+    XCTAssertTrue(modes.contains("audio"))
   }
 }
