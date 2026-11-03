@@ -56,7 +56,8 @@ in line with the rules; they do not review the whole file again.
 
 - `bash tools/check.sh` runs every local check: App analysis and tests,
   firmware host tests, monitor tests and database migration tests. It must
-  pass before each commit. Add `--firmware-build` when firmware changed.
+  pass before each commit. Add `--firmware-build` when firmware changed and
+  `--ios` when iOS native code changed.
 - A behavior change ships with a test in the same commit. A bug fix includes a
   test that fails without the fix. Do not weaken or delete a test to make a
   change pass; change it only when the specified behavior changed.

@@ -14,3 +14,11 @@ moto_nav_bridge/lib/ui/widgets/destination_panel.dart
 moto_nav_bridge/lib/ui/widgets/navigation_controls.dart
 moto_nav_bridge/lib/ui/widgets/map_control_button.dart
 moto_nav_bridge/lib/ui/widgets/connection_card.dart
+moto_nav_bridge/ios/Runner/AppDelegate.swift
+moto_nav_bridge/ios/Runner/NavigationSpeech.swift
+moto_nav_bridge/ios/Runner/AppleMapsChannel.swift
+moto_nav_bridge/ios/Runner/NavigationMapPlatformView.swift
+moto_nav_bridge/ios/Runner/NavigationMapPlatformView+Touch.swift
+moto_nav_bridge/ios/Runner/NavigationMapPlatformView+Riders.swift
+moto_nav_bridge/ios/Runner/NavigationMapSupport.swift
+moto_nav_bridge/ios/Runner/DisplayBindingKeychain.swift
