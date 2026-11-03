@@ -37,13 +37,15 @@ These are explicit user preferences for this repository:
 These apply to all code in this repository. Existing code that breaks a rule
 is not rewritten wholesale; it is brought into line when that code is changed.
 
-Standing instruction from the user: every change includes this tidy-up of the
-code it touches, without being asked. When a change touches one of the large
-files (`esp32_nav_display.ino`, `AppDelegate.swift`,
-`navigation_controller.dart`, or any file past the size guide below), move the
-touched responsibility into its own module first, with tests, as a separate
-commit before the behavior change. Keep each tidy-up limited to the area being
-changed, and say in the handoff what was moved.
+Standing instruction from the user: every change tidies up **each whole file
+it touches**, not just the edited lines, without being asked. For every file a
+change edits, bring the entire file in line with these rules: UI text and
+colors moved to their homes, missing tests added, oversized functions and
+files split by responsibility into their own modules with tests (the large
+files `esp32_nav_display.ino`, `AppDelegate.swift` and
+`navigation_controller.dart` included). Do the tidy-up as its own commit(s)
+before the behavior change, so either can be reverted alone, and say in the
+handoff what was reorganized. Files the change does not edit are left alone.
 
 ### Verification
 
