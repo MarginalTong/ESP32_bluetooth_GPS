@@ -14,12 +14,16 @@ import 'navigation_controller_test.dart'
 class DeviceBle extends LayoutBle {
   String? identity = '001122334455';
   bool connected = true;
+  bool seeking = false;
   int scans = 0;
   @override
   String? get boundIdentity => identity;
   @override
-  BleConnectionState get state =>
-      connected ? BleConnectionState.connected : BleConnectionState.idle;
+  BleConnectionState get state => seeking
+      ? BleConnectionState.connecting
+      : connected
+          ? BleConnectionState.connected
+          : BleConnectionState.idle;
   @override
   Future<void> refreshBinding() async {}
   @override
@@ -30,6 +34,7 @@ class DeviceBle extends LayoutBle {
 
   @override
   Future<void> forgetDevice() async {
+    seeking = false;
     connected = false;
     identity = null;
     notifyListeners();
@@ -132,4 +137,41 @@ void main() {
       await positions.close();
     });
   }
+
+  testWidgets('an offline old display can be replaced or forgotten mid-connect',
+      (tester) async {
+    tester.binding.platformDispatcher.localeTestValue = const Locale('en');
+    addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final ble = DeviceBle()
+      ..connected = false
+      ..seeking = true;
+    final positions = FakePositions(current: p0);
+    final nav = NavigationController(
+        ble: ble,
+        directions: FakeRoutes(mainRoute),
+        location: positions,
+        sideRoads: FakeSideRoads());
+    await tester.pumpWidget(MultiProvider(providers: [
+      ChangeNotifierProvider<BleService>.value(value: ble),
+      ChangeNotifierProvider.value(value: nav),
+    ], child: const MaterialApp(home: AppShell())));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('My devices').last);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('Forget device'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('Confirm'));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(ble.identity, isNull);
+    expect(ble.seeking, isFalse);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    nav.dispose();
+    ble.dispose();
+    await positions.close();
+  });
 }

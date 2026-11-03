@@ -247,6 +247,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
 
     _setState(BleConnectionState.scanning);
     final completer = Completer<BluetoothDevice?>();
+    _scanWait = completer;
     final candidates = <String, ScanResult>{};
     Timer? candidateWindow;
 
@@ -478,10 +479,16 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     }
   }
 
+  Completer<BluetoothDevice?>? _scanWait;
+
   @override
   Future<void> disconnect() async {
     _session++;
     _maintainConnection = false;
+    // End a scan in progress now instead of after its full timeout, so
+    // forgetting or replacing a display that is offline does not hang.
+    final scan = _scanWait;
+    if (scan != null && !scan.isCompleted) scan.complete(null);
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _pendingState = null;

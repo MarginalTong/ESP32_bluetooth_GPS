@@ -177,7 +177,9 @@ class _DevicesPageState extends State<DevicesPage> {
                         icon: Icons.swap_horiz_rounded,
                         title: text.replaceDevice,
                         subtitle: text.replaceHint,
-                        onTap: !busy ? () => _forget(true) : null),
+                        // Usable while the old display is still being sought:
+                        // forgetting cancels that connection attempt first.
+                        onTap: !_working ? () => _forget(true) : null),
                   ])),
               const SizedBox(height: 20),
               DecoratedBox(
@@ -189,7 +191,7 @@ class _DevicesPageState extends State<DevicesPage> {
                       title: text.forgetDevice,
                       subtitle: text.forgetHint,
                       destructive: true,
-                      onTap: !busy && ble.boundIdentity != null
+                      onTap: !_working && ble.boundIdentity != null
                           ? () => _forget(false)
                           : null)),
               Padding(
