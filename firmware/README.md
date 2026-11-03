@@ -35,6 +35,17 @@ uses the matching ELF. For a manual override pass `--environment jc3636w518c`.
 The full pre-flash 16MB factory image is backed up locally under
 `.navo/jc3636w518c-factory-20261103.bin` (ignored; keep it private and backed up).
 
+Bring-up on 2026-11-03: PlatformIO upload to the connected replacement board
+completed with written-data hash verification. Its live serial log reports
+`360x360 anti-aliased rendering -> 360x360 panel`, `ST77916 360x360 ready`,
+`Not paired yet`, `Advertising started` and `BOOT Ready`. This verifies firmware
+startup and BLE advertising initialization, not phone pairing or visual output.
+The first static brand frame measured about 385ms (353ms CPU, 32ms LCD);
+the 25ms scheduler cap therefore does **not** establish actual 40fps performance.
+Physical image/orientation and a fresh phone BOOT pairing still need user checks.
+Both JC3636W518C and Waveshare PlatformIO builds passed, as did the host UI,
+motion, authentication, anti-alias rendering and monitor configuration tests.
+
 Board configuration and all three layout variants are checked by
 `bash firmware/tests/run_ui_state_test.sh`. Monitor environment selection is
 checked by `python3 firmware/tests/monitor_config_test.py`.
