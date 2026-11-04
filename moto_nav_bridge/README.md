@@ -122,7 +122,9 @@ Set `minSdkVersion 21` (flutter_blue_plus / geolocator requirement) in
 |---|---|---|
 | Protocol enum | `lib/models/device_direction.dart` | wire tokens match firmware byte-for-byte |
 | Payload | `lib/models/nav_state.dart` | `toWire()` = exact BLE bytes |
-| Directions | `lib/services/valhalla_directions_service.dart` | all route planning and Valhalla parsing |
+| Directions | `lib/services/valhalla_directions_service.dart` | Valhalla HTTP requests |
+| Route parsing | `lib/services/valhalla/` | response parser, maneuver → arrow mapping, polyline6 |
+| Voice guidance | `lib/services/guidance/` | maneuvers and bends, when to speak, phrase templates |
 | Engine | `lib/services/navigation_engine.dart` | position → step advance → NavState |
 | Throttle | `lib/services/send_throttle.dart` | avoid flooding BLE |
 | BLE | `lib/services/ble_service.dart` | scan/connect/write |

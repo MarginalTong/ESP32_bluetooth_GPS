@@ -22,3 +22,12 @@ moto_nav_bridge/ios/Runner/NavigationMapPlatformView+Touch.swift
 moto_nav_bridge/ios/Runner/NavigationMapPlatformView+Riders.swift
 moto_nav_bridge/ios/Runner/NavigationMapSupport.swift
 moto_nav_bridge/ios/Runner/DisplayBindingKeychain.swift
+moto_nav_bridge/lib/models/route_step.dart
+moto_nav_bridge/lib/services/valhalla_directions_service.dart
+moto_nav_bridge/lib/services/valhalla/polyline6.dart
+moto_nav_bridge/lib/services/valhalla/valhalla_maneuver_direction.dart
+moto_nav_bridge/lib/services/valhalla/valhalla_route_parser.dart
+moto_nav_bridge/lib/services/guidance/guidance_curves.dart
+moto_nav_bridge/lib/services/guidance/guidance_phrases.dart
+moto_nav_bridge/lib/services/guidance/guidance_route.dart
+moto_nav_bridge/lib/services/guidance/voice_guidance_planner.dart

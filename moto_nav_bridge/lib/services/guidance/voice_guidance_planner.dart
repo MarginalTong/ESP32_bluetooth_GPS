@@ -118,27 +118,7 @@ class VoiceGuidancePlanner {
     _updateSpeed(input.speedMps);
 
     // Off route: tell the rider once per episode, before anything else.
-    if (state.rerouting) {
-      if (!_inReroute) {
-        _inReroute = true;
-        _rerouteFailureSpoken = false;
-        final last = _lastRerouteNoticeAt;
-        if (last == null ||
-            input.now.difference(last) >= policy.rerouteCooldown) {
-          _lastRerouteNoticeAt = input.now;
-          return _speak(phrases.rerouting, GuidancePriority.urgent, input.now);
-        }
-      }
-      if (input.rerouteFailed && !_rerouteFailureSpoken && !input.speaking) {
-        _rerouteFailureSpoken = true;
-        return _speak(
-          phrases.rerouteFailed,
-          GuidancePriority.urgent,
-          input.now,
-        );
-      }
-      return null;
-    }
+    if (state.rerouting) return _rerouteSpeech(input, phrases);
     _inReroute = false;
 
     if (!identical(input.route, _route)) {
@@ -177,6 +157,27 @@ class VoiceGuidancePlanner {
     return speech ?? _maybeCurves(input, guidance, phrases);
   }
 
+  GuidanceUtterance? _rerouteSpeech(
+    GuidanceInput input,
+    GuidancePhrases phrases,
+  ) {
+    if (!_inReroute) {
+      _inReroute = true;
+      _rerouteFailureSpoken = false;
+      final last = _lastRerouteNoticeAt;
+      if (last == null ||
+          input.now.difference(last) >= policy.rerouteCooldown) {
+        _lastRerouteNoticeAt = input.now;
+        return _speak(phrases.rerouting, GuidancePriority.urgent, input.now);
+      }
+    }
+    if (input.rerouteFailed && !_rerouteFailureSpoken && !input.speaking) {
+      _rerouteFailureSpoken = true;
+      return _speak(phrases.rerouteFailed, GuidancePriority.urgent, input.now);
+    }
+    return null;
+  }
+
   GuidanceUtterance? _maneuverSpeech(
     GuidanceInput input,
     GuidanceRoute guidance,
@@ -185,51 +186,19 @@ class VoiceGuidancePlanner {
     GuidanceManeuver? maneuver,
   ) {
     final state = input.state;
-    final d = state.distanceMeters.toDouble();
     final speed = _speed ?? _defaultSpeed;
-    final complex =
-        (maneuver?.isComplex ?? false) ||
-        _followUp(guidance, maneuver, speed) != null;
-    final t = _thresholds(speed, input.accuracyMeters ?? 0, complex);
+    final follow = _followUp(guidance, maneuver, speed);
+    final complex = (maneuver?.isComplex ?? false) || follow != null;
     final followUpOnly = _announcedAsFollowUp.contains(upcoming.index);
-
-    final stage = d <= t.$3
-        ? _final
-        : d <= t.$2 && !followUpOnly
-        ? _prepare
-        : d <= t.$1 && speed >= 6 && !followUpOnly
-        ? _far
-        : _none;
+    final stage = _stage(input, speed, complex, followUpOnly);
     final spoken = _spokenStage[upcoming.index] ?? _none;
     if (stage == _none || stage >= spoken) return null;
-
-    if (stage == _final && upcoming.kind == ManeuverKind.destination) {
-      // "You have arrived" follows a few metres later.
-      _spokenStage[upcoming.index] = _final;
-      return null;
-    }
-    if (stage == _final) {
-      // A prepare announcement a moment ago already said it: stay quiet.
-      final prepared = _stageSpokenAt[upcoming.index];
-      if (spoken == _prepare &&
-          prepared != null &&
-          input.now.difference(prepared) < const Duration(seconds: 4)) {
-        _spokenStage[upcoming.index] = _final;
-        return null;
-      }
-    } else {
-      if (input.speaking) return null; // re-evaluated with fresh distance later
-      final last = _lastSpokenAt;
-      if (last != null && input.now.difference(last) < policy.minGap) {
-        return null;
-      }
-    }
+    if (!_maySpeak(input, upcoming, stage, spoken)) return null;
 
     final direction = upcoming.kind == ManeuverKind.destination
         ? DeviceDirection.arrived
         : state.direction;
     final action = phrases.action(direction, maneuver);
-    final follow = _followUp(guidance, maneuver, speed);
     final then = follow == null
         ? ''
         : phrases.then(follow.maneuver, follow.gapMeters);
@@ -251,6 +220,50 @@ class VoiceGuidancePlanner {
       stage == _final ? GuidancePriority.urgent : GuidancePriority.maneuver,
       input.now,
     );
+  }
+
+  /// The nearest stage whose trigger distance the rider has reached. A
+  /// maneuver already announced as a follow-up only gets its final reminder.
+  int _stage(GuidanceInput input, double speed, bool complex, bool followUp) {
+    final d = input.state.distanceMeters.toDouble();
+    final t = _thresholds(speed, input.accuracyMeters ?? 0, complex);
+    // 6 m/s: below about 20 km/h the far stage comes too early to be useful.
+    return d <= t.$3
+        ? _final
+        : d <= t.$2 && !followUp
+        ? _prepare
+        : d <= t.$1 && speed >= 6 && !followUp
+        ? _far
+        : _none;
+  }
+
+  /// Whether [stage] may be spoken now. A final stage that is not spoken is
+  /// marked done; an earlier stage waits for a quiet moment instead.
+  bool _maySpeak(
+    GuidanceInput input,
+    GuidanceManeuver upcoming,
+    int stage,
+    int spoken,
+  ) {
+    if (stage == _final && upcoming.kind == ManeuverKind.destination) {
+      // "You have arrived" follows a few metres later.
+      _spokenStage[upcoming.index] = _final;
+      return false;
+    }
+    if (stage == _final) {
+      // A prepare announcement a moment ago already said it: stay quiet.
+      final prepared = _stageSpokenAt[upcoming.index];
+      if (spoken == _prepare &&
+          prepared != null &&
+          input.now.difference(prepared) < const Duration(seconds: 4)) {
+        _spokenStage[upcoming.index] = _final;
+        return false;
+      }
+      return true;
+    }
+    if (input.speaking) return false; // re-evaluated with fresh distance later
+    final last = _lastSpokenAt;
+    return last == null || input.now.difference(last) >= policy.minGap;
   }
 
   /// The next announced maneuver when it comes too soon for its own
