@@ -4,6 +4,15 @@
 // route junction in the road's direction. Real segment lengths vary wildly
 // and must not change how long a branch looks on this small display.
 #include <math.h>
+#include <stdint.h>
+
+// The look of a side road, in one place (recorded in firmware/README.md):
+// a dark gray line, so branches read as context and never compete with the
+// white route, fading from the junction to nothing at the tail.
+namespace SideRoadStyle {
+constexpr float halfWidth = 1.5f;  // map pixels; about 3 px wide
+constexpr uint8_t peak = 90;       // gray level at the junction, of 255
+}  // namespace SideRoadStyle
 
 struct SideRoadRay {
   float x0, y0;  // junction, map pixels

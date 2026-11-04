@@ -1229,16 +1229,13 @@ void drawSideRoadLine(float x0, float y0, float x1, float y1) {
 #endif
   SideRoadRay ray;
   if (!planSideRoadRay(x0, y0, x1, y1, visibleLength, area, ray)) return;
-  // Map pixels: rail distance from the ray's centre line, and soft edge.
-  constexpr float railOffset = 3.0f;
-  constexpr float softWidth = 1.9f;
-  constexpr uint8_t peak = 245;
+  constexpr float halfWidth = SideRoadStyle::halfWidth;
+  constexpr uint8_t peak = SideRoadStyle::peak;
 #if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
-    nativeLayer.strokeFadingRails(layerCoord(ray.x0), layerCoord(ray.y0), ray.ux,
-                                  ray.uy, ray.length * NATIVE_SCALE,
-                                  railOffset * NATIVE_SCALE,
-                                  softWidth * NATIVE_SCALE, peak);
+    nativeLayer.strokeFadingRay(layerCoord(ray.x0), layerCoord(ray.y0), ray.ux,
+                                ray.uy, ray.length * NATIVE_SCALE,
+                                halfWidth * NATIVE_SCALE, peak);
     return;
   }
 #endif
@@ -1257,10 +1254,10 @@ void drawSideRoadLine(float x0, float y0, float x1, float y1) {
       const float py = y - startY;
       const float along = px * ray.ux + py * ray.uy;
       if (along < 0.0f || along >= ray.length) continue;
-      const float edge = fabsf(fabsf(px * ray.uy - py * ray.ux) - railOffset);
-      if (edge >= softWidth) continue;
+      const float distance = fabsf(px * ray.uy - py * ray.ux);
+      if (distance >= halfWidth + 0.5f) continue;
       const uint8_t gray =
-          GrayLayer::fadingRailLevel(along, ray.length, edge, softWidth, peak);
+          GrayLayer::fadingRayLevel(along, ray.length, distance, halfWidth, peak);
       const uint16_t color = ((gray >> 3) << 11) | ((gray >> 2) << 5) | (gray >> 3);
       uint16_t& pixel = pixels[y * SCREEN_WIDTH + x];
       // Overlapping branches must not erase a brighter edge already drawn.

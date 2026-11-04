@@ -127,22 +127,24 @@ struct GrayLayer {
                     halfWidth, level);
   }
 
-  // Gray level of a rail pixel `along` the arm and `edge` from the rail
-  // centre: bright for the first 45%, then a smoothstep fade to the end.
-  static uint8_t fadingRailLevel(float along, float length, float edge,
-                                 float softWidth, uint8_t peak) {
-    const float t = fmaxf(0.0f, (along / length - 0.45f) / 0.55f);
+  // Gray level of a ray pixel `along` the arm and `distance` from its centre
+  // line: full [peak] at the junction, a smoothstep fade to 0 at the tail,
+  // with an anti-aliased edge across the stroke.
+  static uint8_t fadingRayLevel(float along, float length, float distance,
+                                float halfWidth, uint8_t peak) {
+    const float coverage = clamp01(halfWidth + 0.5f - distance);
+    const float t = clamp01(along / length);
     const float fade = 1.0f - t * t * (3.0f - 2.0f * t);
-    return uint8_t(peak * fade * (1.0f - edge / softWidth) + 0.5f);
+    return uint8_t(peak * fade * coverage + 0.5f);
   }
 
-  // A junction arm drawn as two soft parallel rails (a road outline) that
-  // stay bright for the first 45% and then fade out towards the far end.
-  void strokeFadingRails(float x0, float y0, float ux, float uy, float length,
-                         float railOffset, float softWidth, uint8_t peak) {
+  // A junction arm drawn as one soft line from (x0, y0) along (ux, uy) that
+  // fades out towards its far end. Lighten blend, like every stroke here.
+  void strokeFadingRay(float x0, float y0, float ux, float uy, float length,
+                       float halfWidth, uint8_t peak) {
     if (pixels == nullptr) return;
     const float x1 = x0 + ux * length, y1 = y0 + uy * length;
-    const float reach = railOffset + softWidth + 1.0f;
+    const float reach = halfWidth + 1.0f;
     int16_t left, right, top, bottom;
     bounds(fminf(x0, x1) - reach, fmaxf(x0, x1) + reach, width, left, right);
     bounds(fminf(y0, y1) - reach, fmaxf(y0, y1) + reach, clipBottom, top, bottom);
@@ -152,9 +154,9 @@ struct GrayLayer {
         const float px = x + 0.5f - x0, py = y + 0.5f - y0;
         const float along = px * ux + py * uy;
         if (along < 0.0f || along >= length) continue;
-        const float edge = fabsf(fabsf(px * uy - py * ux) - railOffset);
-        if (edge >= softWidth) continue;
-        const uint8_t value = fadingRailLevel(along, length, edge, softWidth, peak);
+        const float distance = fabsf(px * uy - py * ux);
+        if (distance >= halfWidth + 0.5f) continue;
+        const uint8_t value = fadingRayLevel(along, length, distance, halfWidth, peak);
         if (value > row[x]) row[x] = value;
       }
     }

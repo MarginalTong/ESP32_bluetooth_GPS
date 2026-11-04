@@ -73,16 +73,20 @@ int main() {
       check(layer.pixels[y * size + x] == 0, "map/text clipping protects the instruction area");
   layer.clipBottom = size;
 
-  // Rails have smooth cross-section edges as well as an along-road fade.
+  // A side road is one soft line, brightest at the junction, fading out.
   layer.clear();
-  layer.strokeFadingRails(20, 50, 1, 0, 100, 3, 2, 245);
-  const uint8_t near = layer.pixels[46 * size + 25];
-  const uint8_t edge = layer.pixels[45 * size + 25];
-  check(near > 0 && near < 245 && edge > 0 && edge < near &&
-        layer.pixels[44 * size + 25] == 0,
-        "side roads have antialiased edges within bounded rail widths");
-  const uint8_t faded = layer.pixels[47 * size + 110];
-  check(faded > 0 && faded < near, "the far end of a side road still fades");
+  layer.strokeFadingRay(20, 50, 1, 0, 100, 1.5f, 90);
+  const uint8_t junction = layer.pixels[50 * size + 21];
+  const uint8_t middle = layer.pixels[50 * size + 70];
+  const uint8_t tail = layer.pixels[50 * size + 118];
+  check(junction >= 85 && junction <= 90, "a side road starts at its dark gray peak");
+  check(middle > 0 && middle < junction && tail < middle,
+        "a side road fades steadily towards its tail");
+  check(layer.pixels[50 * size + 121] == 0, "nothing is drawn past the tail");
+  const uint8_t edge = layer.pixels[48 * size + 21];
+  check(edge > 0 && edge < junction && layer.pixels[47 * size + 21] == 0,
+        "a side road has an antialiased edge and a bounded width");
+  check(layer.pixels[50 * size + 19] == 0, "nothing is drawn behind the junction");
 
   layer.clear();
   layer.fillTriangle(-100, -10, 50, 500, 520, 40, 255);
@@ -133,6 +137,6 @@ int main() {
     for (int i = 0; i < size * bandRows; ++i)
       check(band[guard + i] == 0, "mismatched layers are not read out of bounds");
   }
-  puts("anti-alias rendering: smooth edges, solid interiors, font masks, clipping and rail fade passed");
+  puts("anti-alias rendering: smooth edges, solid interiors, font masks, clipping and side-road fade passed");
   puts("panel composition: 412/360 rasters, band boundaries, UI overlay and fallback passed");
 }

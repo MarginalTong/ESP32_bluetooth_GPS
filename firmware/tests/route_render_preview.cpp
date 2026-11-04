@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "gray_layer.h"
+#include "side_road_ray.h"
 #include "glcdfont.c"
 #include "Fonts/FreeSansBold24pt7b.h"
 
@@ -187,8 +188,8 @@ static std::vector<uint16_t> renderNew() {
     const float x0 = layer(mapX(j.x)), y0 = layer(mapY(j.y));
     const float x1 = layer(mapX(j.x + side * 10)), y1 = layer(mapY(j.y + side * 3));
     const float dx = x1 - x0, dy = y1 - y0, length = hypotf(dx, dy);
-    map.strokeFadingRails(x0, y0, dx / length, dy / length, 48 * kScale, 3 * kScale,
-                          1.9f * kScale, 245);
+    map.strokeFadingRay(x0, y0, dx / length, dy / length, 48 * kScale,
+                        SideRoadStyle::halfWidth * kScale, SideRoadStyle::peak);
   }
   map.strokePolyline(xy, 20, kRouteStroke * kScale / 2, 255);
   const float mx = layer(119), my = layer(166 - 12);
