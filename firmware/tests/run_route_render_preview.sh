@@ -14,16 +14,6 @@ trap 'rm -rf "$work"' EXIT
 # provide the font structs.
 printf '#pragma once\n#include <stdint.h>\n#define PROGMEM\n#include "gfxfont.h"\n' \
   > "$work/Adafruit_GFX.h"
-awk '
-  BEGIN { print "#include <stddef.h>\n#include <stdint.h>\n#include <string.h>\n#include <math.h>\n#include <Adafruit_GFX.h>\n#include \"numeric_font.h\"\n#include \"text_font.h\"" }
-  FNR == NR {
-    if (/^\/\/ BEGIN ROUTE RENDER/) copying = 1;
-    if (copying) print;
-    if (/^\/\/ END ROUTE RENDER/) copying = 0;
-    next;
-  }
-  { print }
-' firmware/esp32_nav_display/esp32_nav_display.ino firmware/tests/route_render_preview.cpp |
-  "${CXX:-clang++}" -x c++ -std=c++11 -O2 -Wall -Wextra -Werror -I"$work" -I"$gfx" -Ifirmware/esp32_nav_display - \
-    -o "$work/preview"
+"${CXX:-clang++}" -std=c++11 -O2 -Wall -Wextra -Werror -I"$work" -I"$gfx" -Ifirmware/platformio \
+  firmware/tests/route_render_preview.cpp -o "$work/preview"
 "$work/preview" "$out" ${2:+"$2"}

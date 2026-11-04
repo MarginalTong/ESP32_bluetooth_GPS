@@ -5,6 +5,11 @@
 #
 # The project-wide pass on 2026-11-04 (UI text, colors, formatting) did not
 # review tests, function size or structure, so no file is listed for it.
+#
+# Partly tidied, not listed until finished: esp32_nav_display.ino. Its
+# native-resolution drawing moved to platformio/gray_layer.h and the side-road
+# geometry to platformio/side_road_ray.h (2026-11-05); the rest of the file
+# still needs its whole-file tidy-up the next time it is changed.
 firmware/platformio/ui_state.cpp
 firmware/platformio/ui_screens.cpp
 firmware/tests/ui_state_test.cpp
@@ -33,3 +38,6 @@ moto_nav_bridge/lib/services/guidance/guidance_route.dart
 moto_nav_bridge/lib/services/guidance/voice_guidance_planner.dart
 moto_nav_bridge/lib/models/lane_guidance.dart
 moto_nav_bridge/lib/services/valhalla/valhalla_lanes.dart
+firmware/platformio/gray_layer.h
+firmware/platformio/side_road_ray.h
+firmware/tests/side_road_ray_test.cpp

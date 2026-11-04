@@ -1,7 +1,8 @@
-// The runner compiles the actual ROUTE RENDER block before this test.
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
+
+#include "gray_layer.h"
 
 static void check(bool condition, const char* message) {
   if (!condition) {

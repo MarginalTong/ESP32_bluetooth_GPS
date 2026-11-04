@@ -1,13 +1,14 @@
 // Renders the round panel's navigation screen the old way and the new way,
 // side by side, so drawing changes can be judged without hardware.
 // Run with: bash firmware/tests/run_route_render_preview.sh [out.ppm]
-// The runner prepends the sketch's ROUTE RENDER block and the GFX fonts.
+// The runner provides the Adafruit GFX fonts.
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vector>
 
+#include "gray_layer.h"
 #include "glcdfont.c"
 #include "Fonts/FreeSansBold24pt7b.h"
 
