@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moto_nav_bridge/models/device_direction.dart';
+import 'package:moto_nav_bridge/models/lane_guidance.dart';
 import 'package:moto_nav_bridge/models/lat_lng.dart';
 import 'package:moto_nav_bridge/models/nav_state.dart';
 import 'package:moto_nav_bridge/models/route_step.dart';
@@ -318,6 +319,70 @@ void main() {
         );
       }
       expect(rider.spoken, isEmpty);
+    });
+  });
+
+  group('lanes and destination side', () {
+    // Two right lanes of three for the turn; the stop is on the left.
+    List<RouteStep> laneRoute({String? name}) {
+      final steps = oneTurn(
+        DeviceDirection.right,
+        raw: 'valhalla:10',
+        name: name,
+      );
+      return [
+        steps[0],
+        steps[1].copyWith(
+          lanes: LaneGuidance.fromFlags([false, true, true]),
+          arrivalSide: RoadSide.left,
+        ),
+      ];
+    }
+
+    test('the lanes come with each announcement except the last reminder', () {
+      final steps = laneRoute(name: '人民路');
+      final rider = Rider();
+      rider.approach(steps, 0, DeviceDirection.right, 600, 0);
+      expect(rider.spoken, [
+        '前方300米走右侧两条车道右转，进入人民路。',
+        '前方100米走右侧两条车道右转。',
+        '右转。',
+      ]);
+    });
+
+    test('English puts the lanes after the road', () {
+      final rider = Rider(english: true);
+      rider.approach(
+        laneRoute(name: 'King Street'),
+        0,
+        DeviceDirection.right,
+        400,
+        290,
+      );
+      expect(rider.spoken, [
+        'In 300 metres, turn right onto King Street, using the right two lanes.',
+      ]);
+    });
+
+    test(
+      'lanes for another maneuver than the display shows are not spoken',
+      () {
+        final rider = Rider();
+        rider.approach(laneRoute(), 0, DeviceDirection.left, 400, 290);
+        expect(rider.spoken, ['前方300米左转。']);
+      },
+    );
+
+    test('the destination side is named on approach and on arrival', () {
+      final steps = laneRoute();
+      final rider = Rider();
+      rider.approach(steps, 1, DeviceDirection.up, 800, 20);
+      rider.feed(steps, 1, DeviceDirection.arrived, 5);
+      expect(rider.spoken, [
+        '前方300米到达目的地，目的地在您左手边。',
+        '前方100米到达目的地，目的地在您左手边。',
+        '已到达目的地，目的地在您左手边。',
+      ]);
     });
   });
 

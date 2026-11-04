@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:moto_nav_bridge/models/device_direction.dart';
+import 'package:moto_nav_bridge/models/lane_guidance.dart';
 import 'package:moto_nav_bridge/models/lat_lng.dart';
 import 'package:moto_nav_bridge/services/directions_exception.dart';
 import 'package:moto_nav_bridge/services/navigation_engine.dart';
@@ -74,7 +75,9 @@ void main() {
           expect(request.method, 'POST');
           expect(request.url.toString(), endpoint);
           expect(request.followRedirects, isFalse);
-          payload = jsonDecode(request.body) as Map<String, dynamic>;
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          // The lane request is checked in its own test.
+          if (body['format'] == 'json') payload = body;
           return http.Response(jsonEncode(response()), 200);
         }),
       );
@@ -329,6 +332,22 @@ void main() {
     },
   );
 
+  test('the destination side is kept on the last step', () {
+    for (final (type, side) in [
+      (4, null),
+      (5, RoadSide.right),
+      (6, RoadSide.left),
+    ]) {
+      final body = trip();
+      ((body['legs'] as List).first['maneuvers'] as List).last['type'] = type;
+      final steps = ValhallaDirectionsService.parseRoutesJson(
+        jsonEncode({'trip': body}),
+      ).single.steps;
+      expect(steps.last.arrivalSide, side);
+      expect(steps.first.arrivalSide, isNull);
+    }
+  });
+
   test(
     'missing/unsafe endpoint and bad coordinates fail before network',
     () async {
@@ -396,7 +415,8 @@ void main() {
             ),
           ),
         );
-        expect(calls, 1);
+        // The route request and its lane request, each tried once.
+        expect(calls, 2);
         service.dispose();
       }
       final service = ValhallaDirectionsService(

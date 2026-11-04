@@ -131,7 +131,11 @@ class VoiceGuidancePlanner {
     if (state.direction == DeviceDirection.arrived) {
       if (_arrivedSpoken) return null;
       _arrivedSpoken = true;
-      return _speak(phrases.arrived, GuidancePriority.urgent, input.now);
+      return _speak(
+        phrases.arrived(guidance.maneuvers.last.arrivalSide),
+        GuidancePriority.urgent,
+        input.now,
+      );
     }
     if (state.direction == DeviceDirection.stop || !input.reliable) return null;
 
@@ -211,7 +215,9 @@ class VoiceGuidancePlanner {
       body = action; // already announced as "then ..." with the maneuver before
     } else {
       final onto = spoken == _none ? phrases.onto(maneuver, direction) : '';
-      body = '${phrases.distance(state.distanceMeters)}$action$onto$then';
+      final lanes = phrases.lanes(maneuver, direction);
+      final clause = phrases.clause(action, onto, lanes);
+      body = '${phrases.distance(state.distanceMeters)}$clause$then';
     }
     _spokenStage[upcoming.index] = stage;
     _stageSpokenAt[upcoming.index] = input.now;

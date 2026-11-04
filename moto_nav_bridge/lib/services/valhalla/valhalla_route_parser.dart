@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import '../../models/lane_guidance.dart';
 import '../../models/lat_lng.dart';
 import '../../models/route_candidate.dart';
 import '../../models/route_step.dart';
@@ -133,6 +134,15 @@ class ValhallaRouteParser {
           throw const FormatException();
         }
         foundDestination = true;
+        // 5 and 6: the stop is on the right or left of the road.
+        final side = type == 5
+            ? RoadSide.right
+            : type == 6
+            ? RoadSide.left
+            : null;
+        if (side != null && steps.isNotEmpty) {
+          steps.last = steps.last.copyWith(arrivalSide: side);
+        }
         continue;
       }
       if (end == begin) throw const FormatException();

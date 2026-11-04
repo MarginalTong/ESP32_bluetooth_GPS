@@ -11,6 +11,7 @@ import '../models/route_step.dart';
 import 'directions_exception.dart';
 import 'navigation_ports.dart';
 import 'valhalla/polyline6.dart';
+import 'valhalla/valhalla_lanes.dart';
 import 'valhalla/valhalla_route_parser.dart';
 import 'waypoint_plan.dart';
 
@@ -23,6 +24,7 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
     String? routeUrl,
     Duration timeout = const Duration(seconds: 8),
     this.routePreferences,
+    this.laneGuidance = true,
   }) : _client = client ?? http.Client(),
        _routeUrl = routeUrl ?? ApiConfig.valhallaRouteUrl,
        // Preserve the public `timeout` constructor parameter.
@@ -31,6 +33,9 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
 
   final http.Client _client;
   final Map<String, Object> Function()? routePreferences;
+
+  /// Also ask for the OSRM-format response, the only one with lane data.
+  final bool laneGuidance;
   final String _routeUrl;
   final Duration _timeout;
   final Set<Completer<void>> _pending = {};
@@ -81,6 +86,28 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
       throw DirectionsException('Invalid Valhalla timeout');
     }
 
+    final body = _requestBody(origin, destination, waypoints);
+    // Lanes are optional: a failed or slow lane request never fails or
+    // noticeably delays the route.
+    final Future<String?> lanes = laneGuidance
+        ? _post(uri, {
+            ...body,
+            'format': 'osrm',
+          }).then<String?>((value) => value, onError: (_) => null)
+        : Future.value(null);
+    final routes = parseRoutesJson(
+      await _post(uri, body),
+      expectedLegs: waypoints.length + 1,
+    );
+    final osrm = await lanes.timeout(_laneGrace, onTimeout: () => null);
+    if (_disposed) throw DirectionsException('Valhalla service is disposed');
+    return ValhallaLanes.attach(routes, osrm);
+  }
+
+  /// Extra wait for the lane response once the route has arrived.
+  static const _laneGrace = Duration(seconds: 2);
+
+  Future<String> _post(Uri uri, Map<String, Object> payload) async {
     final abort = Completer<void>();
     _pending.add(abort);
     final request =
@@ -88,11 +115,11 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
           ..followRedirects = false
           ..headers['Content-Type'] = 'application/json'
           ..headers['Accept'] = 'application/json'
-          ..body = jsonEncode(_requestBody(origin, destination, waypoints));
+          ..body = jsonEncode(payload);
     try {
       final body = await _readResponse(request).timeout(_timeout);
       if (_disposed) throw DirectionsException('Valhalla service is disposed');
-      return parseRoutesJson(body, expectedLegs: waypoints.length + 1);
+      return body;
     } on TimeoutException {
       throw DirectionsException('Valhalla route planning timed out');
     } on DirectionsException {

@@ -1,4 +1,5 @@
 import 'device_direction.dart';
+import 'lane_guidance.dart';
 import 'lat_lng.dart';
 
 /// A route segment, already mapped to the device protocol. [direction] is the
@@ -15,6 +16,8 @@ class RouteStep {
     this.roundaboutExitCount,
     this.streetName,
     this.waypointIndex,
+    this.lanes,
+    this.arrivalSide,
   }) : geometry = geometry ?? const [];
 
   final DeviceDirection direction;
@@ -44,6 +47,26 @@ class RouteStep {
 
   /// Intermediate stop reached at this segment end, relative to this request.
   final int? waypointIndex;
+
+  /// Lanes to use for the maneuver at [start], when the map marks them.
+  final LaneGuidance? lanes;
+
+  /// Which side of the road the stop at [end] is on, when it is known.
+  final RoadSide? arrivalSide;
+
+  RouteStep copyWith({LaneGuidance? lanes, RoadSide? arrivalSide}) => RouteStep(
+    direction: direction,
+    start: start,
+    end: end,
+    distanceMeters: distanceMeters,
+    geometry: geometry,
+    rawManeuver: rawManeuver,
+    roundaboutExitCount: roundaboutExitCount,
+    streetName: streetName,
+    waypointIndex: waypointIndex,
+    lanes: lanes ?? this.lanes,
+    arrivalSide: arrivalSide ?? this.arrivalSide,
+  );
 
   @override
   String toString() =>

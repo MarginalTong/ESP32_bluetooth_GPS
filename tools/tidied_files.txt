@@ -31,3 +31,5 @@ moto_nav_bridge/lib/services/guidance/guidance_curves.dart
 moto_nav_bridge/lib/services/guidance/guidance_phrases.dart
 moto_nav_bridge/lib/services/guidance/guidance_route.dart
 moto_nav_bridge/lib/services/guidance/voice_guidance_planner.dart
+moto_nav_bridge/lib/models/lane_guidance.dart
+moto_nav_bridge/lib/services/valhalla/valhalla_lanes.dart

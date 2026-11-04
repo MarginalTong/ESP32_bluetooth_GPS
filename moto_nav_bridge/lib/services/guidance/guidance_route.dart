@@ -1,4 +1,5 @@
 import '../../models/device_direction.dart';
+import '../../models/lane_guidance.dart';
 import '../../models/route_step.dart';
 import 'guidance_curves.dart';
 
@@ -34,6 +35,8 @@ class GuidanceManeuver {
     required this.alongMeters,
     this.exitCount,
     this.streetName,
+    this.lanes,
+    this.arrivalSide,
   });
 
   final int index;
@@ -46,6 +49,12 @@ class GuidanceManeuver {
   final double alongMeters;
   final int? exitCount;
   final String? streetName;
+
+  /// Lanes the map marks for this maneuver; null when it has no lane data.
+  final LaneGuidance? lanes;
+
+  /// For the destination: which side of the road it is on, when known.
+  final RoadSide? arrivalSide;
 
   bool get isSilent => kind == ManeuverKind.silent;
 
@@ -83,12 +92,14 @@ class GuidanceRoute {
           alongMeters: stepEndAlong[m - 1],
           exitCount: steps[m].roundaboutExitCount,
           streetName: steps[m].streetName,
+          lanes: steps[m].lanes,
         ),
       GuidanceManeuver(
         index: steps.length,
         kind: ManeuverKind.destination,
         direction: DeviceDirection.arrived,
         alongMeters: along,
+        arrivalSide: steps.isEmpty ? null : steps.last.arrivalSide,
       ),
     ];
     return GuidanceRoute._(

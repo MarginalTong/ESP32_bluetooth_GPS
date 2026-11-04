@@ -1,4 +1,5 @@
 import '../../models/device_direction.dart';
+import '../../models/lane_guidance.dart';
 import 'guidance_route.dart';
 
 /// Deterministic announcement templates. Every word comes from a verified
@@ -64,7 +65,13 @@ class GuidancePhrases {
       case ManeuverKind.roundaboutExit:
         return english ? 'exit the roundabout' : '驶出环岛';
       case ManeuverKind.destination:
-        return english ? 'arrive at your destination' : '到达目的地';
+        return switch (m!.arrivalSide) {
+          null => english ? 'arrive at your destination' : '到达目的地',
+          final side =>
+            english
+                ? 'arrive at your destination, on the ${_side(side)}'
+                : '到达目的地，目的地在您${_side(side)}手边',
+        };
       default:
         return basic(direction);
     }
@@ -101,6 +108,75 @@ class GuidancePhrases {
     return english ? ' onto $name' : '，进入$name';
   }
 
+  /// Which lanes to take, e.g. "走右侧两条车道" / ", using the right two
+  /// lanes"; empty without lane data or when it is for another maneuver.
+  String lanes(GuidanceManeuver? maneuver, DeviceDirection direction) {
+    final lanes = maneuver != null && maneuver.direction == direction
+        ? maneuver.lanes
+        : null;
+    if (lanes == null) return '';
+    final text = english ? _lanesEnglish(lanes) : _lanesChinese(lanes);
+    return english ? ', using $text' : '走$text';
+  }
+
+  /// One maneuver with its road and lanes, in each language's word order:
+  /// "走右侧车道右转，进入人民路" / "turn right onto King Street, using the
+  /// right lane".
+  String clause(String action, String onto, String lanes) =>
+      english ? '$action$onto$lanes' : '$lanes$action$onto';
+
+  String _lanesChinese(LaneGuidance lanes) {
+    final k = lanes.count;
+    final run = k == 1 ? '车道' : '${_chineseCount(k)}条车道';
+    if (lanes.fromRight == 0) return k == 1 ? '最右侧车道' : '右侧$run';
+    if (lanes.fromLeft == 0) return k == 1 ? '最左侧车道' : '左侧$run';
+    if (lanes.fromLeft == lanes.fromRight) return '中间$run';
+    final (side, offset) = _nearerEdge(lanes);
+    final from = side == RoadSide.right ? '右数' : '左数';
+    final a = _chineseNumber(offset + 1);
+    if (k == 1) return '$from第$a条车道';
+    return '$from第$a到第${_chineseNumber(offset + k)}条车道';
+  }
+
+  String _lanesEnglish(LaneGuidance lanes) {
+    final k = lanes.count;
+    final run = k == 1 ? 'lane' : '${_englishCount(k)} lanes';
+    if (lanes.fromRight == 0) return 'the right $run';
+    if (lanes.fromLeft == 0) return 'the left $run';
+    if (lanes.fromLeft == lanes.fromRight) return 'the middle $run';
+    final (side, offset) = _nearerEdge(lanes);
+    final from = 'from the ${_side(side)}';
+    if (k == 1) return 'the ${_englishOrdinal(offset + 1)} lane $from';
+    return 'lanes ${offset + 1} to ${offset + k} $from';
+  }
+
+  /// Counted from the closer edge, so the rider has fewer lanes to count.
+  static (RoadSide, int) _nearerEdge(LaneGuidance lanes) =>
+      lanes.fromRight < lanes.fromLeft
+      ? (RoadSide.right, lanes.fromRight)
+      : (RoadSide.left, lanes.fromLeft);
+
+  String _side(RoadSide side) => english
+      ? (side == RoadSide.left ? 'left' : 'right')
+      : (side == RoadSide.left ? '左' : '右');
+
+  // Lane numbers stay within LaneGuidance.maxLanes.
+  static String _chineseNumber(int n) => '零一二三四五六七八'[n];
+  static String _chineseCount(int n) => n == 2 ? '两' : _chineseNumber(n);
+  static String _englishCount(int n) =>
+      const ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven'][n];
+  static String _englishOrdinal(int n) => const [
+    '',
+    'first',
+    'second',
+    'third',
+    'fourth',
+    'fifth',
+    'sixth',
+    'seventh',
+    'eighth',
+  ][n];
+
   /// "，随后立即右转" / ", then immediately turn right".
   String then(GuidanceManeuver next, double gapMeters) {
     final immediately = gapMeters <= 60;
@@ -123,7 +199,13 @@ class GuidancePhrases {
   String get rerouteFailed => english
       ? 'Could not find a new route yet. Retrying.'
       : '暂时无法重新规划路线，正在重试。';
-  String get arrived => english ? 'You have arrived.' : '已到达目的地。';
+  String arrived(RoadSide? side) => switch (side) {
+    null => english ? 'You have arrived.' : '已到达目的地。',
+    final side =>
+      english
+          ? 'You have arrived. Your destination is on the ${_side(side)}.'
+          : '已到达目的地，目的地在您${_side(side)}手边。',
+  };
   String get curves => english
       ? 'Series of sharp bends ahead. Watch the road.'
       : '前方连续急弯，请注意道路变化。';
