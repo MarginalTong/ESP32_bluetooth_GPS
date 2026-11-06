@@ -1218,12 +1218,12 @@ void drawArrivalCheck(uint8_t progress) {
 
 void drawSideRoadLine(float x0, float y0, float x1, float y1) {
 #if NAV_ROUND_DISPLAY
-  constexpr float visibleLength = 48.0f;
+  constexpr float visibleLength = SideRoadStyle::roundLength;
   constexpr SideRoadArea area = {float(SCREEN_WIDTH), float(MAP_CLIP_BOTTOM),
                                  SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f,
                                  SCREEN_WIDTH / 2.0f};
 #else
-  constexpr float visibleLength = 30.0f;
+  constexpr float visibleLength = SideRoadStyle::rectLength;
   constexpr SideRoadArea area = {float(SCREEN_WIDTH), float(MAP_CLIP_BOTTOM),
                                  0.0f, 0.0f, 0.0f};
 #endif

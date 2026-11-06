@@ -12,6 +12,9 @@
 namespace SideRoadStyle {
 constexpr float halfWidth = 1.5f;  // map pixels; about 3 px wide
 constexpr uint8_t peak = 90;       // gray level at the junction, of 255
+// Ray length in map pixels (240-px layout): round panel, rectangular panel.
+constexpr float roundLength = 72.0f;
+constexpr float rectLength = 45.0f;
 }  // namespace SideRoadStyle
 
 struct SideRoadRay {

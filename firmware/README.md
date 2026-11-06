@@ -238,7 +238,7 @@ return to the 412×412 default. The renderer uses **anti-aliased edges** for
 text, routes, arrows and the rider marker. Font rendering uses bilinear
 supersampling and shapes use fractional pixel coverage. Side roads are one
 dark gray line (`SideRoadStyle` in `platformio/side_road_ray.h`: about 3 px
-wide, gray 90/255 at the junction) that fades to black towards its tail, so
+wide, 72 px long on the round panel, gray 90/255 at the junction) that fades to black towards its tail, so
 branches read as context and never compete with the white route. The 25 ms animation frame limit is unchanged.
 The previous no-AA experiment is preserved at commit `9f946c1` on
 `experiment/no-antialiasing`; anti-aliasing has been restored on
