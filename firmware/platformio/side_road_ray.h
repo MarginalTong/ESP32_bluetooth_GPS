@@ -10,11 +10,11 @@
 // a dark gray line, so branches read as context and never compete with the
 // white route, fading from the junction to nothing at the tail.
 namespace SideRoadStyle {
-constexpr float halfWidth = 1.5f;  // map pixels; about 3 px wide
-constexpr uint8_t peak = 90;       // gray level at the junction, of 255
+constexpr float halfWidth = 2.5f;  // map pixels; about 5 px wide
+constexpr uint8_t peak = 150;      // gray level at the junction, of 255
 // Ray length in map pixels (240-px layout): round panel, rectangular panel.
-constexpr float roundLength = 72.0f;
-constexpr float rectLength = 45.0f;
+constexpr float roundLength = 90.0f;
+constexpr float rectLength = 56.0f;
 }  // namespace SideRoadStyle
 
 struct SideRoadRay {
