@@ -1,6 +1,7 @@
 // Run with: bash firmware/tests/run_map_motion_test.sh
-// The runner prepends the actual MapMotion implementation from the sketch.
 #include <assert.h>
+
+#include "map_motion.h"
 
 static bool near(float a, float b) { return fabsf(a - b) < 0.01f; }
 

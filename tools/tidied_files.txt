@@ -8,7 +8,8 @@
 #
 # Partly tidied, not listed until finished: esp32_nav_display.ino. Its
 # native-resolution drawing moved to platformio/gray_layer.h and the side-road
-# geometry to platformio/side_road_ray.h (2026-11-05); the rest of the file
+# geometry to platformio/side_road_ray.h (2026-11-05), the map animation to
+# platformio/map_motion.h (2026-11-13); the rest of the file
 # still needs its whole-file tidy-up the next time it is changed.
 firmware/platformio/ui_state.cpp
 firmware/platformio/ui_screens.cpp
@@ -45,3 +46,4 @@ moto_nav_bridge/lib/services/navigation_engine.dart
 moto_nav_bridge/lib/services/map_preview.dart
 moto_nav_bridge/lib/services/side_road_preview.dart
 moto_nav_bridge/lib/services/route_geometry.dart
+firmware/platformio/map_motion.h
