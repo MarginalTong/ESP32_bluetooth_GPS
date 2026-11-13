@@ -28,16 +28,29 @@ int main() {
   check(!planSideRoadRay(100, 100, NAN, 100, 48, rect, ray),
         "a NaN endpoint is not drawn");
 
-  check(!planSideRoadRay(200, 100, 300, 100, 48, rect, ray),
-        "a ray running past the map edge is omitted, not clipped");
-  check(!planSideRoadRay(100, 180, 100, 300, 48, rect, ray),
-        "a ray running into the instruction area is omitted");
+  // A ray that would leave the map is shortened to fit, not dropped.
+  check(planSideRoadRay(200, 100, 300, 100, 48, rect, ray),
+        "a ray running past the map edge is still drawn");
+  check(ray.length > 32 && ray.length <= 34,
+        "it stops at the 6 px margin inside the edge");
+  check(planSideRoadRay(100, 170, 100, 300, 48, rect, ray) &&
+            ray.length > 22 && ray.length <= 24,
+        "a ray towards the instruction area stops above it");
+  check(!planSideRoadRay(228, 100, 300, 100, 48, rect, ray),
+        "a ray left shorter than the minimum is omitted");
+  check(!planSideRoadRay(238, 100, 300, 100, 48, rect, ray),
+        "a junction outside the map is omitted");
 
-  check(planSideRoadRay(120, 120, 200, 120, 48, round, ray),
-        "a ray inside the round aperture is drawn");
+  check(planSideRoadRay(120, 120, 200, 120, 48, round, ray) && ray.length == 48,
+        "a ray inside the round aperture keeps its full length");
+  // Junction near the top of the round panel: the chord there is short.
+  check(planSideRoadRay(120, 12, 200, 12, 90, round, ray),
+        "a far junction shows as soon as it is inside the aperture");
+  check(ray.length > 30 && ray.length < 40,
+        "its ray ends at the round bezel");
   check(!planSideRoadRay(40, 40, 0, 40, 20, round, ray),
-        "a ray in the round panel's corner is omitted");
+        "a junction in the round panel's corner is omitted");
 
-  printf("side road ray: fixed length, direction-only and fit checks passed\n");
+  printf("side road ray: direction-only, shortened-to-fit and omission checks passed\n");
   return 0;
 }

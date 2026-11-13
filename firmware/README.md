@@ -240,8 +240,9 @@ supersampling and shapes use fractional pixel coverage. Side roads are one
 gray line (`SideRoadStyle` in `platformio/side_road_ray.h`: about 5 px wide,
 90 px long on the round panel, gray 150/255 at the junction) that fades to
 black towards its tail, so branches read as context next to the white route.
-A ray that does not fit whole inside the aperture is omitted, so longer rays
-are shown less often near the edge. The 25 ms animation frame limit is
+A ray that would leave the aperture is shortened to fit (and still fades to
+its tail), so a junction shows as soon as it enters the map; only a ray left
+under 12 px is omitted. The 25 ms animation frame limit is
 unchanged.
 The previous no-AA experiment is preserved at commit `9f946c1` on
 `experiment/no-antialiasing`; anti-aliasing has been restored on
