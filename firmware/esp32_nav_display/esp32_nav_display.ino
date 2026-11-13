@@ -131,9 +131,9 @@ constexpr uint32_t DISPLAY_REFRESH_MS = 25;
 
 constexpr int MAX_DISTANCE_M = 9999;
 constexpr uint8_t MAX_ROUTE_PREVIEW_POINTS = 20;
-// Two junction arms match the reference cluster view and keep the compact JSON
-// safely below conservative iOS BLE write-without-response payload sizes.
-constexpr uint8_t MAX_SIDE_ROAD_SEGMENTS = 2;
+// Every junction arm in view is drawn; the phone sends the nearest first and
+// keeps the packet within the size limit in NavWriteCallbacks.
+constexpr uint8_t MAX_SIDE_ROAD_SEGMENTS = MapMotion::kRoadSegments;
 
 // ======================================================
 // BLE contract - must match the Flutter app.

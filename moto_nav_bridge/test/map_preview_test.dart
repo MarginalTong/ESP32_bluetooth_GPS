@@ -50,13 +50,17 @@ void main() {
     test('nearer junctions come first, up to the segment limit', () {
       final preview = MapPreview.build(p(0, 0), north);
       final arms = SideRoadPreview.points(preview, [
-        crossAt(150),
-        crossAt(50),
-        crossAt(100),
+        for (final y in [150.0, 30.0, 120.0, 60.0, 90.0]) crossAt(y),
       ]);
+      // Ten arms in range; the farthest junction is left out.
       expect(arms, hasLength(SideRoadPreview.maxSegments * 4));
-      // y = 340 - forward * 0.16 * 10: 50 m ahead is 260.
-      expect(arms[1], 260);
+      // y = 340 - forward * 0.16 * 10.
+      expect(
+        [for (var i = 1; i < arms.length; i += 4) arms[i]],
+        [
+          292, 292, 244, 244, 196, 196, 148, 148, //
+        ],
+      );
     });
 
     test(

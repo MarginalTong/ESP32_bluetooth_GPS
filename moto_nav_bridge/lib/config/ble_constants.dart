@@ -39,4 +39,9 @@ class BleConstants {
   /// The firmware rejects navigation writes longer than this, signature
   /// included (NavWriteCallbacks in the sketch).
   static const int maxSignedPacketBytes = 400;
+
+  /// Room for the unsigned JSON of a navigation write: `PacketSigner` adds
+  /// `,"n":` with a counter of up to 10 digits (15 bytes) and `|` with a
+  /// 16-character tag (17 bytes).
+  static const int maxNavJsonBytes = maxSignedPacketBytes - 32;
 }

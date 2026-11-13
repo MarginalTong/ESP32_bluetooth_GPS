@@ -6,6 +6,8 @@
 static bool near(float a, float b) { return fabsf(a - b) < 0.01f; }
 
 int main() {
+  static_assert(MapMotion::kValues == 40 + 8 * 4,
+                "20 route points and 8 side-road segments");
   MapMotion motion;
   const int road = MapMotion::kRouteValues;
   float p[MapMotion::kValues] = {};

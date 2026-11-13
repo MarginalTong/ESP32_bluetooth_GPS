@@ -9,9 +9,12 @@
 // new geometry, lasting about one packet interval, so ~1 Hz updates read as
 // continuous motion instead of a short hop followed by a pause.
 struct MapMotion {
-  // 20 route points, then 2 side-road segments (x0, y0, x1, y1 each).
+  // 20 route points, then up to 8 side-road segments (x0, y0, x1, y1 each):
+  // every junction arm the map can show at once. Matches the app's
+  // SideRoadPreview.maxSegments.
   static constexpr uint8_t kRouteValues = 40;
-  static constexpr uint8_t kValues = kRouteValues + 8;
+  static constexpr uint8_t kRoadSegments = 8;
+  static constexpr uint8_t kValues = kRouteValues + kRoadSegments * 4;
   static constexpr uint32_t kMinDurationMs = 120;
   static constexpr uint32_t kMaxDurationMs = 1100;
   // Longer gaps are pauses (phone stopped sending), not the packet rate.

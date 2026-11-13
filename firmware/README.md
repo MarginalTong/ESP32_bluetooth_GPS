@@ -241,8 +241,8 @@ gray line (`SideRoadStyle` in `platformio/side_road_ray.h`: about 5 px wide,
 90 px long on the round panel, gray 150/255 at the junction) that fades to
 black towards its tail, so branches read as context next to the white route.
 A ray that would leave the aperture is shortened to fit (and still fades to
-its tail), so a junction shows as soon as it enters the map; only a ray left
-under 12 px is omitted. The 25 ms animation frame limit is
+its tail), so every junction inside the map shows its branch, however short.
+Up to 8 arms are drawn at once (see `R` in the BLE contract). The 25 ms animation frame limit is
 unchanged.
 The previous no-AA experiment is preserved at commit `9f946c1` on
 `experiment/no-antialiasing`; anti-aliasing has been restored on
@@ -315,6 +315,14 @@ Payload from the phone (signed; unsigned writes are rejected):
 ```
 
 - `n` is a counter that must increase within the connection (replay guard).
+- Optional `P`: the route ahead as up to 20 mini-map points
+  `[x0,y0,x1,y1,...]`, in tenths of a unit of the 128×64 mini-map.
+- Optional `R`: junction arms as segments `[x0,y0,x1,y1,...]` in the same
+  units, each from its route junction outwards, nearest junction first. The
+  display draws up to 8 (firmware before 2026-11-13 drew the first 2 and
+  ignored the rest). Only the direction of a segment is used.
+- A write longer than 400 bytes, signature included, is rejected. The app
+  drops the farthest `R` segments so a packet never exceeds it.
 - The suffix is the first 8 bytes of HMAC-SHA256(key, nonce ‖ JSON), in hex.
   It must match the app's `PacketSigner` byte for byte;
   `tests/run_packet_auth_test.sh` checks the shared reference vectors.

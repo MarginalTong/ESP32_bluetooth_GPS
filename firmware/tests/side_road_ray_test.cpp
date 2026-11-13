@@ -36,8 +36,8 @@ int main() {
   check(planSideRoadRay(100, 170, 100, 300, 48, rect, ray) &&
             ray.length > 22 && ray.length <= 24,
         "a ray towards the instruction area stops above it");
-  check(!planSideRoadRay(228, 100, 300, 100, 48, rect, ray),
-        "a ray left shorter than the minimum is omitted");
+  check(planSideRoadRay(228, 100, 300, 100, 48, rect, ray) && ray.length < 7,
+        "a junction at the edge still shows its branch, however short");
   check(!planSideRoadRay(238, 100, 300, 100, 48, rect, ray),
         "a junction outside the map is omitted");
 
@@ -48,8 +48,8 @@ int main() {
         "a far junction shows as soon as it is inside the aperture");
   check(ray.length > 30 && ray.length < 40,
         "its ray ends at the round bezel");
-  check(!planSideRoadRay(40, 40, 0, 40, 20, round, ray),
-        "a junction in the round panel's corner is omitted");
+  check(!planSideRoadRay(30, 30, 0, 30, 20, round, ray),
+        "a junction outside the round aperture is omitted");
 
   printf("side road ray: direction-only, shortened-to-fit and omission checks passed\n");
   return 0;

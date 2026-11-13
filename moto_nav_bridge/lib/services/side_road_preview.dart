@@ -10,9 +10,11 @@ import 'route_geometry.dart';
 class SideRoadPreview {
   const SideRoadPreview._();
 
-  // Two well-chosen junction arms reproduce the cluster-style view and keep
-  // the complete JSON below conservative iOS BLE write limits.
-  static const int maxSegments = 2;
+  // Every arm the display can show at once: its map reaches about 115 m
+  // ahead, so eight arms cover four crossroads in view. `NavState.toWire`
+  // drops the farthest if the packet would exceed the firmware's limit.
+  // Must match MapMotion::kRoadSegments in the firmware.
+  static const int maxSegments = 8;
   // A road ending farther than this from the route does not join it.
   static const double connectionToleranceMeters = 14.0;
   // Shorter stubs are driveways and mapping noise, not branches.

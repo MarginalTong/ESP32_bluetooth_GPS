@@ -15,8 +15,6 @@ constexpr uint8_t peak = 150;      // gray level at the junction, of 255
 // Ray length in map pixels (240-px layout): round panel, rectangular panel.
 constexpr float roundLength = 90.0f;
 constexpr float rectLength = 56.0f;
-// A ray shortened below this many map pixels is a speck, not a road.
-constexpr float minLength = 12.0f;
 }  // namespace SideRoadStyle
 
 struct SideRoadRay {
@@ -36,8 +34,8 @@ struct SideRoadArea {
 // endpoint (x1, y1); only that direction is used. A ray that would leave the
 // map is shortened to fit, so a junction shows as soon as it enters the map
 // and its branch grows as it comes closer; the fade still ends at the tail.
-// Returns false for a branch with no direction, a junction outside the map,
-// or a ray left too short to read as a road.
+// A junction inside the map always shows its branch, however short.
+// Returns false for a branch with no direction or a junction outside the map.
 inline bool planSideRoadRay(float x0, float y0, float x1, float y1, float length,
                             const SideRoadArea& area, SideRoadRay& ray) {
   const float dx = x1 - x0, dy = y1 - y0;
@@ -68,5 +66,5 @@ inline bool planSideRoadRay(float x0, float y0, float x1, float y1, float length
     }
     ray.length = fits;
   }
-  return ray.length >= SideRoadStyle::minLength;
+  return true;
 }

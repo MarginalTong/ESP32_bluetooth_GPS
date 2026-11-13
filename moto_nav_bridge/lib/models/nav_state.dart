@@ -1,3 +1,4 @@
+import '../config/ble_constants.dart';
 import 'device_direction.dart';
 
 /// The navigation payload sent to the ESP32 over BLE.
@@ -50,8 +51,10 @@ class NavState {
 
   /// Flattened mini-map side-road segments: `[x0,y0,x1,y1,...]`.
   ///
-  /// Each group of four integers is one nearby real road segment to draw
-  /// behind the main route, in the same units as [routePreviewPoints].
+  /// Each group of four integers is one junction arm to draw behind the
+  /// main route, nearest first, in the same units as [routePreviewPoints].
+  /// The farthest arms are left off the wire when the packet would be too
+  /// long for the firmware (see [toWire]).
   final List<int> sideRoadPreviewPoints;
   final bool rerouting;
 
@@ -68,11 +71,11 @@ class NavState {
   };
 
   /// The unsigned JSON body of a navigation write (see `PacketSigner`).
-  /// No whitespace: the firmware rejects writes over 400 bytes, signature
-  /// included.
+  /// No whitespace: the firmware rejects a write that is too long, so side
+  /// roads are dropped, farthest first, until the body fits
+  /// [BleConstants.maxNavJsonBytes]. The body is ASCII: one byte a character.
   String toWire() {
     final points = routePreviewPoints;
-    final roads = sideRoadPreviewPoints;
     final buffer = StringBuffer(
       '{"dir":"${direction.wire}","dist":$distanceMeters',
     );
@@ -81,11 +84,21 @@ class NavState {
       buffer.write(',"P":[${points.join(',')}]');
     }
     if (rerouting) buffer.write(',"rerouting":true');
-    if (roads.isNotEmpty) {
-      buffer.write(',"R":[${roads.join(',')}]');
-    }
+    // 1: the closing brace.
+    final room = BleConstants.maxNavJsonBytes - buffer.length - 1;
+    buffer.write(_sideRoadsWithin(room));
     buffer.write('}');
     return buffer.toString();
+  }
+
+  /// `,"R":[...]` with as many whole segments as fit in [room] bytes.
+  String _sideRoadsWithin(int room) {
+    final roads = sideRoadPreviewPoints;
+    for (var count = roads.length ~/ 4 * 4; count >= 4; count -= 4) {
+      final text = ',"R":[${roads.take(count).join(',')}]';
+      if (text.length <= room) return text;
+    }
+    return '';
   }
 
   NavState copyWith({
