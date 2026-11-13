@@ -5,8 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:moto_nav_bridge/config/ble_constants.dart';
 import 'package:moto_nav_bridge/models/device_direction.dart';
 import 'package:moto_nav_bridge/models/nav_state.dart';
-import 'package:moto_nav_bridge/services/navigation_engine.dart';
+import 'package:moto_nav_bridge/services/map_preview.dart';
 import 'package:moto_nav_bridge/services/packet_signer.dart';
+import 'package:moto_nav_bridge/services/side_road_preview.dart';
 
 void main() {
   // Reference vectors from Python's hmac module; the firmware's host test
@@ -73,14 +74,8 @@ void main() {
       direction: DeviceDirection.bearRight,
       distanceMeters: 9999,
       rerouting: true,
-      routePreviewPoints: List.filled(
-        NavigationEngine.routePreviewMaxPoints * 2,
-        1270,
-      ),
-      sideRoadPreviewPoints: List.filled(
-        NavigationEngine.sideRoadPreviewMaxSegments * 4,
-        1270,
-      ),
+      routePreviewPoints: List.filled(MapPreview.routeMaxPoints * 2, 1270),
+      sideRoadPreviewPoints: List.filled(SideRoadPreview.maxSegments * 4, 1270),
     );
     final signer = PacketSigner(key: key, sessionNonce: nonce);
     for (var i = 0; i < 999999; i++) {

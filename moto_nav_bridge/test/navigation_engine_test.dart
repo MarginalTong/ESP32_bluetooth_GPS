@@ -3,6 +3,7 @@ import 'package:moto_nav_bridge/models/device_direction.dart';
 import 'package:moto_nav_bridge/models/lat_lng.dart';
 import 'package:moto_nav_bridge/models/road_segment.dart';
 import 'package:moto_nav_bridge/models/route_step.dart';
+import 'package:moto_nav_bridge/services/map_preview.dart';
 import 'package:moto_nav_bridge/services/navigation_engine.dart';
 
 // A short synthetic route along a line of latitude near the equator so that
@@ -269,7 +270,7 @@ void main() {
     final state = engine.update(p0);
     final points = state.routePreviewPoints;
 
-    expect(points.length, NavigationEngine.routePreviewMaxPoints * 2);
+    expect(points.length, MapPreview.routeMaxPoints * 2);
 
     for (var i = 0; i < points.length; i += 2) {
       expect(points[i], inInclusiveRange(180, 1100));
@@ -290,7 +291,7 @@ void main() {
     ]);
     final points = engine.update(const LatLng(0, 0)).routePreviewPoints;
 
-    expect(points.length, NavigationEngine.routePreviewMaxPoints * 2);
+    expect(points.length, MapPreview.routeMaxPoints * 2);
     expect(points.first, 640);
     expect(points[1], 340);
     expect(points[points.length - 1], 20);

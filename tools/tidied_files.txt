@@ -41,3 +41,7 @@ moto_nav_bridge/lib/services/valhalla/valhalla_lanes.dart
 firmware/platformio/gray_layer.h
 firmware/platformio/side_road_ray.h
 firmware/tests/side_road_ray_test.cpp
+moto_nav_bridge/lib/services/navigation_engine.dart
+moto_nav_bridge/lib/services/map_preview.dart
+moto_nav_bridge/lib/services/side_road_preview.dart
+moto_nav_bridge/lib/services/route_geometry.dart

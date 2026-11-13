@@ -126,6 +126,7 @@ Set `minSdkVersion 21` (flutter_blue_plus / geolocator requirement) in
 | Route parsing | `lib/services/valhalla/` | response parser, maneuver → arrow mapping, polyline6 |
 | Voice guidance | `lib/services/guidance/` | maneuvers and bends, when to speak, phrase templates |
 | Engine | `lib/services/navigation_engine.dart` | position → step advance → NavState |
+| Mini-map | `lib/services/map_preview.dart`, `side_road_preview.dart`, `route_geometry.dart` | route and side-road points for the display |
 | Throttle | `lib/services/send_throttle.dart` | avoid flooding BLE |
 | BLE | `lib/services/ble_service.dart` | scan/connect/write |
 | Location | `lib/services/location_service.dart` | geolocator wrapper |
