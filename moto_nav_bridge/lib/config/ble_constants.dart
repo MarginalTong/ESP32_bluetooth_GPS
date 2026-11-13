@@ -1,5 +1,5 @@
 /// BLE identifiers — must match the ESP32 navigation display firmware
-/// (firmware/esp32_nav_display/esp32_nav_display.ino, "BLE contract").
+/// (firmware/README.md, "BLE contract").
 ///
 /// The navigation characteristic is write-only and accepts only packets
 /// signed by [PacketSigner](../services/packet_signer.dart). A separate

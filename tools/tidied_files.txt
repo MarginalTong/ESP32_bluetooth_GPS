@@ -47,3 +47,5 @@ moto_nav_bridge/lib/services/map_preview.dart
 moto_nav_bridge/lib/services/side_road_preview.dart
 moto_nav_bridge/lib/services/route_geometry.dart
 firmware/platformio/map_motion.h
+moto_nav_bridge/lib/models/nav_state.dart
+moto_nav_bridge/lib/config/ble_constants.dart

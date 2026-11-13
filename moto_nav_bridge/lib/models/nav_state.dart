@@ -16,16 +16,27 @@ class NavState {
     this.tripEnded = false,
   });
 
-  final DeviceDirection direction;
-  final bool rerouting;
+  /// A safe idle/paused state (matches the firmware's STOP icon).
+  static const NavState stopped = NavState(
+    direction: DeviceDirection.stop,
+    distanceMeters: 0,
+  );
 
-  /// Signed end-of-trip marker; unlike STOP, it returns the display to NAVIO.
-  final bool tripEnded;
+  /// Shown while a new route is being computed.
   static const recalculating = NavState(
     direction: DeviceDirection.stop,
     distanceMeters: 0,
     rerouting: true,
   );
+
+  /// The signed end-of-trip packet.
+  static const NavState ended = NavState(
+    direction: DeviceDirection.stop,
+    distanceMeters: 0,
+    tripEnded: true,
+  );
+
+  final DeviceDirection direction;
 
   /// Distance to the next maneuver, in whole meters. Never negative.
   final int distanceMeters;
@@ -42,17 +53,10 @@ class NavState {
   /// Each group of four integers is one nearby real road segment to draw
   /// behind the main route, in the same units as [routePreviewPoints].
   final List<int> sideRoadPreviewPoints;
+  final bool rerouting;
 
-  /// A safe idle/paused state (matches the firmware's STOP icon).
-  static const NavState stopped = NavState(
-    direction: DeviceDirection.stop,
-    distanceMeters: 0,
-  );
-  static const NavState ended = NavState(
-    direction: DeviceDirection.stop,
-    distanceMeters: 0,
-    tripEnded: true,
-  );
+  /// Signed end-of-trip marker; unlike STOP, it returns the display to NAVIO.
+  final bool tripEnded;
 
   Map<String, dynamic> toJson() => {
     'dir': direction.wire,
