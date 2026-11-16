@@ -242,7 +242,10 @@ gray line (`SideRoadStyle` in `platformio/side_road_ray.h`: about 5 px wide,
 black towards its tail, so branches read as context next to the white route.
 A ray that would leave the aperture is shortened to fit (and still fades to
 its tail), so every junction inside the map shows its branch, however short.
-Up to 8 arms are drawn at once (see `R` in the BLE contract). The 25 ms animation frame limit is
+Up to 8 arms are drawn at once (see `R` in the BLE contract).
+Between packets an arm glides only as the continuation of the same junction
+arm (matched by position and side in `platformio/map_motion.h`); it never
+slides from one junction to another, and a new arm appears in place. The 25 ms animation frame limit is
 unchanged.
 The previous no-AA experiment is preserved at commit `9f946c1` on
 `experiment/no-antialiasing`; anti-aliasing has been restored on

@@ -21,6 +21,11 @@ struct MapMotion {
   static constexpr uint32_t kMaxIntervalMs = 3000;
   // Larger moves, in route-source units, are route changes: no glide.
   static constexpr float kSnapDistance = 24.0f;
+  // A side road is the same arm as a drawn one when its junction moved at
+  // most this far (route-source units; about 30 m, one packet at 110 km/h)
+  // and not more than kRoadBacktrack away from the rider (GPS jitter).
+  static constexpr float kRoadMatchDistance = 5.0f;
+  static constexpr float kRoadBacktrack = 1.0f;
   float current[kValues] = {};
   float start[kValues] = {};
   float target[kValues] = {};
@@ -45,35 +50,69 @@ struct MapMotion {
     return false;
   }
 
+  // The segment among the `count` drawn ones that is the same junction arm
+  // as `next`, or null. Slots are reordered whenever a junction passes or a
+  // new one comes into view, so an arm is followed by position, not by slot:
+  // otherwise it would slide from one junction to another.
+  static const float* sameRoad(const float* next, const float* drawn, uint8_t count) {
+    const float* best = nullptr;
+    float bestDistance = kRoadMatchDistance;
+    for (uint8_t j = 0; j < count; ++j) {
+      const float* old = drawn + j * 4;
+      // Opposite arms of one junction share its position.
+      const float along = (old[2] - old[0]) * (next[2] - next[0]) +
+                          (old[3] - old[1]) * (next[3] - next[1]);
+      // A junction only comes closer (y grows towards the rider).
+      if (along <= 0.0f || old[1] > next[1] + kRoadBacktrack) continue;
+      const float dx = next[0] - old[0], dy = next[1] - old[1];
+      const float distance = sqrtf(dx * dx + dy * dy);
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        best = old;
+      }
+    }
+    return best;
+  }
+
   void accept(const float* values, uint8_t routeCount, uint8_t roadCount,
               uint32_t now) {
     tick(now);
     if (valid && now - lastPacket <= kMaxIntervalMs)
       packetIntervalMs += (float(now - lastPacket) - packetIntervalMs) * 0.3f;
     lastPacket = now;
-    // The route and the side roads snap independently, so a side road
-    // appearing does not make the route jump.
     const bool snapRoute =
         !valid || routes != routeCount || jumped(values, 0, kRouteValues);
-    const bool snapRoads =
-        !valid || roads != roadCount || jumped(values, kRouteValues, kValues);
-    bool changed = snapRoute || snapRoads;
+    bool changed = snapRoute || roads != roadCount;
     for (int i = 0; i < kValues; ++i) changed = changed || values[i] != target[i];
     if (!changed) return;
+    for (int i = 0; i < kRouteValues; ++i) {
+      start[i] = snapRoute ? values[i] : current[i];
+      target[i] = values[i];
+      if (snapRoute) current[i] = values[i];
+    }
+    // Each side road glides from the arm it continues; a new arm appears in
+    // place, so the route never jumps because a side road appeared.
+    float drawn[kRoadSegments * 4];
+    for (int i = 0; i < kRoadSegments * 4; ++i) drawn[i] = current[kRouteValues + i];
+    const uint8_t drawnCount = valid ? roads : 0;
+    for (uint8_t r = 0; r < kRoadSegments; ++r) {
+      const float* next = values + kRouteValues + r * 4;
+      const float* from = r < roadCount ? sameRoad(next, drawn, drawnCount) : nullptr;
+      for (int k = 0; k < 4; ++k) {
+        const int i = kRouteValues + r * 4 + k;
+        target[i] = next[k];
+        start[i] = current[i] = from != nullptr ? from[k] : next[k];
+      }
+    }
     routes = routeCount;
     roads = roadCount;
-    for (int i = 0; i < kValues; ++i) {
-      const bool snap = i < kRouteValues ? snapRoute : snapRoads;
-      start[i] = snap ? values[i] : current[i];
-      target[i] = values[i];
-      if (snap) current[i] = values[i];
-    }
     const float interval = packetIntervalMs < kMinDurationMs ? kMinDurationMs
                            : packetIntervalMs > kMaxDurationMs ? kMaxDurationMs
                                                                : packetIntervalMs;
     durationMs = uint32_t(interval);
     started = now;
     valid = true;
-    active = !(snapRoute && snapRoads);
+    active = false;
+    for (int i = 0; i < kValues; ++i) active = active || start[i] != target[i];
   }
 };
