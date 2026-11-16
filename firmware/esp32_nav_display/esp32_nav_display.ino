@@ -41,6 +41,7 @@
 #include "../platformio/gray_layer.h"
 #include "../platformio/map_motion.h"
 #include "../platformio/side_road_ray.h"
+#include "../platformio/text_cache.h"
 
 // ======================================================
 // Hardware
@@ -345,6 +346,8 @@ MapMotion mapMotion;
 // the 240x240 canvas coordinates and scales them. Without PSRAM everything is
 // drawn into the canvas and upscaled, as before.
 GrayLayer nativeLayer;
+// Text is rasterized once and reused: platformio/text_cache.h.
+TextCache textCache;
 PanelComposer panelComposer;
 // Set when the current frame drew into nativeLayer; cleared once presented.
 bool nativeLayerDrawn = false;
@@ -1043,9 +1046,9 @@ void drawUiText(const char* value, uint8_t size, float left, float top) {
     // Numbers use the numeric font, everything else the text font. The
     // classic font's size n is 7n canvas pixels tall; keep those heights.
     const AlphaFont& font = isNumericText(value) ? NAVIO_NUMERIC_FONT : NAVIO_TEXT_FONT;
-    nativeLayer.drawText(font, value, left * NATIVE_SCALE,
-                         (top + 7.0f * size) * NATIVE_SCALE,
-                         7.0f * size * NATIVE_SCALE / font.capHeight, 255);
+    textCache.draw(nativeLayer, font, value, left * NATIVE_SCALE,
+                   (top + 7.0f * size) * NATIVE_SCALE,
+                   7.0f * size * NATIVE_SCALE / font.capHeight, 255);
     return;
   }
 #endif

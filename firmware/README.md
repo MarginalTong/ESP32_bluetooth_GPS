@@ -65,7 +65,7 @@ After switching to the factory register table, a display-only test pattern
 the NAVIO picture, orientation and a fresh phone BOOT pairing still need user
 checks. Restoring the factory image cleared NVS, so the board starts unpaired.
 Both JC3636W518C and Waveshare PlatformIO builds passed, as did the host UI,
-motion, authentication, anti-alias rendering and monitor configuration tests.
+motion, authentication, anti-alias rendering, text cache and monitor configuration tests.
 
 Board configuration and all three layout variants are checked by
 `bash firmware/tests/run_ui_state_test.sh`. Monitor environment selection is
@@ -247,6 +247,21 @@ Between packets an arm glides only as the continuation of the same junction
 arm (matched by position and side in `platformio/map_motion.h`); it never
 slides from one junction to another, and a new arm appears in place. The 25 ms animation frame limit is
 unchanged.
+
+Drawing cost decides how smooth the map animation is (about 6 FPS was
+measured on 2026-11-06: 130 ms of drawing per frame, 32 ms of LCD transfer),
+so the rasterizer in `platformio/gray_layer.h` avoids what the ESP32-S3 does
+slowly, without changing what is drawn (results stay within 2 gray levels of
+255; `run_anti_alias_render_test.sh` compares them with plain reference
+definitions):
+- text samples the font mask in integer fixed point (no float divide or
+  `floorf` per sample);
+- a stroke or side-road ray visits only the columns its line can reach on
+  each row, and takes a square root only on its one-pixel edge;
+- panel rows with an empty canvas copy the gray layer directly;
+- `platformio/text_cache.h` keeps the bitmaps of the last 6 text runs, so
+  text that did not change between frames (distance, unit, clock) is copied
+  instead of rasterized again (`run_text_cache_test.sh`).
 The previous no-AA experiment is preserved at commit `9f946c1` on
 `experiment/no-antialiasing`; anti-aliasing has been restored on
 `fix/restore-antialiasing` using the renderer from `77d92da`.
