@@ -6,6 +6,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../config/ble_constants.dart';
 import '../models/nav_state.dart';
+import 'ble/ble_link_health.dart';
+import 'ble/ble_reconnect_policy.dart';
 import 'navigation_ports.dart';
 import 'packet_signer.dart';
 import 'send_throttle.dart';
@@ -34,7 +36,16 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       // CoreBluetooth reports `unknown` briefly while iOS is restoring its
       // state. Treating that transitional value as Bluetooth-off tears down a
       // valid connection during app launch/resume.
-      if (s != BluetoothAdapterState.on && s != BluetoothAdapterState.unknown) {
+      if (s == BluetoothAdapterState.on) {
+        // Bluetooth came back: resume looking for the display at once.
+        if (_maintainConnection && _state != BleConnectionState.connected) {
+          _reconnectAttempt = 0;
+          _scheduleReconnect();
+        }
+      } else if (s != BluetoothAdapterState.unknown) {
+        // Nothing can connect until it is on again; keep the message up.
+        _reconnectTimer?.cancel();
+        _reconnectTimer = null;
         _characteristic = null;
         _signer = null;
         _throttle.reset();
@@ -120,6 +131,8 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   DateTime? _pendingStateAt;
   bool _maintainConnection = false;
   int _reconnectAttempt = 0;
+  static const _reconnectPolicy = BleReconnectPolicy();
+  final BleLinkHealth _linkHealth = BleLinkHealth();
   bool _disposed = false;
   String? _boundRemote;
   String? _boundIdentity;
@@ -497,6 +510,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         allowLongWrite: BleConstants.allowLongWrite,
       );
       _reconnectAttempt = 0;
+      _linkHealth.reset();
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
       ready = true;
@@ -536,22 +550,23 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
       return;
     }
     if (_state == BleConnectionState.connected || _connectOp != null) return;
+    final adapter = FlutterBluePlus.adapterStateNow;
+    if (adapter != BluetoothAdapterState.on &&
+        adapter != BluetoothAdapterState.unknown) {
+      return; // Resumed by the adapter listener when Bluetooth is on again.
+    }
 
-    // Retry only four times after a transient radio drop. If the display has
-    // genuinely lost power, stop after the 8-second attempt instead of
-    // scanning forever and wasting the phone battery. A manual Connect starts
-    // a fresh sequence.
-    const delays = [1, 2, 4, 8];
-    if (_reconnectAttempt >= delays.length) return;
-    final seconds = delays[_reconnectAttempt];
+    // Retries continue until the display is back or the user disconnects;
+    // the pace is set by BleReconnectPolicy.
+    final delay = _reconnectPolicy.delay(_reconnectAttempt);
     _reconnectAttempt++;
     _setState(BleConnectionState.connecting);
-    _reconnectTimer = Timer(Duration(seconds: seconds), () {
+    _reconnectTimer = Timer(delay, () {
       _reconnectTimer = null;
       if (_disposed || !_maintainConnection) return;
       unawaited(
         connect(
-          timeout: const Duration(seconds: 8),
+          timeout: BleReconnectPolicy.scanTimeout,
           resetReconnectAttempts: false,
         ),
       );
@@ -639,7 +654,9 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
           bytes,
           withoutResponse: BleConstants.writeWithoutResponse,
           allowLongWrite: BleConstants.allowLongWrite,
+          timeout: BleLinkHealth.writeTimeoutSeconds,
         );
+        _linkHealth.reset();
         _log('write ok $timing ms=${elapsed.elapsedMilliseconds}');
         _throttle.markSent(state, now);
         _lastSent = state;
@@ -664,10 +681,27 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
         });
         if (kDebugMode) debugPrint(_lastError);
         notifyListeners();
+        if (_linkHealth.writeFailed(linkError: BleLinkHealth.isLinkError(e))) {
+          unawaited(_resetStaleLink());
+        }
         return false;
       }
     }
     return true;
+  }
+
+  /// Drops a connection that no longer answers and makes it again; see
+  /// [BleLinkHealth].
+  Future<void> _resetStaleLink() async {
+    final session = _session;
+    _log('link reset: writes unanswered');
+    await _releaseCurrentDevice(disconnectDevice: true);
+    if (_disposed || session != _session || !_maintainConnection) return;
+    _setState(
+      BleConnectionState.disconnected,
+      error: 'BLE link stopped responding',
+    );
+    _scheduleReconnect();
   }
 
   Future<void> _flushPendingState() async {

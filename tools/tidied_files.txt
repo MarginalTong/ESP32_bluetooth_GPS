@@ -52,3 +52,5 @@ moto_nav_bridge/lib/models/nav_state.dart
 moto_nav_bridge/lib/config/ble_constants.dart
 firmware/platformio/text_cache.h
 firmware/tests/text_cache_test.cpp
+moto_nav_bridge/lib/services/ble/ble_reconnect_policy.dart
+moto_nav_bridge/lib/services/ble/ble_link_health.dart
