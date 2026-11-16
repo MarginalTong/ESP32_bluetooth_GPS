@@ -11,6 +11,88 @@ static void check(bool condition, const char* message) {
   }
 }
 
+// The plain definitions the optimized drawing must keep matching: a stroke
+// is every pixel within its half width of the segment, text is the average
+// of bilinear samples of the font mask.
+static float referenceStroke(float px, float py, float ax, float ay, float bx, float by,
+                             float halfWidth) {
+  const float dx = bx - ax, dy = by - ay, lengthSquared = dx * dx + dy * dy;
+  float t = lengthSquared > 0 ? ((px - ax) * dx + (py - ay) * dy) / lengthSquared : 0;
+  t = t < 0 ? 0 : (t > 1 ? 1 : t);
+  const float ex = px - (ax + t * dx), ey = py - (ay + t * dy);
+  return GrayLayer::clamp01(halfWidth + 0.5f - sqrtf(ex * ex + ey * ey));
+}
+
+static float referenceGlyph(const AlphaFont& font, const NavioNumericGlyph& glyph,
+                            float x, float y) {
+  const int ix = int(floorf(x)), iy = int(floorf(y));
+  const float fx = x - ix, fy = y - iy;
+  const float upper = font.level(glyph, ix, iy) * (1 - fx) + font.level(glyph, ix + 1, iy) * fx;
+  const float lower =
+      font.level(glyph, ix, iy + 1) * (1 - fx) + font.level(glyph, ix + 1, iy + 1) * fx;
+  return (upper * (1 - fy) + lower * fy) / 15.0f;
+}
+
+static void checkAgainstReferences(GrayLayer& layer, int size) {
+  // Steep, shallow, vertical, horizontal, degenerate and partly off-screen.
+  const float strokes[][5] = {
+      {20.3f, 30.7f, 300.2f, 380.9f, 5.25f}, {390.5f, 12.1f, 40.8f, 60.4f, 2.4f},
+      {100.5f, -30, 100.5f, 200, 3.75f},     {-25, 150.2f, 430, 150.2f, 0.3f},
+      {200, 200, 200, 200, 6},               {350, 400, 450, 300, 4}};
+  for (const auto& s : strokes) {
+    layer.clear();
+    layer.strokeSegment(s[0], s[1], s[2], s[3], s[4], 255);
+    for (int y = 0; y < size; ++y)
+      for (int x = 0; x < size; ++x) {
+        const int expected = int(
+            255 * referenceStroke(x + 0.5f, y + 0.5f, s[0], s[1], s[2], s[3], s[4]) + 0.5f);
+        check(abs(layer.pixels[y * size + x] - expected) <= 1,
+              "a stroke covers exactly the pixels within its half width");
+      }
+    // A fading ray never draws outside the same stroke, nor skips its middle.
+    const float dx = s[2] - s[0], dy = s[3] - s[1], length = sqrtf(dx * dx + dy * dy);
+    if (length <= 0) continue;
+    layer.clear();
+    layer.strokeFadingRay(s[0], s[1], dx / length, dy / length, length, s[4], 200);
+    const int middleX = int(s[0] + dx * 0.25f), middleY = int(s[1] + dy * 0.25f);
+    for (int y = 0; y < size; ++y)
+      for (int x = 0; x < size; ++x) {
+        const float inside =
+            referenceStroke(x + 0.5f, y + 0.5f, s[0], s[1], s[2], s[3], s[4]);
+        check(inside > 0 || layer.pixels[y * size + x] == 0, "a ray stays inside its stroke");
+      }
+    if (middleX >= 0 && middleX < size && middleY >= 0 && middleY < size && s[4] >= 1)
+      check(layer.pixels[middleY * size + middleX] > 0, "a ray is drawn along its whole arm");
+  }
+
+  // Shrunk (the distance digits), tiny (6 samples per axis) and enlarged.
+  const float scales[] = {42.0f / 79, 0.15f, 1.2f};
+  for (const float scale : scales) {
+    const float x = 30.4f, baseline = 200.6f;
+    layer.clear();
+    layer.drawText(NAVIO_NUMERIC_FONT, "8", x, baseline, scale, 255);
+    const NavioNumericGlyph& glyph = *NAVIO_NUMERIC_FONT.glyphFor('8');
+    const float x0 = x + glyph.xOffset * scale, y0 = baseline + glyph.yOffset * scale;
+    const int steps = scale >= 0.5f ? 2 : (scale <= 1.0f / 6 ? 6 : int(ceilf(1.0f / scale)));
+    int ink = 0;
+    for (int y = 0; y < size; ++y)
+      for (int px = 0; px < size; ++px) {
+        float sum = 0;
+        for (int sy = 0; sy < steps; ++sy)
+          for (int sx = 0; sx < steps; ++sx)
+            sum += referenceGlyph(NAVIO_NUMERIC_FONT, glyph,
+                                  (px + (sx + 0.5f) / steps - x0) / scale - 0.5f,
+                                  (y + (sy + 0.5f) / steps - y0) / scale - 0.5f);
+        const int expected = int(255 * sum / (steps * steps) + 0.5f);
+        ink += expected > 0;
+        // Fixed-point sampling: within 2 gray levels of 255.
+        check(abs(layer.pixels[y * size + px] - expected) <= 2,
+              "text is the average of bilinear font samples");
+      }
+    check(ink > 20, "the reference glyph is on screen");
+  }
+}
+
 int main() {
   constexpr int size = 412, guard = 32;
   std::vector<uint8_t> memory(size * size + guard * 2, 0x5a);
@@ -88,6 +170,8 @@ int main() {
         "a side road has an antialiased edge and a bounded width");
   check(layer.pixels[50 * size + 19] == 0, "nothing is drawn behind the junction");
 
+  checkAgainstReferences(layer, size);
+
   layer.clear();
   layer.fillTriangle(-100, -10, 50, 500, 520, 40, 255);
   layer.fillRoundRect(-20, -20, 25, 25, 5, 255);
@@ -137,6 +221,7 @@ int main() {
     for (int i = 0; i < size * bandRows; ++i)
       check(band[guard + i] == 0, "mismatched layers are not read out of bounds");
   }
-  puts("anti-alias rendering: smooth edges, solid interiors, font masks, clipping and side-road fade passed");
+  puts("anti-alias rendering: smooth edges, solid interiors, font masks, clipping, side-road fade\n"
+       "and stroke/text reference match passed");
   puts("panel composition: 412/360 rasters, band boundaries, UI overlay and fallback passed");
 }

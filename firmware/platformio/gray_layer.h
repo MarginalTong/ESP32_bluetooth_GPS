@@ -37,21 +37,26 @@ struct AlphaFont {
     return advance * scale;
   }
 
-  float coverage(const NavioNumericGlyph& glyph, int x, int y) const {
-    if (x < 0 || y < 0 || x >= glyph.width || y >= glyph.height) return 0.0f;
+  // 4-bit coverage of one font pixel, 0..15; 0 outside the glyph.
+  uint32_t level(const NavioNumericGlyph& glyph, int x, int y) const {
+    if (x < 0 || y < 0 || x >= glyph.width || y >= glyph.height) return 0;
     const uint32_t index = uint32_t(y) * glyph.width + x;
     const uint8_t packed = alpha[glyph.offset + index / 2];
-    return float(index & 1 ? packed & 15 : packed >> 4) / 15.0f;
+    return index & 1 ? packed & 15 : packed >> 4;
   }
 
-  float sample(const NavioNumericGlyph& glyph, float x, float y) const {
-    const int ix = int(floorf(x)), iy = int(floorf(y));
-    const float fx = x - ix, fy = y - iy;
-    const float upper = coverage(glyph, ix, iy) * (1.0f - fx) +
-                        coverage(glyph, ix + 1, iy) * fx;
-    const float lower = coverage(glyph, ix, iy + 1) * (1.0f - fx) +
-                        coverage(glyph, ix + 1, iy + 1) * fx;
-    return upper * (1.0f - fy) + lower * fy;
+  // Bilinear sample at (x, y) in 16.16 fixed-point font pixels, as coverage
+  // times kSampleOne. Integer only: the ESP32-S3 has no fast float divide or
+  // floor, and text was most of a frame's drawing time with them.
+  static constexpr uint32_t kSampleOne = 15u << 16;
+  uint32_t sample(const NavioNumericGlyph& glyph, int32_t x, int32_t y) const {
+    const int ix = x >> 16, iy = y >> 16;
+    if (ix < -1 || iy < -1 || ix >= glyph.width || iy >= glyph.height) return 0;
+    const uint32_t fx = (x >> 8) & 255, fy = (y >> 8) & 255;
+    const uint32_t upper = level(glyph, ix, iy) * (256 - fx) + level(glyph, ix + 1, iy) * fx;
+    const uint32_t lower =
+        level(glyph, ix, iy + 1) * (256 - fx) + level(glyph, ix + 1, iy + 1) * fx;
+    return upper * (256 - fy) + lower * fy;
   }
 };
 
@@ -69,17 +74,6 @@ struct GrayLayer {
   int16_t clipBottom = 0;
 
   static float clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
-
-  static float segmentDistance(float px, float py, float ax, float ay, float bx,
-                               float by) {
-    const float dx = bx - ax, dy = by - ay;
-    const float lengthSquared = dx * dx + dy * dy;
-    const float t = lengthSquared > 0.0f
-                        ? clamp01(((px - ax) * dx + (py - ay) * dy) / lengthSquared)
-                        : 0.0f;
-    const float ex = px - (ax + t * dx), ey = py - (ay + t * dy);
-    return sqrtf(ex * ex + ey * ey);
-  }
 
   void clear() {
     if (pixels != nullptr) memset(pixels, 0, size_t(width) * height);
@@ -99,6 +93,21 @@ struct GrayLayer {
     if (last >= limit) last = limit - 1;
   }
 
+  // Columns of pixel row `y` that a stroke from (ax, ay) along (dx, dy) can
+  // touch: only the part of the stroke within `reach` rows of this one
+  // matters. Keeps a diagonal stroke from visiting its whole bounding box.
+  void rowSpan(int16_t y, float ax, float ay, float dx, float dy, float reach,
+               int16_t& first, int16_t& last) const {
+    float t0 = 0.0f, t1 = 1.0f;
+    if (dy != 0.0f) {
+      const float center = y + 0.5f - ay;
+      t0 = clamp01((center - reach) / dy);
+      t1 = clamp01((center + reach) / dy);
+    }
+    const float xa = ax + t0 * dx, xb = ax + t1 * dx;
+    bounds(fminf(xa, xb) - reach, fmaxf(xa, xb) + reach, width, first, last);
+  }
+
   // Lighten blend: keeps the brighter value, so the overlapping ends of a
   // polyline's segments never double their anti-aliased edges.
   void strokeSegment(float ax, float ay, float bx, float by, float halfWidth,
@@ -106,15 +115,28 @@ struct GrayLayer {
     if (pixels == nullptr) return;
     const float reach = halfWidth + 1.0f;
     int16_t x0, x1, y0, y1;
-    bounds(fminf(ax, bx) - reach, fmaxf(ax, bx) + reach, width, x0, x1);
     bounds(fminf(ay, by) - reach, fmaxf(ay, by) + reach, clipBottom, y0, y1);
+    const float dx = bx - ax, dy = by - ay;
+    const float lengthSquared = dx * dx + dy * dy;
+    const float inverse = lengthSquared > 0.0f ? 1.0f / lengthSquared : 0.0f;
+    // Squared distances decide the solid inside and the empty outside; only
+    // the one-pixel edge band needs a square root.
+    const float outer = halfWidth + 0.5f, inner = halfWidth - 0.5f;
+    const float outerSquared = outer * outer;
+    const float innerSquared = inner > 0.0f ? inner * inner : -1.0f;
     for (int16_t y = y0; y <= y1; ++y) {
+      rowSpan(y, ax, ay, dx, dy, reach, x0, x1);
       uint8_t* row = pixels + size_t(y) * width;
+      const float py = y + 0.5f - ay;
       for (int16_t x = x0; x <= x1; ++x) {
-        const float coverage = clamp01(
-            halfWidth + 0.5f - segmentDistance(x + 0.5f, y + 0.5f, ax, ay, bx, by));
-        if (coverage <= 0.0f) continue;
-        const uint8_t value = uint8_t(level * coverage + 0.5f);
+        const float px = x + 0.5f - ax;
+        const float t = clamp01((px * dx + py * dy) * inverse);
+        const float ex = px - t * dx, ey = py - t * dy;
+        const float squared = ex * ex + ey * ey;
+        if (squared >= outerSquared) continue;
+        const uint8_t value = squared <= innerSquared
+                                  ? level
+                                  : uint8_t(level * (outer - sqrtf(squared)) + 0.5f);
         if (value > row[x]) row[x] = value;
       }
     }
@@ -146,9 +168,9 @@ struct GrayLayer {
     const float x1 = x0 + ux * length, y1 = y0 + uy * length;
     const float reach = halfWidth + 1.0f;
     int16_t left, right, top, bottom;
-    bounds(fminf(x0, x1) - reach, fmaxf(x0, x1) + reach, width, left, right);
     bounds(fminf(y0, y1) - reach, fmaxf(y0, y1) + reach, clipBottom, top, bottom);
     for (int16_t y = top; y <= bottom; ++y) {
+      rowSpan(y, x0, y0, x1 - x0, y1 - y0, reach, left, right);
       uint8_t* row = pixels + size_t(y) * width;
       for (int16_t x = left; x <= right; ++x) {
         const float px = x + 0.5f - x0, py = y + 0.5f - y0;
@@ -190,8 +212,12 @@ struct GrayLayer {
   // keeps thin strokes instead of dropping or flickering them.
   void drawText(const AlphaFont& font, const char* text, float x, float baseline,
                 float scale, uint8_t level) {
-    if (pixels == nullptr) return;
+    if (pixels == nullptr || !(scale > 0.0f)) return;
     const int steps = scale >= 0.5f ? 2 : (scale <= 1.0f / 6 ? 6 : int(ceilf(1.0f / scale)));
+    // Font pixels between neighbouring samples, 16.16 fixed point.
+    const float sampleStep = 65536.0f / (steps * scale);
+    const int32_t step = int32_t(lroundf(sampleStep));
+    const float toLevel = float(level) / (float(AlphaFont::kSampleOne) * steps * steps);
     for (const char* c = text; *c != '\0'; ++c) {
       const NavioNumericGlyph* glyph = font.glyphFor(*c);
       if (glyph == nullptr) continue;
@@ -200,19 +226,23 @@ struct GrayLayer {
       int16_t left, right, top, bottom;
       bounds(x0 - 1, x0 + glyph->width * scale + 1, width, left, right);
       bounds(y0 - 1, y0 + glyph->height * scale + 1, clipBottom, top, bottom);
+      // Font position of the first sample of pixel (left, top). The sample
+      // of font pixel i is taken at its centre, i + 0.5.
+      const int32_t startX =
+          int32_t(lroundf((left - x0) * steps * sampleStep + sampleStep / 2 - 32768.0f));
+      const int32_t startY =
+          int32_t(lroundf((top - y0) * steps * sampleStep + sampleStep / 2 - 32768.0f));
       for (int16_t py = top; py <= bottom; ++py) {
         uint8_t* row = pixels + size_t(py) * width;
+        const int32_t rowY = startY + int32_t(py - top) * steps * step;
         for (int16_t px = left; px <= right; ++px) {
-          float sum = 0.0f;
-          for (int sy = 0; sy < steps; ++sy) {
-            const float gy = (py + (sy + 0.5f) / steps - y0) / scale - 0.5f;
-            for (int sx = 0; sx < steps; ++sx) {
-              const float gx = (px + (sx + 0.5f) / steps - x0) / scale - 0.5f;
-              sum += font.sample(*glyph, gx, gy);
-            }
-          }
-          if (sum <= 0.0f) continue;
-          const uint8_t value = uint8_t(level * sum / (steps * steps) + 0.5f);
+          const int32_t columnX = startX + int32_t(px - left) * steps * step;
+          uint32_t sum = 0;
+          for (int sy = 0; sy < steps; ++sy)
+            for (int sx = 0; sx < steps; ++sx)
+              sum += font.sample(*glyph, columnX + sx * step, rowY + sy * step);
+          if (sum == 0) continue;
+          const uint8_t value = uint8_t(sum * toLevel + 0.5f);
           if (value > row[px]) row[px] = value;
         }
       }
@@ -302,6 +332,12 @@ struct PanelComposer {
       gray565[g] = uint16_t(((g >> 3) << 11) | ((g >> 2) << 5) | (g >> 3));
   }
 
+  bool blank(const uint16_t* canvasRow) const {
+    for (int16_t x = 0; x < canvasWidth; ++x)
+      if (canvasRow[x] != 0) return false;
+    return true;
+  }
+
   // Writes view rows [firstRow, firstRow + rowCount) to `out`. `layer` may be
   // null (no map on this screen).
   void compose(const uint16_t* canvas, const GrayLayer* layer, uint16_t* out,
@@ -316,6 +352,11 @@ struct PanelComposer {
           layer != nullptr && layer->pixels != nullptr &&
                   layer->width == layerWidth && layer->height == layerHeight
               ? layer->pixels + size_t(layerY[y]) * layerWidth : nullptr;
+      if (mapRow != nullptr && layerWidth == width && blank(canvasRow)) {
+        // The usual row: nothing on the canvas, layer at panel resolution.
+        for (int16_t x = start; x < end; ++x) row[x] = gray565[mapRow[x]];
+        continue;
+      }
       for (int16_t x = start; x < end; ++x) {
         const uint16_t ui = canvasRow[sourceX[x]];
         row[x] = ui != 0 || mapRow == nullptr ? ui : gray565[mapRow[layerX[x]]];
