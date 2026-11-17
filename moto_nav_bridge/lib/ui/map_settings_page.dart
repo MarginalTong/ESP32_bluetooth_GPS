@@ -1,10 +1,10 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_text.dart';
 import '../models/place_result.dart';
 import 'widgets/saved_places_bar.dart';
+import 'widgets/map_style_preview.dart';
 import 'navio_theme.dart';
 import '../services/settings_store.dart';
 import 'package:provider/provider.dart';
@@ -91,31 +91,7 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
                 child: Center(child: CupertinoActivityIndicator()),
               )
             else ...[
-              CupertinoListSection.insetGrouped(
-                header: SectionLabel(text.mapAppearanceHeader),
-                children: [
-                  _styleTile(
-                    'standard',
-                    text.mapStyleStandard,
-                    text.clearStreetsLandmarks,
-                  ),
-                  _styleTile(
-                    'standard_dark',
-                    text.mapStyleStandardDark,
-                    text.calmerMapNightRiding,
-                  ),
-                  _styleTile(
-                    'hybrid',
-                    text.mapStyleHybrid,
-                    text.aerialImageryRoadLabels,
-                  ),
-                  _styleTile(
-                    'satellite',
-                    text.mapStyleSatellite,
-                    text.aerialImageryWithoutLabels,
-                  ),
-                ],
-              ),
+              _appearance(text),
               Padding(
                 padding: const EdgeInsets.fromLTRB(36, 18, 36, 0),
                 child: Text(
@@ -141,7 +117,7 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
     final selected = style == value;
     return CupertinoListTile(
       onTap: () => _setStyle(value),
-      leading: _MapStylePreview(style: value),
+      leading: MapStylePreview(style: value),
       title: Text(title),
       subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: selected
@@ -153,76 +129,22 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
           : null,
     );
   }
-}
 
-class _MapStylePreview extends StatelessWidget {
-  const _MapStylePreview({required this.style});
-  final String style;
-
-  @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(11),
-    child: SizedBox.square(
-      dimension: 46,
-      child: CustomPaint(painter: _MapPreviewPainter(style)),
-    ),
+  Widget _appearance(AppText text) => CupertinoListSection.insetGrouped(
+    header: SectionLabel(text.mapAppearanceHeader),
+    children: [
+      _styleTile('standard', text.mapStyleStandard, text.clearStreetsLandmarks),
+      _styleTile(
+        'standard_dark',
+        text.mapStyleStandardDark,
+        text.calmerMapNightRiding,
+      ),
+      _styleTile('hybrid', text.mapStyleHybrid, text.aerialImageryRoadLabels),
+      _styleTile(
+        'satellite',
+        text.mapStyleSatellite,
+        text.aerialImageryWithoutLabels,
+      ),
+    ],
   );
-}
-
-class _MapPreviewPainter extends CustomPainter {
-  const _MapPreviewPainter(this.style);
-  final String style;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final dark = style == 'standard_dark';
-    final imagery = style == 'hybrid' || style == 'satellite';
-    canvas.drawColor(
-      dark
-          ? NavioColors.previewDarkBase
-          : imagery
-          ? NavioColors.previewImageryBase
-          : NavioColors.previewLightBase,
-      BlendMode.src,
-    );
-    if (imagery) {
-      canvas.drawCircle(
-        const Offset(12, 14),
-        18,
-        Paint()..color = NavioColors.previewImageryField,
-      );
-      canvas.drawCircle(
-        const Offset(41, 36),
-        19,
-        Paint()..color = NavioColors.previewImageryWater,
-      );
-    } else {
-      canvas.drawCircle(
-        const Offset(37, 7),
-        17,
-        Paint()
-          ..color = dark
-              ? NavioColors.previewDarkPark
-              : NavioColors.previewLightPark,
-      );
-    }
-    if (style == 'satellite') return;
-    final road = Paint()
-      ..color = dark ? NavioColors.previewDarkRoad : Colors.white
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(const Offset(-4, 34), const Offset(50, 13), road);
-    canvas.drawLine(const Offset(13, -4), const Offset(32, 50), road);
-    final route = Paint()
-      ..color = dark
-          ? NavioColors.previewDarkRoute
-          : NavioColors.previewLightRoute
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(const Offset(4, 31), const Offset(42, 16), route);
-  }
-
-  @override
-  bool shouldRepaint(covariant _MapPreviewPainter oldDelegate) =>
-      oldDelegate.style != style;
 }

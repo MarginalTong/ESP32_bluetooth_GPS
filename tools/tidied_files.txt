@@ -67,3 +67,10 @@ firmware/tests/instruction_layout_test.cpp
 firmware/platformio/instrument_clock.h
 firmware/platformio/instrument_clock.cpp
 firmware/tests/instrument_clock_test.cpp
+moto_nav_bridge/lib/ui/app_shell.dart
+moto_nav_bridge/lib/ui/widgets/device_header.dart
+moto_nav_bridge/lib/ui/widgets/device_illustration.dart
+moto_nav_bridge/lib/ui/widgets/account_button.dart
+moto_nav_bridge/lib/ui/map_settings_page.dart
+moto_nav_bridge/lib/ui/route_preferences_page.dart
+moto_nav_bridge/lib/ui/widgets/map_style_preview.dart

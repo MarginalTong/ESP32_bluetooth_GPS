@@ -75,51 +75,57 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         _mapStyle != 'standard' ||
         Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      body: IndexedStack(
-        index: _selected,
-        children: [
-          HomePage(
-            key: ValueKey(account?.localGeneration ?? 0),
-            onMapStyleChanged: (style) {
-              if (mounted && style != _mapStyle) {
-                setState(() => _mapStyle = style);
-              }
-            },
-          ),
-          const DevicesPage(),
-        ],
-      ),
-      bottomNavigationBar: CupertinoTabBar(
-        backgroundColor: darkBar
-            ? NavioColors.mapControlDark
-            : NavioColors.tabBarLight,
-        activeColor: darkBar
-            ? NavioColors.tabActiveOnDark
-            : NavioColors.tabActiveLight,
-        inactiveColor: darkBar
-            ? NavioColors.tabInactiveOnDark
-            : NavioColors.tabInactiveLight,
-        currentIndex: _selected,
-        onTap: (value) {
-          if (value == 1) context.read<SettingsSyncController?>()?.request();
-          setState(() => _selected = value);
-          context.read<RiderMapController?>()?.setVisibility(
-            foreground: _foreground,
-            mapVisible: value == 0,
-          );
+      body: _pages(account),
+      bottomNavigationBar: _tabBar(text, darkBar),
+    );
+  }
+
+  Widget _pages(AccountController? account) => IndexedStack(
+    index: _selected,
+    children: [
+      HomePage(
+        key: ValueKey(account?.localGeneration ?? 0),
+        onMapStyleChanged: (style) {
+          if (mounted && style != _mapStyle) {
+            setState(() => _mapStyle = style);
+          }
         },
-        items: [
-          BottomNavigationBarItem(
-            icon: const Icon(CupertinoIcons.map),
-            activeIcon: const Icon(CupertinoIcons.map_fill),
-            label: text.mapTab,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(CupertinoIcons.device_phone_portrait),
-            label: text.myDevices,
-          ),
-        ],
       ),
+      const DevicesPage(),
+    ],
+  );
+
+  Widget _tabBar(AppText text, bool darkBar) => CupertinoTabBar(
+    backgroundColor: darkBar
+        ? NavioColors.mapControlDark
+        : NavioColors.tabBarLight,
+    activeColor: darkBar
+        ? NavioColors.tabActiveOnDark
+        : NavioColors.tabActiveLight,
+    inactiveColor: darkBar
+        ? NavioColors.tabInactiveOnDark
+        : NavioColors.tabInactiveLight,
+    currentIndex: _selected,
+    onTap: _selectTab,
+    items: [
+      BottomNavigationBarItem(
+        icon: const Icon(CupertinoIcons.map),
+        activeIcon: const Icon(CupertinoIcons.map_fill),
+        label: text.mapTab,
+      ),
+      BottomNavigationBarItem(
+        icon: const Icon(CupertinoIcons.device_phone_portrait),
+        label: text.myDevices,
+      ),
+    ],
+  );
+
+  void _selectTab(int value) {
+    if (value == 1) context.read<SettingsSyncController?>()?.request();
+    setState(() => _selected = value);
+    context.read<RiderMapController?>()?.setVisibility(
+      foreground: _foreground,
+      mapVisible: value == 0,
     );
   }
 }

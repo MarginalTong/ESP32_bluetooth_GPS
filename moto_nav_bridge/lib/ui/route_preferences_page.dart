@@ -44,62 +44,11 @@ class _RoutePreferencesPageState extends State<RoutePreferencesPage> {
   Widget build(BuildContext context) {
     final text = AppText.of(context);
     return NavioPage(
-      navigationBar: CupertinoNavigationBar(
-        transitionBetweenRoutes: false,
-        automaticallyImplyLeading: false,
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: Icon(CupertinoIcons.back, semanticLabel: text.backAction),
-        ),
-        middle: Text(text.routePreferences),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          child: Icon(CupertinoIcons.info, semanticLabel: text.aboutAvoidance),
-          onPressed: () => showCupertinoDialog<void>(
-            context: context,
-            builder: (ctx) => CupertinoAlertDialog(
-              title: Text(text.routePreferences),
-              content: Text(text.savedAutomaticallyOnPhone),
-              actions: [
-                CupertinoDialogAction(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(text.okAction),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      navigationBar: _navigationBar(text),
       child: SafeArea(
         child: ListView(
           children: [
-            CupertinoListSection.insetGrouped(
-              header: SectionLabel(text.routeOptionsHeader),
-              footer: Text(text.savedAutomaticallyAppliesNext),
-              children: [
-                option(
-                  text.preferAvoidingHighways,
-                  widget.nav.avoidHighways,
-                  (v) => save(highways: v),
-                ),
-                option(
-                  text.preferAvoidingTolls,
-                  widget.nav.avoidTolls,
-                  (v) => save(tolls: v),
-                ),
-                option(
-                  text.preferAvoidingFerries,
-                  widget.nav.avoidFerries,
-                  (v) => save(ferries: v),
-                ),
-                option(
-                  text.avoidTunnels,
-                  widget.nav.avoidTunnels,
-                  (v) => save(tunnels: v),
-                ),
-              ],
-            ),
+            _options(text),
             if (saving) const CupertinoActivityIndicator(),
             if (error != null)
               Padding(
@@ -128,4 +77,59 @@ class _RoutePreferencesPageState extends State<RoutePreferencesPage> {
           onChanged: saving || !widget.nav.canEditPreferences ? null : change,
         ),
       );
+
+  CupertinoNavigationBar _navigationBar(AppText text) => CupertinoNavigationBar(
+    transitionBetweenRoutes: false,
+    automaticallyImplyLeading: false,
+    leading: CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: () => Navigator.pop(context),
+      child: Icon(CupertinoIcons.back, semanticLabel: text.backAction),
+    ),
+    middle: Text(text.routePreferences),
+    trailing: CupertinoButton(
+      padding: EdgeInsets.zero,
+      child: Icon(CupertinoIcons.info, semanticLabel: text.aboutAvoidance),
+      onPressed: () => showCupertinoDialog<void>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: Text(text.routePreferences),
+          content: Text(text.savedAutomaticallyOnPhone),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(text.okAction),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _options(AppText text) => CupertinoListSection.insetGrouped(
+    header: SectionLabel(text.routeOptionsHeader),
+    footer: Text(text.savedAutomaticallyAppliesNext),
+    children: [
+      option(
+        text.preferAvoidingHighways,
+        widget.nav.avoidHighways,
+        (v) => save(highways: v),
+      ),
+      option(
+        text.preferAvoidingTolls,
+        widget.nav.avoidTolls,
+        (v) => save(tolls: v),
+      ),
+      option(
+        text.preferAvoidingFerries,
+        widget.nav.avoidFerries,
+        (v) => save(ferries: v),
+      ),
+      option(
+        text.avoidTunnels,
+        widget.nav.avoidTunnels,
+        (v) => save(tunnels: v),
+      ),
+    ],
+  );
 }
