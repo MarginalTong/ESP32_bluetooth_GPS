@@ -5,7 +5,7 @@
 // (instruction_layout_test). Canvas pixels of the 240-px layout.
 //
 // Below the map is a slightly lighter panel: the turn arrow on the left, the
-// distance in the middle with its unit underneath, and the speed limit sign
+// distance in the middle with its smaller unit on the right, and the speed limit sign
 // on the right, sitting across the panel's upper edge.
 #include <stdint.h>
 
@@ -21,18 +21,19 @@ constexpr uint8_t panelLevel = 28;
 constexpr float arrowCenterX = 62.0f;
 constexpr float arrowCenterY = 183.5f;
 
-// Distance digits: centred between the arrow and the speed limit sign.
-constexpr float distanceCenterX = 134.0f;
+// Right-align numbers to a fixed unit column so changing digit counts never
+// pushes m/km down or into the sign. Measured with the bundled font: three
+// digits at size 4 need 66.99 px; km at size 2 needs 27.57 px.
+constexpr float distanceRight = 160.0f;
 constexpr float distanceTop = 168.0f;  // top of the capitals
 constexpr uint8_t distanceSize = 4;    // capitals 7 px per size step: 28 px
-// Widest text drawn at full size, from 4 px right of the arrow to 3 px left
-// of the sign; wider text ("NOW") is drawn one size smaller.
-constexpr float distanceMaxWidth = 76.0f;
+// Leaves at least 3 px after the widest arrow (right edge 88.5).
+constexpr float distanceMaxWidth = 68.0f;
 constexpr uint8_t unitSize = 2;        // 14 px
-constexpr float unitGap = 3.0f;        // between the digits and the unit
+constexpr float unitGap = 3.0f;        // horizontal space before m/km
 
-// Diagnostic line under the unit, where the aperture is narrowest.
-constexpr float errorTop = unitGap + distanceTop + 7.0f * distanceSize + 7.0f * unitSize + 1.0f;
+// Preserve the previous diagnostic line; changing units must not move errors.
+constexpr float errorTop = 214.0f;
 
 struct DistancePlace {
   uint8_t size;
@@ -40,12 +41,14 @@ struct DistancePlace {
   float unitLeft, unitTop;
 };
 
-// The text centred, the unit under its left edge. `fullWidth` is the text's
-// width at distanceSize; smaller text stays centred on the same line.
+// `fullWidth` is measured at distanceSize. All sizes share the same bottom
+// edge; very long kilometre values may step down to size 1 to stay in bounds.
 inline DistancePlace placeDistance(float fullWidth) {
-  const uint8_t size = fullWidth > distanceMaxWidth ? distanceSize - 1 : distanceSize;
-  const float left = distanceCenterX - fullWidth * size / distanceSize / 2.0f;
-  const float top = distanceTop + 7.0f * (distanceSize - size) / 2.0f;
-  return {size, left, top, left, distanceTop + 7.0f * distanceSize + unitGap};
+  uint8_t size = distanceSize;
+  while (size > 1 && fullWidth * size / distanceSize > distanceMaxWidth) --size;
+  const float left = distanceRight - fullWidth * size / distanceSize;
+  const float bottom = distanceTop + 7.0f * distanceSize;
+  return {size, left, bottom - 7.0f * size,
+          distanceRight + unitGap, bottom - 7.0f * unitSize};
 }
 }  // namespace InstructionLayout

@@ -38,7 +38,7 @@ static void checkText(const char* text, const char* unit) {
   const DistancePlace place = placeDistance(fullWidth);
   const float width = fullWidth * place.size / distanceSize;
   const float right = place.numberLeft + width, bottom = place.numberTop + 7.0f * place.size;
-  check(place.size == distanceSize || place.size == distanceSize - 1, text);
+  check(place.size >= 1 && place.size <= distanceSize, text);
   // The widest arrows reach 26.5 px right of the artwork centre (stroke included).
   check(place.numberLeft >= arrowCenterX + 26.5f + 3.0f, "text keeps clear of the arrow");
   check(clearOfSign(place.numberLeft, right, place.numberTop, bottom, 2.0f),
@@ -50,8 +50,11 @@ static void checkText(const char* text, const char* unit) {
   if (unit == nullptr) return;
   const float unitWidth = NAVIO_TEXT_FONT.textWidth(unit, 7.0f * unitSize / NAVIO_TEXT_FONT.capHeight);
   const float unitBottom = place.unitTop + 7.0f * unitSize;
-  check(place.unitTop >= bottom + 2.0f && place.unitLeft == place.numberLeft,
-        "the unit sits under the left edge of the digits");
+  check(fabsf(unitBottom - bottom) < 0.001f &&
+            fabsf(place.unitLeft - right - unitGap) < 0.001f,
+        "unit is to the right of the digits with aligned bottoms, never below them");
+  check(clearOfSign(place.unitLeft, place.unitLeft + unitWidth,
+                    place.unitTop, unitBottom, 2.0f), "unit keeps clear of the speed limit sign");
   check(insideCircle(place.unitLeft, unitBottom) && insideCircle(place.unitLeft + unitWidth, unitBottom),
         "the unit is inside the round aperture");
   check(errorTop >= unitBottom, "the diagnostic line is below the unit");
@@ -59,10 +62,16 @@ static void checkText(const char* text, const char* unit) {
 
 int main() {
   checkText("31", "m");
+  checkText("106", "m");
   checkText("300", "m");
   checkText("999", "m");
   checkText("1.0", "km");
   checkText("10.0", "km");
+  checkText("9999.9", "km");
+  checkText("2147483.6", "km");
+  const float threeDigits = NAVIO_NUMERIC_FONT.textWidth(
+      "106", 7.0f * distanceSize / NAVIO_NUMERIC_FONT.capHeight);
+  check(placeDistance(threeDigits).size == distanceSize, "106 m retains full-size digits");
   checkText("NOW", nullptr);
   checkText("ARR", nullptr);
 

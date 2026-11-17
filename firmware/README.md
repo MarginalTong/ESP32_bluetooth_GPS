@@ -293,10 +293,12 @@ sent; the display never keeps or guesses one
 
 Below the map (from row 162 of the 240-px layout) is the instruction panel, a
 flat dark gray (28/255) that separates it from the black map. It holds the
-turn arrow on the left, the distance centred at x = 134 with its unit
-underneath, and the speed limit sign on the right. Text wider than 76 px
-("NOW", "10.0") is drawn one size smaller so it never touches the arrow or
-the sign. All positions are in `platformio/instruction_layout.h`;
+turn arrow on the left, the distance right-aligned at x = 160,
+and the smaller m/km unit on the same line at x = 163, with aligned bottoms.
+The speed limit sign stays on the right. Numbers wider than 68 px step down
+in size until they fit; 106 m retains full-size digits. The unit has its own
+column, so it never wraps underneath or collides with the sign. All positions
+are in `platformio/instruction_layout.h`;
 `run_instruction_layout_test.sh` checks that every distance text, the unit,
 the arrows and the sign stay inside the round aperture without touching.
 
