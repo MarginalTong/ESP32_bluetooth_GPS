@@ -179,7 +179,9 @@ On native round panels this is a mechanical-instrument-style clock: black
 face, ivory ticks extending to the screen edge and a single slim, tapered
 red instrument needle with a hollow red hub ring and no rear tail, matching
 the user's updated needle reference. A 270-degree sweep maps the entire day from 0 to 24,
-with labels every four hours; noon is at the top. There is no second hand or
+with large labels every four hours and smaller 2, 6, 10, 14, 18, 22 labels
+between them on the same ring (9 vs 16 logical pixels tall); noon is at the top.
+There is no second hand or
 separate minute hand. A small NAVIO signature and a 24-hour digital window
 give the exact time in the open bottom of the sweep, with ready to go below.
 The needle advances with minutes; there is no seconds animation because the

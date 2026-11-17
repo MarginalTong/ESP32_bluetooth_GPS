@@ -107,11 +107,13 @@ struct InstrumentClock {
       radial(mask, s, (225 + i * 270.0f / 96) * kRadians,
               i % 16 == 0 ? 99 : (i % 4 == 0 ? 105 : 110), 115,
               i % 16 == 0 ? 1.1f : 0.5f, i % 4 == 0 ? 255 : 180);
-    for (int i = 0; i <= 24; i += 4) {
+    for (int i = 0; i <= 24; i += 2) {
       char number[3];
       snprintf(number, sizeof(number), "%d", i);
       const float a = timeAngle(i, 0);
-      label(mask, s, number, centerX + 85 * sinf(a), centerY - 85 * cosf(a) + 6, 16);
+      const bool major = i % 4 == 0;
+      label(mask, s, number, centerX + 85 * sinf(a),
+              centerY - 85 * cosf(a) + (major ? 6 : 3), major ? 16 : 9);
     }
     label(mask, s, "NAVIO", centerX, 76, 7);
     label(mask, s, "ready to go", centerX, 222, 7);

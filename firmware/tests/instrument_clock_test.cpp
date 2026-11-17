@@ -28,6 +28,24 @@ static void geometry() {
         "24-hour dial distinguishes morning and evening");
 }
 
+static void intermediateLabels(InstrumentClock& clock, int size) {
+  check(clock.prepare("12:00", size), "hour label inspection frame renders");
+  const float scale = size / 240.0f;
+  for (int hour : {2, 6, 10, 14, 18, 22}) {
+    const float a = InstrumentClock::timeAngle(hour, 0);
+    const int cx = int((120 + 85 * sinf(a)) * scale);
+    const int cy = int((120 - 85 * cosf(a)) * scale);
+    int ivory = 0;
+    for (int y = cy - int(7 * scale); y <= cy + int(7 * scale); ++y)
+      for (int x = cx - int(11 * scale); x <= cx + int(11 * scale); ++x) {
+        const uint16_t p = clock.sprite.pixels[y * size + x];
+        const int r = (p >> 11) * 255 / 31, g = ((p >> 5) & 63) * 255 / 63;
+        ivory += r > 150 && g > 120;
+      }
+    check(ivory > 8, "each intermediate even hour has a small ivory label");
+  }
+}
+
 static void preview(const ColorSprite& sprite, const char* path) {
   FILE* out = fopen(path, "wb");
   check(out != nullptr, "preview opened");
@@ -82,6 +100,7 @@ int main(int argc, char** argv) {
         const int r = (p >> 11) * 255 / 31, g = ((p >> 5) & 63) * 255 / 63;
         check(!(r > 150 && g > 120), "no ivory second hand inside the dial");
       }
+    intermediateLabels(clock, size);
   }
   const auto count = clock.renders;
   check(!clock.prepare("bad", 360) && !clock.prepare("10:00", 10) && clock.renders == count,
