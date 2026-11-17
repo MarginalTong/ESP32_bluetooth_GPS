@@ -175,7 +175,10 @@ rerouting wins over STOP/ARRIVED; STOP shows no guidance; ARRIVED is never marke
 draws an 800 ms check animation and returns to the clock after four seconds;
 otherwise stale guidance and live navigation are distinct pages. A connected,
 idle display (including after an explicit trip end) shows the clock page: the
-time and "ready to go", with no wordmark. There is no separate connected
+time and "ready to go", with no wordmark. On round panels the readiness
+subtitle uses size 1 (reduced from size 2 at the user's request); the time
+digits retain size 7. Other pages and the rectangular layout are unchanged.
+There is no separate connected
 "ready to go" page; until the phone has sent the time, a connected display
 shows only the large centered NAVIO. Disconnecting restores the large centered
 NAVIO wordmark with CONNECT PHONE, even after a clock sync. Unexpected link loss keeps CONNECTION LOST / RECONNECT

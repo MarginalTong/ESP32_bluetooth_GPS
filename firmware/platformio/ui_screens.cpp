@@ -40,7 +40,8 @@ void drawClock(const UiState& state, const UiRenderContext& context) {
   }
   // The clock page shows only the time: no wordmark in the corner.
 #if NAV_ROUND_DISPLAY
-  drawRoundCenteredStatus(context.clockText, 7, "ready to go", 2);
+  // Keep the readiness hint subordinate to the large time digits.
+  drawRoundCenteredStatus(context.clockText, 7, "ready to go", 1);
 #else
   drawUiText(context.clockText, 7, 15, 30);
   drawUiText("ready to go", 2, 54, 99);

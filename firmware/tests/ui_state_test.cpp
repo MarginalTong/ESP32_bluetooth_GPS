@@ -170,6 +170,8 @@ static void combinations() {
 static std::vector<std::string> calls;
 static bool native = true;
 static bool rider = false;
+static int clockTextSize = -1;
+static int clockSubtitleSize = -1;
 static NavState drawnNavigation = {Direction::Stop, 0, 0};
 struct BrandDraw {
   uint8_t size;
@@ -182,14 +184,19 @@ void beginFrame() { calls.push_back("begin"); }
 void presentDisplay() { calls.push_back("present"); }
 void drawUiText(const char* text, uint8_t size, float left, float top) {
   calls.push_back(text);
+  if (std::string(text) == "12:34") clockTextSize = size;
+  if (std::string(text) == "ready to go") clockSubtitleSize = size;
   if (std::string(text) == "NAVIO") brandDraws.push_back({size, left, top, false});
 }
 float uiTextWidth(const char*, uint8_t) { return 20; }
 bool useNativeLayer() { return native; }
 uint16_t roundTextHeight(const char*, uint8_t size) { return 7 * size; }
 void drawRoundCenteredText(const char* text, uint8_t, int16_t) { calls.push_back(text); }
-void drawRoundCenteredStatus(const char* text, uint8_t size, const char* subtitle, uint8_t) {
+void drawRoundCenteredStatus(const char* text, uint8_t size, const char* subtitle,
+                             uint8_t subtitleSize) {
   calls.push_back(text);
+  if (std::string(text) == "12:34") clockTextSize = size;
+  if (subtitle && std::string(subtitle) == "ready to go") clockSubtitleSize = subtitleSize;
   if (std::string(text) == "NAVIO") brandDraws.push_back({size, 120, 0, true});
   if (subtitle) calls.push_back(subtitle);
 }
@@ -222,6 +229,7 @@ static void drawPage(UiScreen page, bool connected = true) {
   calls.clear();
   brandDraws.clear();
   rider = false;
+  clockTextSize = clockSubtitleSize = -1;
   drawnSpeedLimit = -1;
   const UiState state{page, connected, {Direction::Right, 117, 60}};
   const UiRenderContext context{"NAVIO-TEST", "12:34", 240, 171, 132};
@@ -305,6 +313,17 @@ static void pages() {
   drawPage(UiScreen::Clock, true);
   check(brandDraws.empty() && drew("12:34"), "connected clock page shows the time without NAVIO");
   check(drew("12:34") && drew("ready to go"), "clock gets the supplied time and connection subtitle");
+  check(clockTextSize == 7, "clock digits keep their existing size");
+#if NAV_ROUND_DISPLAY
+  check(clockSubtitleSize == 1, "round clock readiness subtitle is one size smaller");
+  native = false;
+  drawPage(UiScreen::Clock, true);
+  check(clockTextSize == 7 && clockSubtitleSize == 1,
+        "fallback round clock keeps the same smaller subtitle and full-size time");
+  native = true;
+#else
+  check(clockSubtitleSize == 2, "rectangular clock layout is unchanged");
+#endif
   drawPage(UiScreen::Clock, false);
   expectLargeBrand();
   check(drew("NAVIO") && drew("CONNECT PHONE") && !drew("12:34") && !drew("ready to go"),
