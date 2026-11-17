@@ -12,11 +12,12 @@
 // The look and place of the sign, in one place (recorded in
 // firmware/README.md). Positions are canvas pixels of the 240-px layout.
 namespace SpeedSignStyle {
-// Right of the map, clear of the route (centre column), the rider marker and
-// the instruction strip, and 6 px inside the round aperture. About 9 mm on
-// the 39 mm panel: readable at a glance without crowding the map.
-constexpr float centerX = 198.0f;
-constexpr float centerY = 92.0f;
+// On the right, across the upper edge of the instruction panel (see
+// instruction_layout.h): beside the distance, clear of the route's centre
+// column, and inside the round aperture. About 9 mm on the 39 mm panel:
+// readable at a glance without crowding the map.
+constexpr float centerX = 196.0f;
+constexpr float centerY = 150.0f;
 constexpr float diameter = 54.0f;
 // Black margin around the sign, so map lines under it do not touch the ring.
 constexpr float halo = 2.0f;

@@ -39,6 +39,7 @@
 #include "../platformio/ui_draw.h"
 #include "../platformio/arrival_feedback.h"
 #include "../platformio/gray_layer.h"
+#include "../platformio/instruction_layout.h"
 #include "../platformio/map_motion.h"
 #include "../platformio/side_road_ray.h"
 #include "../platformio/speed_limit_sign.h"
@@ -1228,16 +1229,16 @@ void drawSideRoadSegments() {
 }
 
 #if NAV_ROUND_DISPLAY
-// The instruction row sits where the round aperture narrows. These values
-// keep every arrow (stroke included) and the widest distance text ("NOW")
-// 3 canvas px inside the visible circle of the full 412 px view, below the
-// map, with the arrow and the text centred on the same line.
+// The instruction row sits where the round aperture narrows; its positions
+// are in platformio/instruction_layout.h.
 constexpr float INSTRUCTION_SCALE = 1.0f;
-constexpr float INSTRUCTION_CENTER_X = 67.5f;
-constexpr float INSTRUCTION_CENTER_Y = 185.5f;
-// Size-4 distance text: right edge, and top of its capitals (baseline 199).
-constexpr float DISTANCE_RIGHT = 203.0f;
-constexpr float DISTANCE_TOP = 171.0f;
+constexpr float INSTRUCTION_CENTER_X = InstructionLayout::arrowCenterX;
+constexpr float INSTRUCTION_CENTER_Y = InstructionLayout::arrowCenterY;
+static_assert(InstructionLayout::panelTop == MAP_CLIP_BOTTOM,
+              "the instruction panel starts where the map is clipped");
+// Distance text: right edge (fallback), and top of its capitals.
+constexpr float DISTANCE_RIGHT = 168.0f;  // low-resolution fallback only
+constexpr float DISTANCE_TOP = InstructionLayout::distanceTop;
 #endif
 
 // Arrow artwork is drawn in the original strip's coordinates, centred on
@@ -1464,6 +1465,9 @@ void drawMiniRouteMap(bool showRider, Direction direction) {
                    COLOR_BG);
 #if NAV_ROUND_DISPLAY
   nativeLayer.clipBottom = nativeLayer.height;
+  // Nothing is drawn below the map yet: lay the instruction panel there.
+  nativeLayer.fillRows(int16_t(MAP_CLIP_BOTTOM * NATIVE_SCALE), nativeLayer.height,
+                       InstructionLayout::panelLevel);
 #endif
 }
 
@@ -1487,8 +1491,8 @@ void drawDistance(const NavState& navigation, bool blinkState) {
   const int distanceMeters = navigation.distanceMeters;
   display.setTextColor(COLOR_WHITE);
 #if NAV_ROUND_DISPLAY
-  // The circle narrows at the bottom: lay the group out leftwards from the
-  // safe right edge, unit first, both on the same baseline.
+  // Digits centred in the instruction panel, unit underneath: see
+  // platformio/instruction_layout.h.
   const char* label = nullptr;
   const char* unit = nullptr;
   char number[8];
@@ -1515,12 +1519,12 @@ void drawDistance(const NavState& navigation, bool blinkState) {
                                DISTANCE_TOP, true);
     return;
   }
-  if (unit != nullptr) {
-    right -= uiTextWidth(unit, 2);
-    drawUiText(unit, 2, right, DISTANCE_TOP + 14);
-    right -= 3;
-  }
-  if (label != nullptr) drawUiText(label, 4, right - uiTextWidth(label, 4), DISTANCE_TOP);
+  if (label == nullptr) return;
+  const InstructionLayout::DistancePlace place = InstructionLayout::placeDistance(
+      uiTextWidth(label, InstructionLayout::distanceSize));
+  drawUiText(label, place.size, place.numberLeft, place.numberTop);
+  if (unit != nullptr)
+    drawUiText(unit, InstructionLayout::unitSize, place.unitLeft, place.unitTop);
 #else
   display.setTextSize(3);
   display.setCursor(DISTANCE_X, 104);
@@ -1551,7 +1555,7 @@ void drawBottomError() {
   // Below the distance the round aperture is narrow: centre the message there
   // and drop trailing characters until it fits the visible width at its
   // lowest row (3 px margin).
-  constexpr float top = 208.0f;
+  constexpr float top = InstructionLayout::errorTop;
   const float dy = top + 7.0f - SCREEN_HEIGHT / 2.0f;
   const float radius = PANEL_VISIBLE_RADIUS * float(SCREEN_WIDTH) / PANEL_VIEW_WIDTH - 3.0f;
   const float available = 2.0f * sqrtf(fmaxf(0.0f, radius * radius - dy * dy));

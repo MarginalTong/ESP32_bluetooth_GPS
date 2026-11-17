@@ -11,7 +11,8 @@
 # geometry to platformio/side_road_ray.h (2026-11-05), the map animation to
 # platformio/map_motion.h (2026-11-13), text reuse to
 # platformio/text_cache.h (2026-11-16), the speed limit sign to
-# platformio/speed_limit_sign.h (2026-11-17); the rest of the file
+# platformio/speed_limit_sign.h and the instruction layout to
+# platformio/instruction_layout.h (2026-11-17); the rest of the file
 # still needs its whole-file tidy-up the next time it is changed.
 firmware/platformio/ui_state.cpp
 firmware/platformio/ui_screens.cpp
@@ -61,3 +62,5 @@ firmware/platformio/nav_types.h
 firmware/platformio/ui_draw.h
 moto_nav_bridge/lib/services/valhalla/valhalla_speed_limits.dart
 moto_nav_bridge/lib/services/send_throttle.dart
+firmware/platformio/instruction_layout.h
+firmware/tests/instruction_layout_test.cpp

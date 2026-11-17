@@ -172,6 +172,15 @@ int main() {
 
   checkAgainstReferences(layer, size);
 
+  // A flat background covers exactly its rows, clipped to the layer.
+  layer.clear();
+  layer.fillRows(400, 500, 28);
+  layer.fillRows(-5, 2, 9);
+  check(layer.pixels[399 * size + 7] == 0 && layer.pixels[400 * size] == 28 &&
+            layer.pixels[size * size - 1] == 28 && layer.pixels[size + 3] == 9 &&
+            layer.pixels[2 * size] == 0,
+        "a row fill covers whole rows and nothing else");
+
   layer.clear();
   layer.fillTriangle(-100, -10, 50, 500, 520, 40, 255);
   layer.fillRoundRect(-20, -20, 25, 25, 5, 255);

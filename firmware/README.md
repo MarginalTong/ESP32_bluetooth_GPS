@@ -253,12 +253,22 @@ unchanged.
 
 The speed limit (`L` in the BLE contract) is the only colour on the panel: an
 Australian regulatory sign (red ring, white disc, black number) to the right
-of the map, 54 px across in the 240-px layout with a 2 px black margin
+of the instruction panel, across its upper edge, 54 px across in the 240-px
+layout with a 2 px black margin
 (`SpeedSignStyle` in `platformio/speed_limit_sign.h`). It is a small RGB565
 sprite composed over the gray layer and redrawn only when the limit changes.
 It is shown only on the live navigation page and only for a limit the phone
 sent; the display never keeps or guesses one
 (`run_speed_limit_sign_test.sh`).
+
+Below the map (from row 162 of the 240-px layout) is the instruction panel, a
+flat dark gray (28/255) that separates it from the black map. It holds the
+turn arrow on the left, the distance centred at x = 134 with its unit
+underneath, and the speed limit sign on the right. Text wider than 76 px
+("NOW", "10.0") is drawn one size smaller so it never touches the arrow or
+the sign. All positions are in `platformio/instruction_layout.h`;
+`run_instruction_layout_test.sh` checks that every distance text, the unit,
+the arrows and the sign stay inside the round aperture without touching.
 
 Drawing cost decides how smooth the map animation is (about 6 FPS was
 measured on 2026-11-06: 130 ms of drawing per frame, 32 ms of LCD transfer),
