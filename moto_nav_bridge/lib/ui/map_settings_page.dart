@@ -6,6 +6,7 @@ import '../models/place_result.dart';
 import 'widgets/saved_places_bar.dart';
 import 'widgets/map_style_preview.dart';
 import 'navio_theme.dart';
+import 'navio_feedback.dart';
 import '../services/settings_store.dart';
 import 'package:provider/provider.dart';
 import '../controllers/account_controller.dart';
@@ -22,6 +23,7 @@ class MapSettingsPage extends StatefulWidget {
 class _MapSettingsPageState extends State<MapSettingsPage> {
   String style = 'standard';
   bool loaded = false;
+  bool _styleSaving = false;
   String? _loadedActor;
   String? _settingsStamp;
   @override
@@ -58,10 +60,15 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
   }
 
   Future<void> _setStyle(String value) async {
+    if (_styleSaving || value == style) return;
+    NavioFeedback.of(context).emit(InteractionFeedback.selection);
     final previous = style;
-    setState(() => style = value);
-    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      style = value;
+      _styleSaving = true;
+    });
     try {
+      final prefs = await SharedPreferences.getInstance();
       await SettingsStore.edit(prefs, () async {
         if (!await prefs.setString(MapSettingsPage.styleKey, value)) {
           throw StateError('Save failed');
@@ -71,6 +78,8 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
       if (mounted) {
         setState(() => style = previous);
       }
+    } finally {
+      if (mounted) setState(() => _styleSaving = false);
     }
   }
 
@@ -115,18 +124,36 @@ class _MapSettingsPageState extends State<MapSettingsPage> {
 
   Widget _styleTile(String value, String title, String subtitle) {
     final selected = style == value;
-    return CupertinoListTile(
-      onTap: () => _setStyle(value),
-      leading: MapStylePreview(style: value),
-      title: Text(title),
-      subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: selected
-          ? const Icon(
-              CupertinoIcons.check_mark,
-              color: CupertinoColors.activeBlue,
-              size: 20,
-            )
-          : null,
+    return Semantics(
+      selected: selected,
+      child: NavioPressEffect(
+        enabled: !_styleSaving && !selected,
+        child: CupertinoListTile(
+          onTap: _styleSaving ? null : () => _setStyle(value),
+          leading: MapStylePreview(style: value),
+          title: Text(title),
+          subtitle: Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: AnimatedSwitcher(
+            duration: NavioMotion.duration(context, NavioMotion.stateChange),
+            child: _styleSaving && selected
+                ? const CupertinoActivityIndicator(key: ValueKey('saving'))
+                : Icon(
+                    selected
+                        ? CupertinoIcons.checkmark_circle_fill
+                        : CupertinoIcons.circle,
+                    key: ValueKey(selected),
+                    size: 22,
+                    color: selected
+                        ? CupertinoColors.activeBlue
+                        : CupertinoColors.tertiaryLabel.resolveFrom(context),
+                  ),
+          ),
+        ),
+      ),
     );
   }
 

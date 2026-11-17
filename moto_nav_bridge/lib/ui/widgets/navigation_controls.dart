@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../controllers/navigation_controller.dart';
 import '../../l10n/app_text.dart';
 import '../navio_theme.dart';
+import '../navio_feedback.dart';
 import 'glass_panel.dart';
 
 /// Which stop comes next during a trip with waypoints.
@@ -59,19 +60,35 @@ class NavigationControls extends StatelessWidget {
         ],
         SizedBox(
           height: 54,
-          child: TextButton.icon(
-            onPressed: phase == NavPhase.routing ? null : onEnd,
-            icon: const Icon(Icons.stop_circle_rounded),
-            label: Text(text.endNavigation),
+          child: NavioPressEffect(
+            enabled: phase != NavPhase.routing,
+            child: TextButton.icon(
+              style: const ButtonStyle(enableFeedback: false),
+              onPressed: NavioFeedback.action(
+                context,
+                phase == NavPhase.routing ? null : onEnd,
+                feedback: InteractionFeedback.firm,
+              ),
+              icon: const Icon(Icons.stop_circle_rounded),
+              label: Text(text.endNavigation),
+            ),
           ),
         ),
         const Divider(height: 12, color: NavioColors.panelDivider),
         SizedBox(
           height: 54,
-          child: TextButton.icon(
-            onPressed: phase == NavPhase.routing ? null : onEndAndDisconnect,
-            icon: const Icon(Icons.bluetooth_disabled_rounded),
-            label: Text(text.endAndDisconnect),
+          child: NavioPressEffect(
+            enabled: phase != NavPhase.routing,
+            child: TextButton.icon(
+              style: const ButtonStyle(enableFeedback: false),
+              onPressed: NavioFeedback.action(
+                context,
+                phase == NavPhase.routing ? null : onEndAndDisconnect,
+                feedback: InteractionFeedback.firm,
+              ),
+              icon: const Icon(Icons.bluetooth_disabled_rounded),
+              label: Text(text.endAndDisconnect),
+            ),
           ),
         ),
       ],

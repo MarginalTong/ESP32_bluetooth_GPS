@@ -11,6 +11,8 @@ import 'home_page.dart';
 import 'devices_page.dart';
 import 'map_settings_page.dart';
 import 'navio_theme.dart';
+import 'navio_feedback.dart';
+import 'widgets/navio_tab_icon.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -109,12 +111,18 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     onTap: _selectTab,
     items: [
       BottomNavigationBarItem(
-        icon: const Icon(CupertinoIcons.map),
-        activeIcon: const Icon(CupertinoIcons.map_fill),
+        icon: NavioTabIcon(icon: CupertinoIcons.map, selected: _selected == 0),
+        activeIcon: const NavioTabIcon(
+          icon: CupertinoIcons.map_fill,
+          selected: true,
+        ),
         label: text.mapTab,
       ),
       BottomNavigationBarItem(
-        icon: const Icon(CupertinoIcons.device_phone_portrait),
+        icon: NavioTabIcon(
+          icon: CupertinoIcons.device_phone_portrait,
+          selected: _selected == 1,
+        ),
         label: text.myDevices,
       ),
     ],
@@ -122,6 +130,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   void _selectTab(int value) {
     if (value == 1) context.read<SettingsSyncController?>()?.request();
+    if (value == _selected) return;
+    NavioFeedback.of(context).emit(InteractionFeedback.selection);
     setState(() => _selected = value);
     context.read<RiderMapController?>()?.setVisibility(
       foreground: _foreground,

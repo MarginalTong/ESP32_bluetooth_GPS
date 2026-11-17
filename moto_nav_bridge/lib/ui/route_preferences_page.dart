@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import '../controllers/navigation_controller.dart';
 import '../l10n/app_text.dart';
 import 'navio_theme.dart';
+import 'navio_feedback.dart';
 
 class RoutePreferencesPage extends StatefulWidget {
   const RoutePreferencesPage({super.key, required this.nav});
@@ -83,26 +84,29 @@ class _RoutePreferencesPageState extends State<RoutePreferencesPage> {
     automaticallyImplyLeading: false,
     leading: CupertinoButton(
       padding: EdgeInsets.zero,
-      onPressed: () => Navigator.pop(context),
+      onPressed: NavioFeedback.action(context, () => Navigator.pop(context)),
       child: Icon(CupertinoIcons.back, semanticLabel: text.backAction),
     ),
     middle: Text(text.routePreferences),
     trailing: CupertinoButton(
       padding: EdgeInsets.zero,
-      child: Icon(CupertinoIcons.info, semanticLabel: text.aboutAvoidance),
-      onPressed: () => showCupertinoDialog<void>(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: Text(text.routePreferences),
-          content: Text(text.savedAutomaticallyOnPhone),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(text.okAction),
-            ),
-          ],
+      onPressed: NavioFeedback.action(
+        context,
+        () => showCupertinoDialog<void>(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: Text(text.routePreferences),
+            content: Text(text.savedAutomaticallyOnPhone),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(text.okAction),
+              ),
+            ],
+          ),
         ),
       ),
+      child: Icon(CupertinoIcons.info, semanticLabel: text.aboutAvoidance),
     ),
   );
 

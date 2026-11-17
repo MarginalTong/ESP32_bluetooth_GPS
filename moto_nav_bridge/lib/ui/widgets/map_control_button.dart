@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../navio_theme.dart';
+import '../navio_feedback.dart';
 
 /// Round button floating on the map. On a dark map style it uses the dark
 /// control color with a white icon.
@@ -33,22 +34,28 @@ class MapControlButton extends StatelessWidget {
   final double? minSize;
 
   @override
-  Widget build(BuildContext context) => Material(
-    key: backgroundKey,
-    color: dark ? NavioColors.mapControlDark : lightBackground,
-    shape: const CircleBorder(),
-    elevation: 1,
-    child: IconButton(
-      onPressed: onPressed,
-      tooltip: tooltip,
-      icon: Icon(
-        icon,
-        size: iconSize,
-        color: dark ? Colors.white : lightIconColor,
+  Widget build(BuildContext context) => NavioPressEffect(
+    child: Material(
+      key: backgroundKey,
+      color: dark ? NavioColors.mapControlDark : lightBackground,
+      shape: const CircleBorder(),
+      elevation: 1,
+      child: IconButton(
+        onPressed: NavioFeedback.action(context, onPressed),
+        enableFeedback: false,
+        tooltip: tooltip,
+        icon: Icon(
+          icon,
+          size: iconSize,
+          color: dark ? Colors.white : lightIconColor,
+        ),
+        constraints: minSize == null
+            ? null
+            : BoxConstraints(
+                minWidth: minSize! < 44 ? 44 : minSize!,
+                minHeight: minSize! < 44 ? 44 : minSize!,
+              ),
       ),
-      constraints: minSize == null
-          ? null
-          : BoxConstraints(minWidth: minSize!, minHeight: minSize!),
     ),
   );
 }

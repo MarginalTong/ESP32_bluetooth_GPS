@@ -6,6 +6,7 @@ import '../../l10n/app_text.dart';
 import '../../models/place_result.dart';
 import '../../models/route_candidate.dart';
 import '../route_preferences_page.dart';
+import '../navio_feedback.dart';
 import 'glass_panel.dart';
 
 /// Destination search, route ETA, stops and Start, shown before a trip.
@@ -41,16 +42,23 @@ class DestinationPanel extends StatelessWidget {
         children: [
           Align(
             alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => RoutePreferencesPage(
-                    nav: context.read<NavigationController>(),
+            child: NavioPressEffect(
+              enabled: true,
+              child: TextButton.icon(
+                style: const ButtonStyle(enableFeedback: false),
+                onPressed: NavioFeedback.action(
+                  context,
+                  () => Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => RoutePreferencesPage(
+                        nav: context.read<NavigationController>(),
+                      ),
+                    ),
                   ),
                 ),
+                icon: const Icon(Icons.tune_rounded, size: 18),
+                label: Text(text.routePreferences),
               ),
-              icon: const Icon(Icons.tune_rounded, size: 18),
-              label: Text(text.routePreferences),
             ),
           ),
           if (selectedRoute?.expectedTravelTimeSeconds != null ||
@@ -62,57 +70,70 @@ class DestinationPanel extends StatelessWidget {
                 loading: previewingRoute,
               ),
             ),
-          InkWell(
-            onTap: onChoose,
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: double.infinity,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.search_rounded),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: destination == null
-                          ? Text(
-                              text.searchPlaceAddressBusiness,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  destination!.name,
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  destination!.address,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
-                    ),
-                    const Icon(Icons.chevron_right_rounded),
-                  ],
+          NavioPressEffect(
+            enabled: true,
+            child: InkWell(
+              enableFeedback: false,
+              onTap: NavioFeedback.action(context, onChoose),
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: double.infinity,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.search_rounded),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: destination == null
+                            ? Text(
+                                text.searchPlaceAddressBusiness,
+                                style: Theme.of(context).textTheme.titleMedium,
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    destination!.name,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    destination!.address,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
           const SizedBox(height: 8),
           if (destination != null)
-            TextButton.icon(
-              onPressed: previewingRoute ? null : onEditWaypoints,
-              icon: const Icon(Icons.add_location_alt_outlined, size: 18),
-              label: Text(text.editStops(waypointCount)),
+            NavioPressEffect(
+              enabled: !previewingRoute,
+              child: TextButton.icon(
+                style: const ButtonStyle(enableFeedback: false),
+                onPressed: NavioFeedback.action(
+                  context,
+                  previewingRoute ? null : onEditWaypoints,
+                ),
+                icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+                label: Text(text.editStops(waypointCount)),
+              ),
             ),
           if (destination == null)
             Padding(
@@ -128,18 +149,33 @@ class DestinationPanel extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               height: 48,
-              child: FilledButton.icon(
-                onPressed: canStart && destination != null && !previewingRoute
-                    ? onStart
-                    : null,
-                icon: const Icon(Icons.navigation_rounded),
-                label: Text(
-                  !canStart
-                      ? text.connectNavScreenFirst
-                      : destination == null
-                      ? text.chooseDestinationFirst
-                      : text.startNavigation,
-                  textAlign: TextAlign.center,
+              child: NavioPressEffect(
+                enabled: canStart && destination != null && !previewingRoute,
+                child: FilledButton.icon(
+                  style: const ButtonStyle(enableFeedback: false),
+                  onPressed: NavioFeedback.action(
+                    context,
+                    canStart && destination != null && !previewingRoute
+                        ? onStart
+                        : null,
+                    feedback: InteractionFeedback.firm,
+                  ),
+                  icon: previewingRoute
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.navigation_rounded),
+                  label: Text(
+                    previewingRoute
+                        ? text.planningRouteShort
+                        : !canStart
+                        ? text.connectNavScreenFirst
+                        : destination == null
+                        ? text.chooseDestinationFirst
+                        : text.startNavigation,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ),
             ),
@@ -156,7 +192,12 @@ class RouteEta extends StatelessWidget {
   final bool loading;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AnimatedSwitcher(
+    duration: NavioMotion.duration(context, NavioMotion.stateChange),
+    child: _value(context),
+  );
+
+  Widget _value(BuildContext context) {
     final text = AppText.of(context);
     final seconds = this.seconds;
     if (loading) {
@@ -188,6 +229,7 @@ class RouteEta extends StatelessWidget {
 
     return Text(
       text.etaSummary(duration, arrival),
+      key: ValueKey(seconds),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       textAlign: TextAlign.right,

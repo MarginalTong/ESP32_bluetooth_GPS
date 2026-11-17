@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'device_illustration.dart';
+import '../navio_feedback.dart';
 
 /// A product silhouette rather than another nested settings card.
 class DeviceHeader extends StatelessWidget {
@@ -34,7 +35,10 @@ class DeviceHeader extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         _status(context),
-        if (!connected) ...[const SizedBox(height: 22), _connectButton()],
+        if (!connected) ...[
+          const SizedBox(height: 22),
+          _connectButton(context),
+        ],
       ],
     ),
   );
@@ -66,14 +70,17 @@ class DeviceHeader extends StatelessWidget {
     ],
   );
 
-  Widget _connectButton() => SizedBox(
-    width: double.infinity,
-    child: CupertinoButton.filled(
-      onPressed: onConnect,
-      borderRadius: BorderRadius.circular(14),
-      child: Text(
-        connectLabel,
-        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+  Widget _connectButton(BuildContext context) => NavioPressEffect(
+    enabled: !busy && onConnect != null,
+    child: SizedBox(
+      width: double.infinity,
+      child: CupertinoButton.filled(
+        onPressed: NavioFeedback.action(context, busy ? null : onConnect),
+        borderRadius: BorderRadius.circular(14),
+        child: Text(
+          busy ? status : connectLabel,
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        ),
       ),
     ),
   );

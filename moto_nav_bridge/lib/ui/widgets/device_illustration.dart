@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import '../../config/app_brand.dart';
 import '../navio_theme.dart';
+import '../navio_feedback.dart';
 
 /// Presentation only; connection actions and state stay in DeviceHeader.
 class DeviceIllustration extends StatelessWidget {
@@ -8,7 +9,8 @@ class DeviceIllustration extends StatelessWidget {
   final bool connected;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => AnimatedContainer(
+    duration: NavioMotion.duration(context, NavioMotion.stateChange),
     width: 136,
     height: 136,
     decoration: BoxDecoration(
@@ -22,27 +24,38 @@ class DeviceIllustration extends StatelessWidget {
           NavioColors.deviceBodyBottom,
         ],
       ),
-      border: Border.all(color: NavioColors.deviceBezel, width: 1.5),
-      boxShadow: const [
+      border: Border.all(
+        color: connected
+            ? CupertinoColors.activeBlue.resolveFrom(context)
+            : NavioColors.deviceBezel,
+        width: 1.5,
+      ),
+      boxShadow: [
         BoxShadow(
-          color: NavioColors.deviceShadow,
+          color: connected
+              ? NavioColors.pairingHalo.withValues(alpha: .22)
+              : NavioColors.deviceShadow,
           blurRadius: 24,
-          offset: Offset(0, 10),
+          offset: const Offset(0, 10),
         ),
       ],
     ),
-    child: Center(child: _symbol()),
+    child: Center(child: _symbol(context)),
   );
 
-  Widget _symbol() => Column(
+  Widget _symbol(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Icon(
-        connected
-            ? CupertinoIcons.location_north_fill
-            : CupertinoIcons.location_north,
-        color: CupertinoColors.white,
-        size: 32,
+      AnimatedSwitcher(
+        duration: NavioMotion.duration(context, NavioMotion.stateChange),
+        child: Icon(
+          key: ValueKey(connected),
+          connected
+              ? CupertinoIcons.location_north_fill
+              : CupertinoIcons.location_north,
+          color: CupertinoColors.white,
+          size: 32,
+        ),
       ),
       const SizedBox(height: 10),
       const Text(

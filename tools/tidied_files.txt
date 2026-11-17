@@ -74,3 +74,9 @@ moto_nav_bridge/lib/ui/widgets/account_button.dart
 moto_nav_bridge/lib/ui/map_settings_page.dart
 moto_nav_bridge/lib/ui/route_preferences_page.dart
 moto_nav_bridge/lib/ui/widgets/map_style_preview.dart
+moto_nav_bridge/lib/services/interaction_haptics.dart
+moto_nav_bridge/lib/ui/navio_feedback.dart
+moto_nav_bridge/lib/ui/widgets/navio_tab_icon.dart
+moto_nav_bridge/test/interaction_haptics_test.dart
+moto_nav_bridge/test/navio_feedback_test.dart
+moto_nav_bridge/test/interaction_controls_test.dart
