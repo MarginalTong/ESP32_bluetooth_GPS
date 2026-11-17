@@ -10,6 +10,8 @@ import '../../services/ble_service.dart';
 import '../device_pairing.dart';
 import '../navio_theme.dart';
 import '../navio_feedback.dart';
+import 'tap_ripple.dart';
+import 'connection_card_content.dart';
 
 /// Display connection status over the map. Once the display has been
 /// connected for a moment the card shrinks into a small pill in the top-left
@@ -37,6 +39,7 @@ class ConnectionCard extends StatefulWidget {
 class _ConnectionCardState extends State<ConnectionCard> {
   Timer? _settleTimer, _expandTimer;
   bool _settled = false, _expanded = false;
+  bool _stopping = false;
   bool? _reportedCompact;
 
   @override
@@ -53,6 +56,22 @@ class _ConnectionCardState extends State<ConnectionCard> {
       _settleTimer = Timer(ConnectionCard.settleDelay, () {
         if (mounted) setState(() => _settled = true);
       });
+    }
+  }
+
+  Future<void> _stopConnection() async {
+    if (_stopping) return;
+    setState(() => _stopping = true);
+    try {
+      await context.read<BleService>().disconnect();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text(AppText.of(context).deviceActionFailed)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _stopping = false);
     }
   }
 
@@ -105,6 +124,8 @@ class _ConnectionCardState extends State<ConnectionCard> {
                     key: const ValueKey('full'),
                     width: widget.fullWidth,
                     status: status,
+                    stopping: _stopping,
+                    onStop: _stopConnection,
                   ),
           ),
         ),
@@ -192,89 +213,59 @@ class _CardStatus {
 }
 
 class _FullCard extends StatelessWidget {
-  const _FullCard({super.key, required this.width, required this.status});
-
+  const _FullCard({
+    super.key,
+    required this.width,
+    required this.status,
+    required this.stopping,
+    required this.onStop,
+  });
   final double? width;
   final _CardStatus status;
+  final bool stopping;
+  final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context) {
     final ble = context.read<BleService>();
     final text = AppText.of(context);
-    final colors = Theme.of(context).colorScheme;
-    final issue = status.issue;
     return SizedBox(
       width: width ?? double.infinity,
       child: NavioPressEffect(
-        enabled: !status.busy,
-        child: InkWell(
-          enableFeedback: false,
-          borderRadius: BorderRadius.circular(18),
-          onTap: NavioFeedback.action(
-            context,
-            status.busy
-                ? null
-                : () => status.connected
-                      ? ble.disconnect()
-                      : connectDisplay(context, ble),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-            child: Row(
-              children: [
-                _StatusDot(
-                  color: status.connected
-                      ? NavioColors.connected
+        enabled: !stopping,
+        pressedScale: .94,
+        releaseCurve: Curves.easeOutBack,
+        releaseDuration: NavioMotion.connectRelease,
+        child: TapRipple(
+          enabled: !stopping,
+          child: InkWell(
+            enableFeedback: false,
+            splashFactory: NoSplash.splashFactory,
+            highlightColor: Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+            onTap: NavioFeedback.action(
+              context,
+              stopping
+                  ? null
+                  : () => status.connected || status.busy
+                        ? onStop()
+                        : connectDisplay(context, ble),
+            ),
+            child: ConnectionCardContent(
+              connected: status.connected,
+              busy: status.busy,
+              stopping: stopping,
+              cancelLabel: text.cancelAction,
+              title:
+                  status.issue?.$1 ??
+                  (status.connected
+                      ? text.readyToGo
                       : status.busy
-                      ? colors.primary
-                      : colors.outline,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        issue != null
-                            ? issue.$1
-                            : status.connected
-                            ? text.readyToGo
-                            : status.busy
-                            ? text.connectingDisplay
-                            : text.tapToConnect,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.start,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 1),
-                      Text(
-                        status.busy ? status.label : issue?.$2 ?? status.label,
-                        textAlign: TextAlign.start,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (status.busy)
-                  const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  Icon(
-                    status.connected
-                        ? Icons.bluetooth_connected
-                        : Icons.bluetooth,
-                    color: colors.onSurfaceVariant,
-                  ),
-              ],
+                      ? text.connectingDisplay
+                      : text.tapToConnect),
+              message: status.busy
+                  ? status.label
+                  : status.issue?.$2 ?? status.label,
             ),
           ),
         ),
@@ -309,7 +300,7 @@ class _CompactPill extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const _StatusDot(color: NavioColors.connected),
+              const ConnectionStatusDot(color: NavioColors.connected),
               const SizedBox(width: 8),
               Text(
                 AppBrand.name,
@@ -324,19 +315,5 @@ class _CompactPill extends StatelessWidget {
         ),
       ),
     ),
-  );
-}
-
-class _StatusDot extends StatelessWidget {
-  const _StatusDot({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => AnimatedContainer(
-    duration: NavioMotion.duration(context, NavioMotion.stateChange),
-    width: 10,
-    height: 10,
-    decoration: BoxDecoration(shape: BoxShape.circle, color: color),
   );
 }

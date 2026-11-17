@@ -80,3 +80,7 @@ moto_nav_bridge/lib/ui/widgets/navio_tab_icon.dart
 moto_nav_bridge/test/interaction_haptics_test.dart
 moto_nav_bridge/test/navio_feedback_test.dart
 moto_nav_bridge/test/interaction_controls_test.dart
+moto_nav_bridge/lib/ui/widgets/tap_ripple.dart
+moto_nav_bridge/test/tap_ripple_test.dart
+moto_nav_bridge/test/connection_card_cancel_test.dart
+moto_nav_bridge/lib/ui/widgets/connection_card_content.dart

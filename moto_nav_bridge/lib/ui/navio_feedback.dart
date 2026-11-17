@@ -36,6 +36,7 @@ abstract final class NavioMotion {
   static const press = Duration(milliseconds: 90);
   static const release = Duration(milliseconds: 180);
   static const stateChange = Duration(milliseconds: 220);
+  static const connectRelease = Duration(milliseconds: 240);
 
   static Duration duration(BuildContext context, Duration normal) =>
       MediaQuery.disableAnimationsOf(context) ? Duration.zero : normal;
@@ -45,9 +46,19 @@ abstract final class NavioMotion {
 /// button semantics or forward taps. Existing native buttons own activation,
 /// keyboard access and scroll cancellation; haptics belong to their callbacks.
 class NavioPressEffect extends StatefulWidget {
-  const NavioPressEffect({super.key, required this.child, this.enabled = true});
+  const NavioPressEffect({
+    super.key,
+    required this.child,
+    this.enabled = true,
+    this.pressedScale = .97,
+    this.releaseCurve = Curves.easeOutCubic,
+    this.releaseDuration = NavioMotion.release,
+  }) : assert(pressedScale > 0 && pressedScale <= 1);
   final Widget child;
   final bool enabled;
+  final double pressedScale;
+  final Curve releaseCurve;
+  final Duration releaseDuration;
 
   @override
   State<NavioPressEffect> createState() => _NavioPressEffectState();
@@ -104,12 +115,12 @@ class _NavioPressEffectState extends State<NavioPressEffect> {
         if (event.pointer == _pointer) _release();
       },
       child: AnimatedScale(
-        scale: !reduce && widget.enabled && _pressed ? .97 : 1,
+        scale: !reduce && widget.enabled && _pressed ? widget.pressedScale : 1,
         duration: NavioMotion.duration(
           context,
-          _pressed ? NavioMotion.press : NavioMotion.release,
+          _pressed ? NavioMotion.press : widget.releaseDuration,
         ),
-        curve: Curves.easeOutCubic,
+        curve: _pressed ? Curves.easeOutCubic : widget.releaseCurve,
         child: widget.child,
       ),
     );
