@@ -64,3 +64,6 @@ moto_nav_bridge/lib/services/valhalla/valhalla_speed_limits.dart
 moto_nav_bridge/lib/services/send_throttle.dart
 firmware/platformio/instruction_layout.h
 firmware/tests/instruction_layout_test.cpp
+firmware/platformio/instrument_clock.h
+firmware/platformio/instrument_clock.cpp
+firmware/tests/instrument_clock_test.cpp

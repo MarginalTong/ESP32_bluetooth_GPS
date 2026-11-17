@@ -21,3 +21,5 @@ void drawDistance(const NavState& navigation, bool blinkState);
 void drawSpeedLimit(uint8_t kph);
 void drawBottomError();
 void drawArrivalCheck(uint8_t progress);
+// False requests the existing digital fallback (no native layer / low memory).
+bool drawInstrumentClock(const char* time);

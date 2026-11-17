@@ -230,6 +230,12 @@ static int drawnSpeedLimit = -1;
 void drawSpeedLimit(uint8_t kph) { drawnSpeedLimit = kph; }
 void drawBottomError() { calls.push_back("diagnostic"); }
 void drawArrivalCheck(uint8_t) { calls.push_back("check"); }
+bool drawInstrumentClock(const char* text) {
+  if (!native) return false;
+  calls.push_back("instrument_clock");
+  calls.push_back(text);
+  return true;
+}
 
 static bool drew(const char* call) {
   return std::find(calls.begin(), calls.end(), call) != calls.end();
@@ -324,17 +330,17 @@ static void pages() {
   native = true;
 #endif
   drawPage(UiScreen::Clock, true);
-  check(brandDraws.empty() && drew("12:34"), "connected clock page shows the time without NAVIO");
-  check(drew("12:34") && drew("ready to go"), "clock gets the supplied time and connection subtitle");
-  check(clockTextSize == 7, "clock digits keep their existing size");
+  check(brandDraws.empty() && drew("12:34"), "connected clock replaces the standalone wordmark");
 #if NAV_ROUND_DISPLAY
-  check(clockSubtitleSize == 1, "round clock readiness subtitle is one size smaller");
+  check(drew("instrument_clock") && calls.size() == 4,
+        "connected round page delegates one instrument clock without old digital overlay");
   native = false;
   drawPage(UiScreen::Clock, true);
   check(clockTextSize == 7 && clockSubtitleSize == 1,
         "fallback round clock keeps the same smaller subtitle and full-size time");
   native = true;
 #else
+  check(clockTextSize == 7 && drew("ready to go"), "legacy clock retains digital time");
   check(clockSubtitleSize == 2, "rectangular clock layout is unchanged");
 #endif
   drawPage(UiScreen::Clock, false);
@@ -360,9 +366,9 @@ static void idleFooterPlacement() {
     constexpr int bottomTop = 209;
     expectLargeBrand();
     drawPage(UiScreen::Clock, true);
-    check(clockTextSize == 7 && clockSubtitleSize == 1,
-          "bottom placement preserves clock and readiness sizes");
-    check(centeredTextDraws.size() == 1 && centeredTextDraws[0].text == "ready to go" &&
+    check(nativeFont ? drew("instrument_clock") : clockTextSize == 7 && clockSubtitleSize == 1,
+          "native clock uses instrument face, low-memory fallback retains digital clock");
+    check(nativeFont ? centeredTextDraws.empty() : centeredTextDraws.size() == 1 && centeredTextDraws[0].text == "ready to go" &&
               centeredTextDraws[0].top == bottomTop && centeredTextDraws[0].size == 1,
           "clock readiness hint keeps its small bottom-centered placement");
     drawPage(UiScreen::Clock, false);

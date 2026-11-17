@@ -174,18 +174,32 @@ then BOOT pairing; disconnected/idle states are resolved before route states;
 rerouting wins over STOP/ARRIVED; STOP shows no guidance; ARRIVED is never marked stale,
 draws an 800 ms check animation and returns to the clock after four seconds;
 otherwise stale guidance and live navigation are distinct pages. A connected,
-idle display (including after an explicit trip end) shows the clock page: the
-time and "ready to go", with no wordmark. On round panels the readiness
-subtitle uses size 1 (reduced from size 2 at the user's request); the time
-digits retain size 7. Other pages and the rectangular layout are unchanged.
+idle display (including after an explicit trip end) shows the clock page.
+On native round panels this is a mechanical-instrument-style clock: black
+face, ivory 60-minute ticks and 12 hour numbers, ivory hour hand and red
+minute hand, a small NAVIO signature and a 24-hour digital time window.
+The hour hand advances with minutes; there is no seconds hand because the
+existing phone time sync and idle refresh are minute-based. The small
+"ready to go" label stays at the bottom. `platformio/instrument_clock.h`
+owns geometry, colours and rendering; `instrument_clock.cpp` connects it to
+the existing frame compositor without changing driver settings or BLE.
+The RGB565 face is cached until the minute or panel size changes. At 360px
+it retains about 253 KiB plus a temporary 127 KiB coverage mask during a
+redraw; it does not add a continuous animation or refresh timer.
+Without the native layer or sufficient memory, the old digital clock
+(size 7 digits, size 1 subtitle) remains usable. The rectangular clock is
+unchanged. `run_instrument_clock_test.sh` checks all 1,440 time values,
+hand geometry, caching, colours and AA coverage at 240/360/412px; pass a PPM
+path to generate a preview from the same renderer used on the device.
 The NAVIO standby page shows only the large wordmark, with no small connection
 hint, whether connected or disconnected (user-requested minimal branding).
 On round clock pages, the small ready to go label is bottom-centered
 independently of the time title. Its bottom inset is 24 logical canvas pixels
 to keep it inside the narrowing circular aperture. The two-line CONNECTION
 LOST / RECONNECT PHONE footer uses the same bottom alignment with a 6-pixel
-line gap. Font sizes and pairing/navigation pages are unchanged; the
-rectangular clock retains its existing layout. Footer spacing lives only in
+line gap. Pairing/navigation pages are unchanged; the
+rectangular clock retains its existing layout. The instrument face owns its
+readiness label; warning and digital-fallback footer spacing lives in
 `ui_screens.cpp::drawIdleFooter` (user-requested standby layout tuning).
 There is no separate connected
 "ready to go" page; until the phone has sent the time, a connected display
@@ -260,7 +274,7 @@ arm (matched by position and side in `platformio/map_motion.h`); it never
 slides from one junction to another, and a new arm appears in place. The 25 ms animation frame limit is
 unchanged.
 
-The speed limit (`L` in the BLE contract) is the only colour on the panel: an
+The speed limit (`L` in the BLE contract) adds colour to navigation: an
 Australian regulatory sign (red ring, white disc, black number) to the right
 of the instruction panel, across its upper edge, 54 px across in the 240-px
 layout with a 2 px black margin

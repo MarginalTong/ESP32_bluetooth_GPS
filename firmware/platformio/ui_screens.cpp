@@ -52,8 +52,9 @@ void drawClock(const UiState& state, const UiRenderContext& context) {
     drawLargeBrand();
     return;
   }
-  // The clock page shows only the time: no wordmark in the corner.
+  // The instrument renderer owns the face; never overlay the standby logo.
 #if NAV_ROUND_DISPLAY
+  if (drawInstrumentClock(context.clockText)) return;
   // Keep the readiness hint subordinate to the large time digits.
   drawRoundCenteredStatus(context.clockText, 7, nullptr, 1);
   drawIdleFooter("ready to go", context);
