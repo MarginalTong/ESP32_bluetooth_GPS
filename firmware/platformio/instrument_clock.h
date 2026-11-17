@@ -9,6 +9,9 @@
 // motorcycle dial reference. This is a clock, not an RPM or speed gauge.
 namespace InstrumentClockStyle {
 constexpr float centerX = 120, centerY = 120, radius = 116;
+// Reference supplied 2026-11-17: hollow red hub and a slim tapered needle.
+constexpr float hubRadius = 12, hubHalfStroke = 1.6f;
+constexpr float needleRoot = 11, needleLength = 98, needleHalfWidth = 2.2f;
 constexpr uint8_t ivory[3] = {246, 222, 181};
 constexpr uint8_t red[3] = {244, 48, 54};
 }  // namespace InstrumentClockStyle
@@ -62,10 +65,7 @@ struct InstrumentClock {
     tint(mask, InstrumentClockStyle::ivory, false);
     mask.clear();
     needle(mask, scale, timeAngle(hour, minute));
-    const float x = InstrumentClockStyle::centerX * scale;
-    const float y = InstrumentClockStyle::centerY * scale;
-    mask.fillRoundRect(x - 7 * scale, y - 7 * scale,
-                       x + 7 * scale, y + 7 * scale, 7 * scale, 255);
+    hub(mask, scale);
     tint(mask, InstrumentClockStyle::red, true);
     timeWindow(mask, scale, text);
     free(maskPixels);
@@ -129,17 +129,34 @@ struct InstrumentClock {
   }
 
   static void needle(GrayLayer& mask, float s, float a) {
-    // Broad instrument blade with a tapered tip, not a thin clock hand.
+    using namespace InstrumentClockStyle;
     const float dx = sinf(a), dy = -cosf(a), nx = -dy, ny = dx;
-    const float x = InstrumentClockStyle::centerX, y = InstrumentClockStyle::centerY;
-    // Overlap the tip and solid shaft so independently anti-aliased edges
-    // cannot leave a diagonal seam through the blade.
-    radial(mask, s, a, -10, 86, 4.5f, 255);
-    mask.fillTriangle((x + 84 * dx + 4.5f * nx) * s,
-                       (y + 84 * dy + 4.5f * ny) * s,
-                       (x + 84 * dx - 4.5f * nx) * s,
-                       (y + 84 * dy - 4.5f * ny) * s,
-                       (x + 98 * dx) * s, (y + 98 * dy) * s, 255);
+    mask.fillTriangle((centerX + needleRoot * dx + needleHalfWidth * nx) * s,
+                       (centerY + needleRoot * dy + needleHalfWidth * ny) * s,
+                       (centerX + needleRoot * dx - needleHalfWidth * nx) * s,
+                       (centerY + needleRoot * dy - needleHalfWidth * ny) * s,
+                       (centerX + needleLength * dx) * s,
+                       (centerY + needleLength * dy) * s, 255);
+  }
+
+  static void hub(GrayLayer& mask, float s) {
+    using namespace InstrumentClockStyle;
+    const float cx = centerX * s, cy = centerY * s;
+    const float radius = hubRadius * s, halfStroke = hubHalfStroke * s;
+    const float reach = radius + halfStroke + 1;
+    int16_t left, right, top, bottom;
+    mask.bounds(cx - reach, cx + reach, mask.width, left, right);
+    mask.bounds(cy - reach, cy + reach, mask.clipBottom, top, bottom);
+    // Distance coverage of an annulus: no painted disc or erasing pass, so
+    // the hub remains hollow at every angle and native rendering size.
+    for (int16_t y = top; y <= bottom; ++y)
+      for (int16_t x = left; x <= right; ++x) {
+        const float dx = x + 0.5f - cx, dy = y + 0.5f - cy;
+        const float distance = fabsf(sqrtf(dx * dx + dy * dy) - radius);
+        const uint8_t value = uint8_t(255 * GrayLayer::clamp01(halfStroke + 0.5f - distance));
+        uint8_t& pixel = mask.pixels[size_t(y) * mask.width + x];
+        if (value > pixel) pixel = value;
+      }
   }
 
   void tint(const GrayLayer& mask, const uint8_t* rgb, bool overlay) {

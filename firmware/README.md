@@ -176,8 +176,9 @@ draws an 800 ms check animation and returns to the clock after four seconds;
 otherwise stale guidance and live navigation are distinct pages. A connected,
 idle display (including after an explicit trip end) shows the clock page.
 On native round panels this is a mechanical-instrument-style clock: black
-face, ivory ticks extending to the screen edge and a single broad, tapered
-red instrument needle. A 270-degree sweep maps the entire day from 0 to 24,
+face, ivory ticks extending to the screen edge and a single slim, tapered
+red instrument needle with a hollow red hub ring and no rear tail, matching
+the user's updated needle reference. A 270-degree sweep maps the entire day from 0 to 24,
 with labels every four hours; noon is at the top. There is no second hand or
 separate minute hand. A small NAVIO signature and a 24-hour digital window
 give the exact time in the open bottom of the sweep, with ready to go below.

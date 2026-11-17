@@ -60,8 +60,14 @@ int main(int argc, char** argv) {
       warm += r > 150 && g > 120;
       shades += r > 20 && r < 150;
     }
-    check(changed > 10 && red > 400 && warm > 200 && shades > 200,
-          "single thick needle moves, ivory face and AA edges remain");
+    check(changed > 10 && red > 100 && warm > 200 && shades > 200,
+          "single slim needle moves, ivory face and AA edges remain");
+    for (int y = size * 115 / 240; y < size * 125 / 240; ++y)
+      for (int x = size * 115 / 240; x < size * 125 / 240; ++x)
+        check(clock.sprite.pixels[y * size + x] == 0x0020, "hub center remains black and hollow");
+    const int cx = size / 2, cy = size / 2;
+    const uint16_t ring = clock.sprite.pixels[cy * size + cx + size * 12 / 240];
+    check((ring >> 11) > 20 && ((ring >> 5) & 63) < 25, "hollow hub has a red ring");
     int edgeMarks = 0;
     for (int y = 0; y < size; ++y)
       for (int x = 0; x < size; ++x) {
