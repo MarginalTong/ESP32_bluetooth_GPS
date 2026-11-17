@@ -88,6 +88,8 @@ class NavigationEngine {
     // hairpin the straight line to the turn is far shorter than the road.
     // Never report less than the straight line, e.g. when beside the road.
     final dist = math.max(straight, _remainingStepMeters(position)).round();
+    // After _remainingStepMeters: it matches the rider to a route segment.
+    final limit = _speedLimitKph();
 
     // Route and junction previews use the same projection frame.
     final preview = MapPreview.build(position, _remainingRoutePoints());
@@ -96,7 +98,22 @@ class NavigationEngine {
       distanceMeters: dist < 0 ? 0 : dist,
       routePreviewPoints: preview?.routePoints() ?? const [],
       sideRoadPreviewPoints: SideRoadPreview.points(preview, _sideRoads),
+      speedLimitKph: limit,
     );
+  }
+
+  /// The limit of the route segment the rider was just matched to. Null when
+  /// the map has none there, or the rider is too far from the route for its
+  /// limit to be the limit of the road they are on.
+  int? _speedLimitKph() {
+    final limits = _steps[_index].speedLimitsKph;
+    if (limits == null ||
+        _progressSegment >= limits.length ||
+        _progressOffsetMeters > _onRoadMeters) {
+      return null;
+    }
+    final limit = limits[_progressSegment];
+    return limit > 0 ? limit : null;
   }
 
   /// Advances while the rider has effectively reached the current step's
@@ -281,6 +298,8 @@ class NavigationEngine {
 
   int _progressStep = -1;
   int _progressSegment = 0;
+  // Distance from the rider to the matched segment, metres.
+  double _progressOffsetMeters = double.infinity;
   List<double> _stepSuffixMeters = const [];
 
   /// Road distance from the rider's projection onto the current step to the
@@ -328,6 +347,7 @@ class NavigationEngine {
         );
       }
     }
+    _progressOffsetMeters = best?.distanceMeters ?? double.infinity;
     if (best == null) return 0;
     _progressSegment = bestIndex;
     return best.projected.distanceTo(points[bestIndex + 1]) +

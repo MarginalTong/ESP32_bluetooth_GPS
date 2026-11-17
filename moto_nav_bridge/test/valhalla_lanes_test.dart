@@ -176,6 +176,7 @@ void main() {
       var calls = 0;
       final service = ValhallaDirectionsService(
         laneGuidance: false,
+        speedLimits: false,
         client: MockClient((_) async {
           calls++;
           return http.Response(jsonEncode(response()), 200);

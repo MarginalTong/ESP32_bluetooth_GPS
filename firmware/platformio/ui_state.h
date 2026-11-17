@@ -33,14 +33,14 @@ struct UiInputs {
   bool rerouting = false;
   bool packetTimedOut = false;
   uint8_t routePointCount = 0;
-  NavState navigation = {Direction::Stop, 0};
+  NavState navigation = {Direction::Stop, 0, 0};
   uint32_t arrivalElapsedMs = 0;
 };
 
 struct UiState {
   UiScreen screen = UiScreen::Off;
   bool connected = false;  // Frame-local brand layout and readiness subtitle.
-  NavState navigation = {Direction::Stop, 0};
+  NavState navigation = {Direction::Stop, 0, 0};
   uint8_t arrivalProgress = 0;
 };
 

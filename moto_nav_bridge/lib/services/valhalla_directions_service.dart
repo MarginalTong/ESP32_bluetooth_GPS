@@ -13,6 +13,7 @@ import 'navigation_ports.dart';
 import 'valhalla/polyline6.dart';
 import 'valhalla/valhalla_lanes.dart';
 import 'valhalla/valhalla_route_parser.dart';
+import 'valhalla/valhalla_speed_limits.dart';
 import 'waypoint_plan.dart';
 
 /// Direction-aware route planning against an explicitly configured Valhalla server.
@@ -25,6 +26,7 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
     Duration timeout = const Duration(seconds: 8),
     this.routePreferences,
     this.laneGuidance = true,
+    this.speedLimits = true,
   }) : _client = client ?? http.Client(),
        _routeUrl = routeUrl ?? ApiConfig.valhallaRouteUrl,
        // Preserve the public `timeout` constructor parameter.
@@ -36,6 +38,9 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
 
   /// Also ask for the OSRM-format response, the only one with lane data.
   final bool laneGuidance;
+
+  /// Also ask `trace_attributes` for the posted limits along each route.
+  final bool speedLimits;
   final String _routeUrl;
   final Duration _timeout;
   final Set<Completer<void>> _pending = {};
@@ -99,9 +104,40 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
       await _post(uri, body),
       expectedLegs: waypoints.length + 1,
     );
+    // Limits need the route's shape, so they are asked for once it is known,
+    // while the lane response is still being awaited.
+    final limited = Future.wait([
+      for (final route in routes) _withSpeedLimits(uri, route),
+    ]);
     final osrm = await lanes.timeout(_laneGrace, onTimeout: () => null);
+    final withLimits = await limited;
     if (_disposed) throw DirectionsException('Valhalla service is disposed');
-    return ValhallaLanes.attach(routes, osrm);
+    return ValhallaLanes.attach(withLimits, osrm);
+  }
+
+  /// Extra wait for the speed limits of a route that has arrived. Like
+  /// lanes they are optional and never fail the route.
+  static const _limitGrace = Duration(seconds: 2);
+
+  Future<RouteCandidate> _withSpeedLimits(Uri route, RouteCandidate candidate) {
+    if (!speedLimits) return Future.value(candidate);
+    // Same server and path prefix as /route.
+    final uri = route.replace(
+      path:
+          '${route.path.substring(0, route.path.length - '/route'.length)}'
+          '/trace_attributes',
+    );
+    return Future.wait([
+      for (final leg in ValhallaSpeedLimits.legs(candidate))
+        _limitResponse(uri, ValhallaSpeedLimits.request(leg)),
+    ]).then((bodies) => ValhallaSpeedLimits.attach(candidate, bodies));
+  }
+
+  Future<String?> _limitResponse(Uri uri, Map<String, Object>? request) {
+    if (request == null) return Future.value(null);
+    return _post(uri, request)
+        .then<String?>((value) => value, onError: (_) => null)
+        .timeout(_limitGrace, onTimeout: () => null);
   }
 
   /// Extra wait for the lane response once the route has arrived.

@@ -41,6 +41,7 @@
 #include "../platformio/gray_layer.h"
 #include "../platformio/map_motion.h"
 #include "../platformio/side_road_ray.h"
+#include "../platformio/speed_limit_sign.h"
 #include "../platformio/text_cache.h"
 
 // ======================================================
@@ -178,7 +179,7 @@ uint32_t lastDisplayActivityMs = 0;
 // Navigation state
 // ======================================================
 
-NavState nav = {Direction::Stop, 0};
+NavState nav = {Direction::Stop, 0, 0};
 bool rerouting = false;
 bool clockSynced = false;
 UiState uiState;
@@ -312,7 +313,7 @@ struct BleMailbox {
   uint32_t disconnects = 0;
   bool clockSynced = false;
   bool navReady = false;
-  NavState nav = {Direction::Stop, 0};
+  NavState nav = {Direction::Stop, 0, 0};
   bool rerouting = false;
   bool tripEnded = false;
   float map[MAP_VALUE_COUNT] = {};
@@ -348,6 +349,10 @@ MapMotion mapMotion;
 GrayLayer nativeLayer;
 // Text is rasterized once and reused: platformio/text_cache.h.
 TextCache textCache;
+// The only colour on the panel: platformio/speed_limit_sign.h.
+SpeedLimitSign speedLimitSign;
+// The sprite to compose over the current frame; cleared once presented.
+const ColorSprite* frameSprite = nullptr;
 PanelComposer panelComposer;
 // Set when the current frame drew into nativeLayer; cleared once presented.
 bool nativeLayerDrawn = false;
@@ -812,6 +817,8 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
 
     int distance = doc["dist"].as<int>();
     distance = constrain(distance, 0, MAX_DISTANCE_M);
+    // Optional; a missing or impossible limit shows no sign.
+    const uint8_t speedLimit = SpeedLimitSign::valid(doc["L"] | 0L);
 
     const bool reroutingPacket = doc["rerouting"] | false;
     const bool endTripPacket = doc["end"] | false;
@@ -831,7 +838,7 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     // with the previous distance, flags or geometry.
     portENTER_CRITICAL(&stateMux);
     memcpy(mailbox.map, mapValues, sizeof(mailbox.map));
-    mailbox.nav = {direction, distance};
+    mailbox.nav = {direction, distance, speedLimit};
     mailbox.rerouting = reroutingPacket;
     mailbox.tripEnded = endTripPacket;
     mailbox.routes = routePreviewPointCount;
@@ -1093,12 +1100,13 @@ void presentDisplay() {
   for (int16_t y = 0; y < PANEL_VIEW_HEIGHT; y += bandRows) {
     const int16_t rows =
         PANEL_VIEW_HEIGHT - y < bandRows ? int16_t(PANEL_VIEW_HEIGHT - y) : bandRows;
-    panelComposer.compose(source, layer, band, y, rows);
+    panelComposer.compose(source, layer, band, y, rows, frameSprite);
     const uint32_t transferStartUs = micros();
     tft.draw16bitRGBBitmap(PANEL_VIEW_X, PANEL_VIEW_Y + y, band, PANEL_VIEW_WIDTH, rows);
     lastFrameTransferUs += micros() - transferStartUs;
   }
   nativeLayerDrawn = false;
+  frameSprite = nullptr;
 #else
   const uint32_t transferStartUs = micros();
   tft.drawRGBBitmap(0, 0, display.getBuffer(), SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -1129,6 +1137,20 @@ void drawStroke(float x0, float y0, float x1, float y1, uint8_t thickness) {
 #endif
   drawThickLine(lroundf(x0), lroundf(y0), lroundf(x1), lroundf(y1), COLOR_ROUTE,
                 thickness);
+}
+
+void drawSpeedLimit(uint8_t kph) {
+#if NAV_ROUND_DISPLAY
+  // Canvas pixels to panel-view pixels.
+  constexpr float viewScale = float(PANEL_VIEW_WIDTH) / SCREEN_WIDTH;
+  if (speedLimitSign.prepare(kph, SpeedSignStyle::centerX * viewScale,
+                             SpeedSignStyle::centerY * viewScale,
+                             SpeedSignStyle::diameter * viewScale,
+                             SpeedSignStyle::halo * viewScale))
+    frameSprite = &speedLimitSign.sprite;
+#else
+  (void)kph;  // The original rectangular panel has no room beside its map.
+#endif
 }
 
 void drawArrivalCheck(uint8_t progress) {
@@ -1886,7 +1908,7 @@ void applyBleMailbox() {
     hasReceivedNavPacket = false;
     lastLivePacketMs = 0;
     livePacketTimedOut = false;
-    nav = {Direction::Stop, 0};
+    nav = {Direction::Stop, 0, 0};
     rerouting = false;
     displayDirty = true;
   }

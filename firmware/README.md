@@ -248,6 +248,15 @@ arm (matched by position and side in `platformio/map_motion.h`); it never
 slides from one junction to another, and a new arm appears in place. The 25 ms animation frame limit is
 unchanged.
 
+The speed limit (`L` in the BLE contract) is the only colour on the panel: an
+Australian regulatory sign (red ring, white disc, black number) to the right
+of the map, 54 px across in the 240-px layout with a 2 px black margin
+(`SpeedSignStyle` in `platformio/speed_limit_sign.h`). It is a small RGB565
+sprite composed over the gray layer and redrawn only when the limit changes.
+It is shown only on the live navigation page and only for a limit the phone
+sent; the display never keeps or guesses one
+(`run_speed_limit_sign_test.sh`).
+
 Drawing cost decides how smooth the map animation is (about 6 FPS was
 measured on 2026-11-06: 130 ms of drawing per frame, 32 ms of LCD transfer),
 so the rasterizer in `platformio/gray_layer.h` avoids what the ESP32-S3 does
@@ -339,6 +348,10 @@ Payload from the phone (signed; unsigned writes are rejected):
   units, each from its route junction outwards, nearest junction first. The
   display draws up to 8 (firmware before 2026-11-13 drew the first 2 and
   ignored the rest). Only the direction of a segment is used.
+- Optional `L`: the posted speed limit where the rider is, in km/h (5–130).
+  The display shows it as a sign beside the map while guidance is live.
+  Missing, 0 or out of range means unknown: no sign. Firmware before
+  2026-11-17 ignores it.
 - A write longer than 400 bytes, signature included, is rejected. The app
   drops the farthest `R` segments so a packet never exceeds it.
 - The suffix is the first 8 bytes of HMAC-SHA256(key, nonce ‖ JSON), in hex.

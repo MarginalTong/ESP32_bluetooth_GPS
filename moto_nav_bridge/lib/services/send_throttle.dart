@@ -5,7 +5,7 @@ import '../models/nav_state.dart';
 /// on its own; we only need to push meaningful changes).
 ///
 /// Sends when ANY of:
-///   - the direction changed, OR
+///   - the direction or the speed limit changed, OR
 ///   - the distance changed by >= [minDistanceDeltaMeters], OR
 ///   - at least [minInterval] has elapsed since the last send (heartbeat).
 ///
@@ -31,6 +31,7 @@ class SendThrottle {
     if (candidate.rerouting != last.rerouting) return true;
     if (candidate.tripEnded != last.tripEnded) return true;
     if (candidate.direction != last.direction) return true;
+    if (candidate.speedLimitKph != last.speedLimitKph) return true;
     if (!_listEquals(candidate.routePreviewPoints, last.routePreviewPoints)) {
       return true;
     }

@@ -13,6 +13,7 @@ class NavState {
     required this.distanceMeters,
     this.routePreviewPoints = const [],
     this.sideRoadPreviewPoints = const [],
+    this.speedLimitKph,
     this.rerouting = false,
     this.tripEnded = false,
   });
@@ -56,6 +57,10 @@ class NavState {
   /// The farthest arms are left off the wire when the packet would be too
   /// long for the firmware (see [toWire]).
   final List<int> sideRoadPreviewPoints;
+
+  /// The posted limit where the rider is, in km/h (sent as `L`); null when
+  /// the map does not record one, so the display shows no sign.
+  final int? speedLimitKph;
   final bool rerouting;
 
   /// Signed end-of-trip marker; unlike STOP, it returns the display to NAVIO.
@@ -64,6 +69,7 @@ class NavState {
   Map<String, dynamic> toJson() => {
     'dir': direction.wire,
     'dist': distanceMeters,
+    if (speedLimitKph != null) 'L': speedLimitKph,
     if (tripEnded) 'end': true,
     if (rerouting) 'rerouting': true,
     if (routePreviewPoints.isNotEmpty) 'P': routePreviewPoints,
@@ -79,6 +85,7 @@ class NavState {
     final buffer = StringBuffer(
       '{"dir":"${direction.wire}","dist":$distanceMeters',
     );
+    if (speedLimitKph != null) buffer.write(',"L":$speedLimitKph');
     if (tripEnded) buffer.write(',"end":true');
     if (points.isNotEmpty) {
       buffer.write(',"P":[${points.join(',')}]');
@@ -106,6 +113,7 @@ class NavState {
     int? distanceMeters,
     List<int>? routePreviewPoints,
     List<int>? sideRoadPreviewPoints,
+    int? speedLimitKph,
     bool? rerouting,
     bool? tripEnded,
   }) => NavState(
@@ -115,6 +123,7 @@ class NavState {
     distanceMeters: distanceMeters ?? this.distanceMeters,
     routePreviewPoints: routePreviewPoints ?? this.routePreviewPoints,
     sideRoadPreviewPoints: sideRoadPreviewPoints ?? this.sideRoadPreviewPoints,
+    speedLimitKph: speedLimitKph ?? this.speedLimitKph,
   );
 
   @override
@@ -124,6 +133,7 @@ class NavState {
       other.tripEnded == tripEnded &&
       other.direction == direction &&
       other.distanceMeters == distanceMeters &&
+      other.speedLimitKph == speedLimitKph &&
       _listEquals(other.routePreviewPoints, routePreviewPoints) &&
       _listEquals(other.sideRoadPreviewPoints, sideRoadPreviewPoints);
 
@@ -133,6 +143,7 @@ class NavState {
     rerouting,
     tripEnded,
     distanceMeters,
+    speedLimitKph,
     Object.hashAll(routePreviewPoints),
     Object.hashAll(sideRoadPreviewPoints),
   );

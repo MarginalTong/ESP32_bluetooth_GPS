@@ -40,6 +40,17 @@ void main() {
     );
   });
 
+  test('sends immediately when the speed limit changes', () {
+    final th = SendThrottle();
+    final before = s(DeviceDirection.up, 500).copyWith(speedLimitKph: 60);
+    th.markSent(before, t0);
+    final soon = t0.add(const Duration(milliseconds: 100));
+    expect(th.shouldSend(before, soon), isFalse);
+    expect(th.shouldSend(before.copyWith(speedLimitKph: 40), soon), isTrue);
+    // The limit ending (no sign) is a change too.
+    expect(th.shouldSend(s(DeviceDirection.up, 500), soon), isTrue);
+  });
+
   test('sends immediately on direction change', () {
     final th = SendThrottle();
     th.markSent(s(DeviceDirection.up, 500), t0);

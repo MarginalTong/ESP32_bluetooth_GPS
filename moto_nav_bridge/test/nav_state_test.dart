@@ -10,6 +10,18 @@ void main() {
       expect(s.toWire(), '{"dir":"LEFT","dist":200}');
     });
 
+    test('a known speed limit is sent as L, an unknown one is left out', () {
+      const s = NavState(
+        direction: DeviceDirection.left,
+        distanceMeters: 200,
+        speedLimitKph: 60,
+      );
+      expect(s.toWire(), '{"dir":"LEFT","dist":200,"L":60}');
+      expect(s.toJson()['L'], 60);
+      expect(s == s.copyWith(speedLimitKph: 50), isFalse);
+      expect(NavState.stopped.toJson().containsKey('L'), isFalse);
+    });
+
     test('BEAR_RIGHT serializes with the firmware token', () {
       const s = NavState(
         direction: DeviceDirection.bearRight,

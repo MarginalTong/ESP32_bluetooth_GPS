@@ -289,9 +289,17 @@ struct GrayLayer {
   }
 };
 
+// A small colour picture laid over the composed frame, positioned in panel
+// view pixels. A pixel of 0 is transparent.
+struct ColorSprite {
+  uint16_t* pixels = nullptr;  // RGB565, `width` per row
+  int16_t x = 0, y = 0, width = 0, height = 0;
+};
+
 // Builds one full panel frame: UI from the low-resolution canvas (nearest
 // sample) on top of the independently sized gray layer, black outside the
-// round aperture. Lookup tables are computed once.
+// round aperture, with an optional colour sprite on top. Lookup tables are
+// computed once.
 struct PanelComposer {
   static constexpr int16_t kMaxSize = 512;
   int16_t width = 0, height = 0, canvasWidth = 0;
@@ -341,7 +349,8 @@ struct PanelComposer {
   // Writes view rows [firstRow, firstRow + rowCount) to `out`. `layer` may be
   // null (no map on this screen).
   void compose(const uint16_t* canvas, const GrayLayer* layer, uint16_t* out,
-               int16_t firstRow, int16_t rowCount) const {
+               int16_t firstRow, int16_t rowCount,
+               const ColorSprite* sprite = nullptr) const {
     for (int16_t y = firstRow; y < firstRow + rowCount && y < height; ++y) {
       uint16_t* row = out + size_t(y - firstRow) * width;
       const int16_t start = spanStart[y], end = spanEnd[y];
@@ -355,12 +364,19 @@ struct PanelComposer {
       if (mapRow != nullptr && layerWidth == width && blank(canvasRow)) {
         // The usual row: nothing on the canvas, layer at panel resolution.
         for (int16_t x = start; x < end; ++x) row[x] = gray565[mapRow[x]];
+      } else {
+        for (int16_t x = start; x < end; ++x) {
+          const uint16_t ui = canvasRow[sourceX[x]];
+          row[x] = ui != 0 || mapRow == nullptr ? ui : gray565[mapRow[layerX[x]]];
+        }
+      }
+      if (sprite == nullptr || sprite->pixels == nullptr || y < sprite->y ||
+          y >= sprite->y + sprite->height)
         continue;
-      }
-      for (int16_t x = start; x < end; ++x) {
-        const uint16_t ui = canvasRow[sourceX[x]];
-        row[x] = ui != 0 || mapRow == nullptr ? ui : gray565[mapRow[layerX[x]]];
-      }
+      const uint16_t* from = sprite->pixels + size_t(y - sprite->y) * sprite->width - sprite->x;
+      const int16_t last = sprite->x + sprite->width < end ? sprite->x + sprite->width : end;
+      for (int16_t x = sprite->x > start ? sprite->x : start; x < last; ++x)
+        if (from[x] != 0) row[x] = from[x];
     }
   }
 };

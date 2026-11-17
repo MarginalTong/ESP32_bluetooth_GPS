@@ -1,7 +1,8 @@
 import '../../models/lat_lng.dart';
 
-/// Decoder for Valhalla's encoded shape (Google polyline, 6 decimal places).
-/// Throws [FormatException] for anything that is not a usable route line.
+/// Valhalla's encoded shape (Google polyline, 6 decimal places).
+/// Decoding throws [FormatException] for anything that is not a usable
+/// route line.
 class Polyline6 {
   const Polyline6._();
 
@@ -40,6 +41,31 @@ class Polyline6 {
       throw const FormatException();
     }
     return output;
+  }
+
+  /// The inverse of [decode]: decoded points encode back to the same line.
+  static String encode(List<LatLng> points) {
+    final output = StringBuffer();
+    void delta(int value) {
+      var rest = value < 0 ? ~(value << 1) : value << 1;
+      while (rest >= 32) {
+        output.writeCharCode((32 | (rest & 31)) + 63);
+        rest >>= 5;
+      }
+      output.writeCharCode(rest + 63);
+    }
+
+    var latitude = 0;
+    var longitude = 0;
+    for (final point in points) {
+      final nextLatitude = (point.latitude * 1e6).round();
+      final nextLongitude = (point.longitude * 1e6).round();
+      delta(nextLatitude - latitude);
+      delta(nextLongitude - longitude);
+      latitude = nextLatitude;
+      longitude = nextLongitude;
+    }
+    return output.toString();
   }
 
   static bool isValid(LatLng point) =>

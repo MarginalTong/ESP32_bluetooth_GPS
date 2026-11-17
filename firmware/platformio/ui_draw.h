@@ -17,5 +17,7 @@ void drawStandbyBrandText(const char* value, bool primary);
 void drawMiniRouteMap(bool showRider, Direction direction);
 void drawDirection(Direction direction);
 void drawDistance(const NavState& navigation, bool blinkState);
+// The posted speed limit sign; nothing for 0 (unknown).
+void drawSpeedLimit(uint8_t kph);
 void drawBottomError();
 void drawArrivalCheck(uint8_t progress);

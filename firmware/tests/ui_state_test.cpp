@@ -27,7 +27,7 @@ static UiInputs guiding() {
   inputs.connected = inputs.hadConnection = inputs.paired = true;
   inputs.hasNavigation = true;
   inputs.routePointCount = 20;
-  inputs.navigation = {Direction::Right, 117};
+  inputs.navigation = {Direction::Right, 117, 60};
   return inputs;
 }
 
@@ -136,7 +136,7 @@ static void combinations() {
         inputs.rerouting = bits & (1u << 9);
         inputs.packetTimedOut = bits & (1u << 10);
         inputs.routePointCount = points;
-        inputs.navigation = {Direction(direction), 25};
+        inputs.navigation = {Direction(direction), 25, 0};
         const auto page = resolveUiState(inputs).screen;
         check((page == UiScreen::Off) == (!inputs.displayAvailable || !inputs.displayOn),
               "panel availability wins every flag combination");
@@ -170,7 +170,7 @@ static void combinations() {
 static std::vector<std::string> calls;
 static bool native = true;
 static bool rider = false;
-static NavState drawnNavigation = {Direction::Stop, 0};
+static NavState drawnNavigation = {Direction::Stop, 0, 0};
 struct BrandDraw {
   uint8_t size;
   float left, top;
@@ -209,6 +209,8 @@ void drawDistance(const NavState& navigation, bool) {
   calls.push_back("distance");
   drawnNavigation = navigation;
 }
+static int drawnSpeedLimit = -1;
+void drawSpeedLimit(uint8_t kph) { drawnSpeedLimit = kph; }
 void drawBottomError() { calls.push_back("diagnostic"); }
 void drawArrivalCheck(uint8_t) { calls.push_back("check"); }
 
@@ -220,7 +222,8 @@ static void drawPage(UiScreen page, bool connected = true) {
   calls.clear();
   brandDraws.clear();
   rider = false;
-  const UiState state{page, connected, {Direction::Right, 117}};
+  drawnSpeedLimit = -1;
+  const UiState state{page, connected, {Direction::Right, 117, 60}};
   const UiRenderContext context{"NAVIO-TEST", "12:34", 240, 171, 132};
   renderUiScreen(state, context, true);
   const auto frames = std::count(calls.begin(), calls.end(), "present");
@@ -258,6 +261,8 @@ static void pages() {
     const auto page = UiScreen(value);
     drawPage(page);
     const bool live = page == UiScreen::Navigating;
+    check(drawnSpeedLimit == (live ? 60 : -1),
+          "only live guidance shows the speed limit of the rider's position");
     check(drew("distance") == live && rider == live,
           "only active navigation shows rider and distance");
     if (page == UiScreen::Navigating || page == UiScreen::Arrived ||

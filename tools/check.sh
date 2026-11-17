@@ -32,7 +32,7 @@ step "App: tests"
 
 step "Firmware: host tests"
 for test in packet_auth panel_init ui_state map_motion anti_alias_render side_road_ray \
-    text_cache; do
+    text_cache speed_limit_sign; do
   bash "firmware/tests/run_${test}_test.sh"
 done
 python3 firmware/tests/monitor_config_test.py

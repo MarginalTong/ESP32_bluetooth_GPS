@@ -18,6 +18,7 @@ class RouteStep {
     this.waypointIndex,
     this.lanes,
     this.arrivalSide,
+    this.speedLimitsKph,
   }) : geometry = geometry ?? const [];
 
   final DeviceDirection direction;
@@ -54,7 +55,16 @@ class RouteStep {
   /// Which side of the road the stop at [end] is on, when it is known.
   final RoadSide? arrivalSide;
 
-  RouteStep copyWith({LaneGuidance? lanes, RoadSide? arrivalSide}) => RouteStep(
+  /// The posted limit on each segment of [geometry] (one entry per pair of
+  /// neighbouring points), in km/h; 0 where the map does not record one.
+  /// Null when no limits were fetched for this route.
+  final List<int>? speedLimitsKph;
+
+  RouteStep copyWith({
+    LaneGuidance? lanes,
+    RoadSide? arrivalSide,
+    List<int>? speedLimitsKph,
+  }) => RouteStep(
     direction: direction,
     start: start,
     end: end,
@@ -66,6 +76,7 @@ class RouteStep {
     waypointIndex: waypointIndex,
     lanes: lanes ?? this.lanes,
     arrivalSide: arrivalSide ?? this.arrivalSide,
+    speedLimitsKph: speedLimitsKph ?? this.speedLimitsKph,
   );
 
   @override

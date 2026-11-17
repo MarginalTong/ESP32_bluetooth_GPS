@@ -178,6 +178,8 @@ void renderUiScreen(const UiState& state, const UiRenderContext& context,
       drawMiniRouteMap(true, state.navigation.direction);
       drawDirection(state.navigation.direction);
       drawDistance(state.navigation, blinkState);
+      // Only with live guidance: a stale position has no known limit.
+      drawSpeedLimit(state.navigation.speedLimitKph);
       drawBottomError();
       break;
     case UiScreen::Off:
