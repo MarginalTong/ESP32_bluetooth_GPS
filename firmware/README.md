@@ -178,6 +178,13 @@ idle display (including after an explicit trip end) shows the clock page: the
 time and "ready to go", with no wordmark. On round panels the readiness
 subtitle uses size 1 (reduced from size 2 at the user's request); the time
 digits retain size 7. Other pages and the rectangular layout are unchanged.
+On round standby pages, the small CONNECT PHONE / ready to go labels are
+bottom-centered independently of the large NAVIO/time title. Their bottom
+inset is 24 logical canvas pixels to keep them inside the narrowing circular
+aperture. The two-line CONNECTION LOST / RECONNECT PHONE footer uses the same
+bottom alignment with a 6-pixel line gap. Font sizes, pairing/navigation pages
+and the rectangular layout are unchanged; footer spacing lives only in
+`ui_screens.cpp::drawIdleFooter` (user-requested standby layout tuning).
 There is no separate connected
 "ready to go" page; until the phone has sent the time, a connected display
 shows only the large centered NAVIO. Disconnecting restores the large centered

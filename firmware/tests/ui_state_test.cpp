@@ -179,6 +179,12 @@ struct BrandDraw {
   bool centered;
 };
 static std::vector<BrandDraw> brandDraws;
+struct CenteredTextDraw {
+  std::string text;
+  uint8_t size;
+  int16_t top;
+};
+static std::vector<CenteredTextDraw> centeredTextDraws;
 
 void beginFrame() { calls.push_back("begin"); }
 void presentDisplay() { calls.push_back("present"); }
@@ -191,7 +197,11 @@ void drawUiText(const char* text, uint8_t size, float left, float top) {
 float uiTextWidth(const char*, uint8_t) { return 20; }
 bool useNativeLayer() { return native; }
 uint16_t roundTextHeight(const char*, uint8_t size) { return 7 * size; }
-void drawRoundCenteredText(const char* text, uint8_t, int16_t) { calls.push_back(text); }
+void drawRoundCenteredText(const char* text, uint8_t size, int16_t top) {
+  calls.push_back(text);
+  centeredTextDraws.push_back({text, size, top});
+  if (std::string(text) == "ready to go") clockSubtitleSize = size;
+}
 void drawRoundCenteredStatus(const char* text, uint8_t size, const char* subtitle,
                              uint8_t subtitleSize) {
   calls.push_back(text);
@@ -228,6 +238,7 @@ static bool drew(const char* call) {
 static void drawPage(UiScreen page, bool connected = true) {
   calls.clear();
   brandDraws.clear();
+  centeredTextDraws.clear();
   rider = false;
   clockTextSize = clockSubtitleSize = -1;
   drawnSpeedLimit = -1;
@@ -337,10 +348,46 @@ static void pages() {
   check(drew("NOT PAIRED"), "compact branding never replaces the pairing warning");
 }
 
+static void idleFooterPlacement() {
+#if NAV_ROUND_DISPLAY
+  for (bool nativeFont : {true, false}) {
+    native = nativeFont;
+    drawPage(UiScreen::Brand, false);
+    check(centeredTextDraws.size() == 1 && centeredTextDraws[0].text == "CONNECT PHONE",
+          "NAVIO connection hint is a separate bottom-centered line");
+    const int bottomTop = centeredTextDraws[0].top;
+    check(bottomTop == 209 && centeredTextDraws[0].size == 1,
+          "idle hint keeps 24 logical pixels below it inside the round aperture");
+    expectLargeBrand();
+    drawPage(UiScreen::Clock, true);
+    check(clockTextSize == 7 && clockSubtitleSize == 1,
+          "bottom placement preserves clock and readiness sizes");
+    check(centeredTextDraws.size() == 1 && centeredTextDraws[0].text == "ready to go" &&
+              centeredTextDraws[0].top == bottomTop,
+          "clock readiness hint shares the NAVIO footer position");
+    drawPage(UiScreen::Clock, false);
+    check(centeredTextDraws.size() == 1 && centeredTextDraws[0].text == "CONNECT PHONE" &&
+              centeredTextDraws[0].top == bottomTop,
+          "disconnected clock uses the same safe footer");
+    drawPage(UiScreen::ConnectionLost, false);
+    check(centeredTextDraws.size() == 2 &&
+              centeredTextDraws[0].text == "CONNECTION LOST" &&
+              centeredTextDraws[1].text == "RECONNECT PHONE" &&
+              centeredTextDraws[1].top == bottomTop &&
+              centeredTextDraws[0].top + 7 < centeredTextDraws[1].top,
+          "two-line disconnect warning is ordered and nonoverlapping at the bottom");
+    drawPage(UiScreen::Brand, true);
+    check(centeredTextDraws.empty(), "no footer is invented before the clock arrives");
+  }
+  native = true;
+#endif
+}
+
 int main() {
   transitions();
   combinations();
   pages();
+  idleFooterPlacement();
   std::printf("UI state/render: 55,296 combinations + transitions/pages passed (round=%d)\n",
               NAV_ROUND_DISPLAY);
 }

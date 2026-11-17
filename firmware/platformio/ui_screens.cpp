@@ -12,36 +12,58 @@ void drawCompactBrand() {
 #endif
 }
 
-// Large centered wordmark; `subtitle` may be null.
-void drawLargeBrand(const char* subtitle) {
+// Keep the title centered independently of the footer's presence or height.
+void drawLargeBrand() {
 #if NAV_ROUND_DISPLAY
   if (useNativeLayer()) {
-    drawRoundCenteredStatus("NAVIO", 5, subtitle, 1);
+    drawRoundCenteredStatus("NAVIO", 5, nullptr, 1);
   } else {
     drawStandbyBrandText("NAVIO", true);
-    if (subtitle) drawStandbyBrandText(subtitle, false);
   }
 #else
   drawUiText("NAVIO", 4, 60, 35);
-  if (subtitle) drawUiText(subtitle, 1, (240 - uiTextWidth(subtitle, 1)) / 2, 91);
+#endif
+}
+
+void drawIdleFooter(const char* first, const UiRenderContext& context,
+                    const char* second = nullptr) {
+#if NAV_ROUND_DISPLAY
+  // User-requested bottom placement, in logical canvas pixels. The inset
+  // leaves room for these labels where the circular aperture narrows.
+  constexpr int16_t bottomInset = 24;
+  constexpr int16_t lineGap = 6;
+  const char* bottom = second ? second : first;
+  const int16_t top = context.screenHeight - bottomInset - roundTextHeight(bottom, 1);
+  if (second) {
+    drawRoundCenteredText(first, 1, top - lineGap - roundTextHeight(first, 1));
+    drawRoundCenteredText(second, 1, top);
+  } else {
+    drawRoundCenteredText(first, 1, top);
+  }
+#else
+  (void)context;
+  drawUiText(first, 1, (240 - uiTextWidth(first, 1)) / 2, 91);
+  if (second) drawUiText(second, 1, 75, 113);
 #endif
 }
 
 // There is no separate connected "ready to go" page: an idle connected
 // display shows the clock, and this brand only until the time arrives.
-void drawBrand(const UiState& state) {
-  drawLargeBrand(state.connected ? nullptr : "CONNECT PHONE");
+void drawBrand(const UiState& state, const UiRenderContext& context) {
+  drawLargeBrand();
+  if (!state.connected) drawIdleFooter("CONNECT PHONE", context);
 }
 
 void drawClock(const UiState& state, const UiRenderContext& context) {
   if (!state.connected) {
-    drawLargeBrand("CONNECT PHONE");
+    drawBrand(state, context);
     return;
   }
   // The clock page shows only the time: no wordmark in the corner.
 #if NAV_ROUND_DISPLAY
   // Keep the readiness hint subordinate to the large time digits.
-  drawRoundCenteredStatus(context.clockText, 7, "ready to go", 1);
+  drawRoundCenteredStatus(context.clockText, 7, nullptr, 1);
+  drawIdleFooter("ready to go", context);
 #else
   drawUiText(context.clockText, 7, 15, 30);
   drawUiText("ready to go", 2, 54, 99);
@@ -74,13 +96,9 @@ void drawNotPaired() {
 #endif
 }
 
-void drawConnectionLost() {
-  drawLargeBrand("CONNECTION LOST");
-#if NAV_ROUND_DISPLAY
-  drawRoundCenteredText("RECONNECT PHONE", 1, 177);
-#else
-  drawUiText("RECONNECT PHONE", 1, 75, 113);
-#endif
+void drawConnectionLost(const UiRenderContext& context) {
+  drawLargeBrand();
+  drawIdleFooter("CONNECTION LOST", context, "RECONNECT PHONE");
 }
 
 void drawUpdating(const UiState& state, const UiRenderContext& context) {
@@ -145,7 +163,7 @@ void renderUiScreen(const UiState& state, const UiRenderContext& context,
       drawPairing(context);
       break;
     case UiScreen::Brand:
-      drawBrand(state);
+      drawBrand(state, context);
       break;
     case UiScreen::Clock:
       drawClock(state, context);
@@ -154,7 +172,7 @@ void renderUiScreen(const UiState& state, const UiRenderContext& context,
       drawNotPaired();
       break;
     case UiScreen::ConnectionLost:
-      drawConnectionLost();
+      drawConnectionLost(context);
       break;
     case UiScreen::Updating:
     case UiScreen::CachedRoute:
