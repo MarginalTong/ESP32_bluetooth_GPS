@@ -8,7 +8,7 @@
 // Visual tuning in 240-pixel layout units, inspired by the user's mechanical
 // motorcycle dial reference. This is a clock, not an RPM or speed gauge.
 namespace InstrumentClockStyle {
-constexpr float centerX = 120, centerY = 110, radius = 92;
+constexpr float centerX = 120, centerY = 120, radius = 116;
 constexpr uint8_t ivory[3] = {246, 222, 181};
 constexpr uint8_t red[3] = {244, 48, 54};
 }  // namespace InstrumentClockStyle
@@ -33,10 +33,10 @@ struct InstrumentClock {
     return hour < 24 && minute < 60;
   }
 
-  // Radians clockwise from twelve; hour hand advances between hour marks.
-  static float minuteAngle(int minute) { return minute * 6.0f * kRadians; }
-  static float hourAngle(int hour, int minute) {
-    return ((hour % 12) * 30.0f + minute * 0.5f) * kRadians;
+  // A 270-degree instrument sweep, from lower-left midnight to lower-right
+  // midnight. One needle shows the whole day; the digital window gives minutes.
+  static float timeAngle(int hour, int minute) {
+    return (225.0f + (hour * 60 + minute) * 270.0f / 1440.0f) * kRadians;
   }
 
   bool prepare(const char* text, int16_t size) {
@@ -59,14 +59,13 @@ struct InstrumentClock {
     mask.width = mask.height = mask.clipBottom = size;
     const float scale = size / 240.0f;
     face(mask, scale);
-    hand(mask, scale, hourAngle(hour, minute), 47, 3.2f);
     tint(mask, InstrumentClockStyle::ivory, false);
     mask.clear();
-    hand(mask, scale, minuteAngle(minute), 71, 2.2f);
+    needle(mask, scale, timeAngle(hour, minute));
     const float x = InstrumentClockStyle::centerX * scale;
     const float y = InstrumentClockStyle::centerY * scale;
-    mask.fillRoundRect(x - 4 * scale, y - 4 * scale,
-                       x + 4 * scale, y + 4 * scale, 4 * scale, 255);
+    mask.fillRoundRect(x - 7 * scale, y - 7 * scale,
+                       x + 7 * scale, y + 7 * scale, 7 * scale, 255);
     tint(mask, InstrumentClockStyle::red, true);
     timeWindow(mask, scale, text);
     free(maskPixels);
@@ -97,39 +96,50 @@ struct InstrumentClock {
   static void face(GrayLayer& mask, float s) {
     using namespace InstrumentClockStyle;
     // Small line segments make a continuous, anti-aliased instrument bezel.
-    for (int i = 0; i < 180; ++i) {
-      const float a = i * 2 * kRadians, b = (i + 1) * 2 * kRadians;
+    for (int i = 0; i < 135; ++i) {
+      const float a = (225 + i * 2) * kRadians, b = (227 + i * 2) * kRadians;
       mask.strokeSegment((centerX + radius * sinf(a)) * s,
                           (centerY - radius * cosf(a)) * s,
                           (centerX + radius * sinf(b)) * s,
                           (centerY - radius * cosf(b)) * s, 0.5f * s, 130);
     }
-    for (int i = 0; i < 60; ++i)
-      radial(mask, s, minuteAngle(i), i % 5 == 0 ? 79 : 86, 91,
-              i % 5 == 0 ? 0.95f : 0.45f, i % 5 == 0 ? 255 : 180);
-    for (int i = 1; i <= 12; ++i) {
+    for (int i = 0; i <= 96; ++i)
+      radial(mask, s, (225 + i * 270.0f / 96) * kRadians,
+              i % 16 == 0 ? 99 : (i % 4 == 0 ? 105 : 110), 115,
+              i % 16 == 0 ? 1.1f : 0.5f, i % 4 == 0 ? 255 : 180);
+    for (int i = 0; i <= 24; i += 4) {
       char number[3];
       snprintf(number, sizeof(number), "%d", i);
-      const float a = i * 30 * kRadians;
-      label(mask, s, number, centerX + 68 * sinf(a), centerY - 68 * cosf(a) + 5, 13);
+      const float a = timeAngle(i, 0);
+      label(mask, s, number, centerX + 85 * sinf(a), centerY - 85 * cosf(a) + 6, 16);
     }
     label(mask, s, "NAVIO", centerX, 76, 7);
-    label(mask, s, "ready to go", centerX, 216, 7);
+    label(mask, s, "ready to go", centerX, 222, 7);
   }
 
   void timeWindow(GrayLayer& mask, float s, const char* text) {
-    // The digital window stays readable when either hand crosses six o'clock.
+    // Time sits in the open bottom of the sweep, away from the needle.
     mask.clear();
-    mask.fillRoundRect(81 * s, 144 * s, 159 * s, 170 * s, 4 * s, 255);
+    mask.fillRoundRect(73 * s, 181 * s, 167 * s, 209 * s, 4 * s, 255);
     constexpr uint8_t black[] = {0, 0, 0};
     tint(mask, black, true);
     mask.clear();
-    label(mask, s, text, InstrumentClockStyle::centerX, 163, 15);
+    label(mask, s, text, InstrumentClockStyle::centerX, 205, 22);
     tint(mask, InstrumentClockStyle::ivory, true);
   }
 
-  static void hand(GrayLayer& mask, float s, float a, float length, float halfWidth) {
-    radial(mask, s, a, -10, length, halfWidth, 255);
+  static void needle(GrayLayer& mask, float s, float a) {
+    // Broad instrument blade with a tapered tip, not a thin clock hand.
+    const float dx = sinf(a), dy = -cosf(a), nx = -dy, ny = dx;
+    const float x = InstrumentClockStyle::centerX, y = InstrumentClockStyle::centerY;
+    // Overlap the tip and solid shaft so independently anti-aliased edges
+    // cannot leave a diagonal seam through the blade.
+    radial(mask, s, a, -10, 86, 4.5f, 255);
+    mask.fillTriangle((x + 84 * dx + 4.5f * nx) * s,
+                       (y + 84 * dy + 4.5f * ny) * s,
+                       (x + 84 * dx - 4.5f * nx) * s,
+                       (y + 84 * dy - 4.5f * ny) * s,
+                       (x + 98 * dx) * s, (y + 98 * dy) * s, 255);
   }
 
   void tint(const GrayLayer& mask, const uint8_t* rgb, bool overlay) {

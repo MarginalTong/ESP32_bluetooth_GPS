@@ -176,9 +176,12 @@ draws an 800 ms check animation and returns to the clock after four seconds;
 otherwise stale guidance and live navigation are distinct pages. A connected,
 idle display (including after an explicit trip end) shows the clock page.
 On native round panels this is a mechanical-instrument-style clock: black
-face, ivory 60-minute ticks and 12 hour numbers, ivory hour hand and red
-minute hand, a small NAVIO signature and a 24-hour digital time window.
-The hour hand advances with minutes; there is no seconds hand because the
+face, ivory ticks extending to the screen edge and a single broad, tapered
+red instrument needle. A 270-degree sweep maps the entire day from 0 to 24,
+with labels every four hours; noon is at the top. There is no second hand or
+separate minute hand. A small NAVIO signature and a 24-hour digital window
+give the exact time in the open bottom of the sweep, with ready to go below.
+The needle advances with minutes; there is no seconds animation because the
 existing phone time sync and idle refresh are minute-based. The small
 "ready to go" label stays at the bottom. `platformio/instrument_clock.h`
 owns geometry, colours and rendering; `instrument_clock.cpp` connects it to

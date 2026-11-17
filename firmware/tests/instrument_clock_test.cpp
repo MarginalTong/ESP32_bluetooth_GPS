@@ -20,12 +20,12 @@ static void geometry() {
             "all 1440 valid minutes preserve 24-hour value");
     }
   }
-  check(fabsf(InstrumentClock::hourAngle(3, 0) - 1.5707963f) < 0.0001f, "three points right");
-  check(fabsf(InstrumentClock::minuteAngle(30) - 3.1415927f) < 0.0001f, "30 points down");
-  check(InstrumentClock::hourAngle(3, 30) > InstrumentClock::hourAngle(3, 0),
-        "hour hand advances with minutes");
-  check(InstrumentClock::hourAngle(0, 0) == InstrumentClock::hourAngle(12, 0),
-        "12-hour hand wraps at noon");
+  check(fabsf(InstrumentClock::timeAngle(12, 0) - 6.2831853f) < 0.0001f,
+        "noon is at the top of the full-screen instrument");
+  check(InstrumentClock::timeAngle(3, 30) > InstrumentClock::timeAngle(3, 0),
+        "single needle advances with minutes");
+  check(InstrumentClock::timeAngle(23, 59) > InstrumentClock::timeAngle(12, 0),
+        "24-hour dial distinguishes morning and evening");
 }
 
 static void preview(const ColorSprite& sprite, const char* path) {
@@ -60,18 +60,32 @@ int main(int argc, char** argv) {
       warm += r > 150 && g > 120;
       shades += r > 20 && r < 150;
     }
-    check(changed > 50 && red > 20 && warm > 200 && shades > 200,
-          "hands move, face is ivory, minute hand red, edges have coverage shades");
+    check(changed > 10 && red > 400 && warm > 200 && shades > 200,
+          "single thick needle moves, ivory face and AA edges remain");
+    int edgeMarks = 0;
+    for (int y = 0; y < size; ++y)
+      for (int x = 0; x < size; ++x) {
+        const float dx = x - size / 2.0f, dy = y - size / 2.0f;
+        if (dx * dx + dy * dy > size * size * 0.45f * 0.45f &&
+            clock.sprite.pixels[y * size + x] != 0x0020) ++edgeMarks;
+      }
+    check(edgeMarks > 100, "instrument ticks extend to the screen edge");
+    for (int y = size * 100 / 240; y < size * 140 / 240; ++y)
+      for (int x = size * 65 / 240; x < size * 175 / 240; ++x) {
+        const uint16_t p = clock.sprite.pixels[y * size + x];
+        const int r = (p >> 11) * 255 / 31, g = ((p >> 5) & 63) * 255 / 63;
+        check(!(r > 150 && g > 120), "no ivory second hand inside the dial");
+      }
   }
   const auto count = clock.renders;
   check(!clock.prepare("bad", 360) && !clock.prepare("10:00", 10) && clock.renders == count,
         "invalid input does not replace cached frame");
-  check(clock.prepare("10:30", 360), "downward minute hand renders");
-  for (int y = 220; y < 252; ++y) {
+  check(clock.prepare("00:00", 360), "needle at start of sweep renders");
+  for (int y = 276; y < 311; ++y) {
     for (int x = 126; x < 234; ++x) {
       const uint16_t p = clock.sprite.pixels[y * 360 + x];
       const int r = (p >> 11) * 255 / 31, g = ((p >> 5) & 63) * 255 / 63;
-      check(!(r > 150 && g < 90), "minute hand cannot obscure digital time window");
+      check(!(r > 150 && g < 90), "needle cannot obscure digital time window");
     }
   }
   if (argc > 1) { check(clock.prepare("10:08", 360), "preview rendered"); preview(clock.sprite, argv[1]); }
