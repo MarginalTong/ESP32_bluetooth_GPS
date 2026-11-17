@@ -304,7 +304,8 @@ static void pages() {
         "renderer receives the selected frame's maneuver and distance");
   drawPage(UiScreen::Brand, false);
   expectLargeBrand();
-  check(drew("NAVIO") && drew("CONNECT PHONE"), "disconnected brand asks for a phone");
+  check(drew("NAVIO") && calls.size() == 3,
+        "disconnected standby page draws only the NAVIO wordmark");
   // No separate connected "ready to go" page: only the large wordmark,
   // with no subtitle, until the phone has sent the time.
   drawPage(UiScreen::Brand, true);
@@ -318,7 +319,8 @@ static void pages() {
   check(!drew("CONNECT PHONE"), "fallback font draws no subtitle while connected");
   drawPage(UiScreen::Brand, false);
   expectLargeBrand();
-  check(drew("NAVIO") && drew("CONNECT PHONE"), "fallback font keeps the same brand state");
+  check(drew("NAVIO") && calls.size() == 3,
+        "fallback standby page also draws only the NAVIO wordmark");
   native = true;
 #endif
   drawPage(UiScreen::Clock, true);
@@ -337,8 +339,8 @@ static void pages() {
 #endif
   drawPage(UiScreen::Clock, false);
   expectLargeBrand();
-  check(drew("NAVIO") && drew("CONNECT PHONE") && !drew("12:34") && !drew("ready to go"),
-        "disconnected clock restores the brand instead of claiming ready");
+  check(drew("NAVIO") && calls.size() == 3,
+        "disconnected clock restores the bare wordmark instead of claiming ready");
   drawPage(UiScreen::ConnectionLost, false);
   expectLargeBrand();
   check(drew("CONNECTION LOST") && drew("RECONNECT PHONE") && !drew("route"),
@@ -353,22 +355,19 @@ static void idleFooterPlacement() {
   for (bool nativeFont : {true, false}) {
     native = nativeFont;
     drawPage(UiScreen::Brand, false);
-    check(centeredTextDraws.size() == 1 && centeredTextDraws[0].text == "CONNECT PHONE",
-          "NAVIO connection hint is a separate bottom-centered line");
-    const int bottomTop = centeredTextDraws[0].top;
-    check(bottomTop == 209 && centeredTextDraws[0].size == 1,
-          "idle hint keeps 24 logical pixels below it inside the round aperture");
+    check(centeredTextDraws.empty() && calls.size() == 3,
+          "NAVIO standby has no footer in either font path");
+    constexpr int bottomTop = 209;
     expectLargeBrand();
     drawPage(UiScreen::Clock, true);
     check(clockTextSize == 7 && clockSubtitleSize == 1,
           "bottom placement preserves clock and readiness sizes");
     check(centeredTextDraws.size() == 1 && centeredTextDraws[0].text == "ready to go" &&
-              centeredTextDraws[0].top == bottomTop,
-          "clock readiness hint shares the NAVIO footer position");
+              centeredTextDraws[0].top == bottomTop && centeredTextDraws[0].size == 1,
+          "clock readiness hint keeps its small bottom-centered placement");
     drawPage(UiScreen::Clock, false);
-    check(centeredTextDraws.size() == 1 && centeredTextDraws[0].text == "CONNECT PHONE" &&
-              centeredTextDraws[0].top == bottomTop,
-          "disconnected clock uses the same safe footer");
+    check(centeredTextDraws.empty() && calls.size() == 3,
+          "disconnected clock has no leftover connection hint");
     drawPage(UiScreen::ConnectionLost, false);
     check(centeredTextDraws.size() == 2 &&
               centeredTextDraws[0].text == "CONNECTION LOST" &&

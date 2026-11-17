@@ -47,16 +47,9 @@ void drawIdleFooter(const char* first, const UiRenderContext& context,
 #endif
 }
 
-// There is no separate connected "ready to go" page: an idle connected
-// display shows the clock, and this brand only until the time arrives.
-void drawBrand(const UiState& state, const UiRenderContext& context) {
-  drawLargeBrand();
-  if (!state.connected) drawIdleFooter("CONNECT PHONE", context);
-}
-
 void drawClock(const UiState& state, const UiRenderContext& context) {
   if (!state.connected) {
-    drawBrand(state, context);
+    drawLargeBrand();
     return;
   }
   // The clock page shows only the time: no wordmark in the corner.
@@ -163,7 +156,7 @@ void renderUiScreen(const UiState& state, const UiRenderContext& context,
       drawPairing(context);
       break;
     case UiScreen::Brand:
-      drawBrand(state, context);
+      drawLargeBrand();
       break;
     case UiScreen::Clock:
       drawClock(state, context);

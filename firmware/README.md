@@ -178,17 +178,19 @@ idle display (including after an explicit trip end) shows the clock page: the
 time and "ready to go", with no wordmark. On round panels the readiness
 subtitle uses size 1 (reduced from size 2 at the user's request); the time
 digits retain size 7. Other pages and the rectangular layout are unchanged.
-On round standby pages, the small CONNECT PHONE / ready to go labels are
-bottom-centered independently of the large NAVIO/time title. Their bottom
-inset is 24 logical canvas pixels to keep them inside the narrowing circular
-aperture. The two-line CONNECTION LOST / RECONNECT PHONE footer uses the same
-bottom alignment with a 6-pixel line gap. Font sizes, pairing/navigation pages
-and the rectangular layout are unchanged; footer spacing lives only in
+The NAVIO standby page shows only the large wordmark, with no small connection
+hint, whether connected or disconnected (user-requested minimal branding).
+On round clock pages, the small ready to go label is bottom-centered
+independently of the time title. Its bottom inset is 24 logical canvas pixels
+to keep it inside the narrowing circular aperture. The two-line CONNECTION
+LOST / RECONNECT PHONE footer uses the same bottom alignment with a 6-pixel
+line gap. Font sizes and pairing/navigation pages are unchanged; the
+rectangular clock retains its existing layout. Footer spacing lives only in
 `ui_screens.cpp::drawIdleFooter` (user-requested standby layout tuning).
 There is no separate connected
 "ready to go" page; until the phone has sent the time, a connected display
 shows only the large centered NAVIO. Disconnecting restores the large centered
-NAVIO wordmark with CONNECT PHONE, even after a clock sync. Unexpected link loss keeps CONNECTION LOST / RECONNECT
+NAVIO wordmark without a subtitle, even after a clock sync. Unexpected link loss keeps CONNECTION LOST / RECONNECT
 PHONE below it, rather than implying navigation is still active. Navigation
 pages do not receive a brand overlay. This is a state-driven layout change,
 not a per-frame logo animation.
