@@ -199,17 +199,18 @@ The NAVIO standby page shows only the large wordmark, with no small connection
 hint, whether connected or disconnected (user-requested minimal branding).
 On round clock pages, the small ready to go label is bottom-centered
 independently of the time title. Its bottom inset is 24 logical canvas pixels
-to keep it inside the narrowing circular aperture. The two-line CONNECTION
-LOST / RECONNECT PHONE footer uses the same bottom alignment with a 6-pixel
-line gap. Pairing/navigation pages are unchanged; the
+to keep it inside the narrowing circular aperture. Disconnected and
+unexpected-link-loss standby pages show only NAVIO, with no connection or
+reconnect text. Pairing/navigation pages are unchanged; the
 rectangular clock retains its existing layout. The instrument face owns its
-readiness label; warning and digital-fallback footer spacing lives in
+readiness label; digital-fallback footer spacing lives in
 `ui_screens.cpp::drawIdleFooter` (user-requested standby layout tuning).
 There is no separate connected
 "ready to go" page; until the phone has sent the time, a connected display
 shows only the large centered NAVIO. Disconnecting restores the large centered
-NAVIO wordmark without a subtitle, even after a clock sync. Unexpected link loss keeps CONNECTION LOST / RECONNECT
-PHONE below it, rather than implying navigation is still active. Navigation
+NAVIO wordmark without a subtitle, even after a clock sync or an unexpected
+link loss. The disconnect state remains distinct internally so stale navigation
+is never shown as live. Navigation
 pages do not receive a brand overlay. This is a state-driven layout change,
 not a per-frame logo animation.
 Cached/stale pages never show a live rider marker or countdown.
@@ -417,8 +418,9 @@ Supported `dir` values:
 `STOP` is a temporary no-guidance state (pause or lost GPS). Ending a trip
 sends the distinct signed payload `{"dir":"STOP","dist":0,"end":true}`.
 That end marker returns a connected display to the clock and a disconnected one
-to the NAVIO standby page; an unexpected BLE drop still shows
-`CONNECTION LOST`. Both app and display firmware must support this marker.
+to the NAVIO standby page; an unexpected BLE drop also shows only the NAVIO
+wordmark, not connection instructions. Both app and display firmware must
+support this marker.
 
 Production behavior:
 

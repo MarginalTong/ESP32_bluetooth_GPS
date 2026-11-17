@@ -25,27 +25,15 @@ void drawLargeBrand() {
 #endif
 }
 
-void drawIdleFooter(const char* first, const UiRenderContext& context,
-                    const char* second = nullptr) {
 #if NAV_ROUND_DISPLAY
+void drawIdleFooter(const char* text, const UiRenderContext& context) {
   // User-requested bottom placement, in logical canvas pixels. The inset
   // leaves room for these labels where the circular aperture narrows.
   constexpr int16_t bottomInset = 24;
-  constexpr int16_t lineGap = 6;
-  const char* bottom = second ? second : first;
-  const int16_t top = context.screenHeight - bottomInset - roundTextHeight(bottom, 1);
-  if (second) {
-    drawRoundCenteredText(first, 1, top - lineGap - roundTextHeight(first, 1));
-    drawRoundCenteredText(second, 1, top);
-  } else {
-    drawRoundCenteredText(first, 1, top);
-  }
-#else
-  (void)context;
-  drawUiText(first, 1, (240 - uiTextWidth(first, 1)) / 2, 91);
-  if (second) drawUiText(second, 1, 75, 113);
-#endif
+  const int16_t top = context.screenHeight - bottomInset - roundTextHeight(text, 1);
+  drawRoundCenteredText(text, 1, top);
 }
+#endif
 
 void drawClock(const UiState& state, const UiRenderContext& context) {
   if (!state.connected) {
@@ -88,11 +76,6 @@ void drawNotPaired() {
   drawUiText("NOT PAIRED", 2, 60, 40);
   drawUiText("PAIR IN THE APP", 1, 75, 80);
 #endif
-}
-
-void drawConnectionLost(const UiRenderContext& context) {
-  drawLargeBrand();
-  drawIdleFooter("CONNECTION LOST", context, "RECONNECT PHONE");
 }
 
 void drawUpdating(const UiState& state, const UiRenderContext& context) {
@@ -157,6 +140,7 @@ void renderUiScreen(const UiState& state, const UiRenderContext& context,
       drawPairing(context);
       break;
     case UiScreen::Brand:
+    case UiScreen::ConnectionLost:
       drawLargeBrand();
       break;
     case UiScreen::Clock:
@@ -164,9 +148,6 @@ void renderUiScreen(const UiState& state, const UiRenderContext& context,
       break;
     case UiScreen::NotPaired:
       drawNotPaired();
-      break;
-    case UiScreen::ConnectionLost:
-      drawConnectionLost(context);
       break;
     case UiScreen::Updating:
     case UiScreen::CachedRoute:

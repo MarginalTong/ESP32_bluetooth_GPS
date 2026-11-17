@@ -349,8 +349,8 @@ static void pages() {
         "disconnected clock restores the bare wordmark instead of claiming ready");
   drawPage(UiScreen::ConnectionLost, false);
   expectLargeBrand();
-  check(drew("CONNECTION LOST") && drew("RECONNECT PHONE") && !drew("route"),
-        "unexpected disconnect restores branding without hiding the loss warning");
+  check(drew("NAVIO") && calls.size() == 3,
+        "unexpected disconnect shows only NAVIO, without route or connection text");
   drawPage(UiScreen::NotPaired, true);
   expectCompactBrand();
   check(drew("NOT PAIRED"), "compact branding never replaces the pairing warning");
@@ -375,12 +375,8 @@ static void idleFooterPlacement() {
     check(centeredTextDraws.empty() && calls.size() == 3,
           "disconnected clock has no leftover connection hint");
     drawPage(UiScreen::ConnectionLost, false);
-    check(centeredTextDraws.size() == 2 &&
-              centeredTextDraws[0].text == "CONNECTION LOST" &&
-              centeredTextDraws[1].text == "RECONNECT PHONE" &&
-              centeredTextDraws[1].top == bottomTop &&
-              centeredTextDraws[0].top + 7 < centeredTextDraws[1].top,
-          "two-line disconnect warning is ordered and nonoverlapping at the bottom");
+    check(centeredTextDraws.empty() && drew("NAVIO") && calls.size() == 3,
+          "disconnect page has no footer in native or fallback font paths");
     drawPage(UiScreen::Brand, true);
     check(centeredTextDraws.empty(), "no footer is invented before the clock arrives");
   }
