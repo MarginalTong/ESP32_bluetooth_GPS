@@ -84,3 +84,6 @@ moto_nav_bridge/lib/ui/widgets/tap_ripple.dart
 moto_nav_bridge/test/tap_ripple_test.dart
 moto_nav_bridge/test/connection_card_cancel_test.dart
 moto_nav_bridge/lib/ui/widgets/connection_card_content.dart
+moto_nav_bridge/lib/ui/widgets/map_selection_pop.dart
+moto_nav_bridge/test/map_selection_pop_test.dart
+moto_nav_bridge/test/home_map_selection_pop_test.dart

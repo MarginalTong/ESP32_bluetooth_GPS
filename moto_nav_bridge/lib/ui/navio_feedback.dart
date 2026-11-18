@@ -37,6 +37,8 @@ abstract final class NavioMotion {
   static const release = Duration(milliseconds: 180);
   static const stateChange = Duration(milliseconds: 220);
   static const connectRelease = Duration(milliseconds: 240);
+  static const mapSelection = Duration(milliseconds: 420);
+  static const mapSelectionScale = .78;
 
   static Duration duration(BuildContext context, Duration normal) =>
       MediaQuery.disableAnimationsOf(context) ? Duration.zero : normal;

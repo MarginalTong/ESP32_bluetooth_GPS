@@ -16,6 +16,7 @@ import 'place_search_page.dart';
 import 'waypoint_editor_page.dart';
 import 'widgets/connection_card.dart';
 import 'widgets/destination_panel.dart';
+import 'widgets/map_selection_pop.dart';
 import 'widgets/glass_panel.dart';
 import 'widgets/instruction_card.dart';
 import 'widgets/map_control_button.dart';
@@ -34,6 +35,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   PlaceResult? _destination;
+  int _mapSelectionRevision = 0;
   String _mapStyle = 'standard';
   int _settingsRevision = -1;
   final _voice = GuidanceVoiceController();
@@ -150,6 +152,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _selectMapDestination(LatLng location) async {
     final text = AppText.of(context);
     setState(() {
+      _mapSelectionRevision++;
       _destination = PlaceResult(
         name: text.mapPoint,
         address:
@@ -291,48 +294,53 @@ class _HomePageState extends State<HomePage> {
                     left: 16,
                     bottom: safe.bottom + 24,
                     width: panelWidth,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: (constraints.maxHeight - safe.vertical - 128)
-                            .clamp(80, 600),
-                      ),
-                      child: SingleChildScrollView(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (navigating && nav.waypoints.isNotEmpty) ...[
-                              WaypointProgressBanner(nav: nav),
-                              const SizedBox(height: 8),
-                            ],
-                            if (showInstruction) ...[
-                              const InstructionCard(),
-                              const SizedBox(height: 10),
-                            ],
-                            if (!navigating)
-                              DestinationPanel(
-                                destination: _destination,
-                                selectedRoute: nav.selectedRoute,
-                                previewingRoute: nav.previewingRoute,
-                                canStart:
-                                    ble.state == BleConnectionState.connected,
-                                waypointCount: nav.waypoints.length,
-                                onEditWaypoints: _editWaypoints,
-                                onChoose: _chooseDestination,
-                                onStart: _start,
-                              )
-                            else
-                              GlassPanel(
-                                padding: const EdgeInsets.all(12),
-                                child: NavigationControls(
-                                  phase: nav.phase,
-                                  error: nav.error,
-                                  onEnd: () =>
-                                      _endNavigation(disconnectDevice: false),
-                                  onEndAndDisconnect: () =>
-                                      _endNavigation(disconnectDevice: true),
+                    child: MapSelectionPop(
+                      selectionRevision: _mapSelectionRevision,
+                      enabled: !navigating,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight:
+                              (constraints.maxHeight - safe.vertical - 128)
+                                  .clamp(80, 600),
+                        ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (navigating && nav.waypoints.isNotEmpty) ...[
+                                WaypointProgressBanner(nav: nav),
+                                const SizedBox(height: 8),
+                              ],
+                              if (showInstruction) ...[
+                                const InstructionCard(),
+                                const SizedBox(height: 10),
+                              ],
+                              if (!navigating)
+                                DestinationPanel(
+                                  destination: _destination,
+                                  selectedRoute: nav.selectedRoute,
+                                  previewingRoute: nav.previewingRoute,
+                                  canStart:
+                                      ble.state == BleConnectionState.connected,
+                                  waypointCount: nav.waypoints.length,
+                                  onEditWaypoints: _editWaypoints,
+                                  onChoose: _chooseDestination,
+                                  onStart: _start,
+                                )
+                              else
+                                GlassPanel(
+                                  padding: const EdgeInsets.all(12),
+                                  child: NavigationControls(
+                                    phase: nav.phase,
+                                    error: nav.error,
+                                    onEnd: () =>
+                                        _endNavigation(disconnectDevice: false),
+                                    onEndAndDisconnect: () =>
+                                        _endNavigation(disconnectDevice: true),
+                                  ),
                                 ),
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
