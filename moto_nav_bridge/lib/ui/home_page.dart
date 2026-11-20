@@ -197,9 +197,21 @@ class _HomePageState extends State<HomePage> {
           final landscape = constraints.maxWidth > constraints.maxHeight;
           final darkMapControls = _mapStyle != 'standard';
           final safe = MediaQuery.paddingOf(context);
-          final panelWidth = landscape ? 320.0 : constraints.maxWidth - 32;
-          // Below the full connection card, or level with its pill.
-          final controlsTop = safe.top + (_cardCompact ? 12 : 92);
+          final panelWidth = landscape
+              ? 320.0
+              : (constraints.maxWidth - 32).clamp(0.0, 480.0);
+          // Keep the rail in the upper-middle map area, not against the header.
+          // Landscape has less vertical room and a separate left-hand panel.
+          final controlsTop =
+              safe.top +
+              (landscape
+                  ? 20.0
+                  : ((constraints.maxHeight - safe.vertical) * 0.20).clamp(
+                          108.0,
+                          180.0,
+                        ) -
+                        (_cardCompact ? 24.0 : 0.0));
+          final controlsStep = landscape ? 56.0 : 64.0;
           final moveDuration = MediaQuery.disableAnimationsOf(context)
               ? Duration.zero
               : ConnectionCard.resizeDuration;
@@ -208,7 +220,7 @@ class _HomePageState extends State<HomePage> {
             landscape ? panelWidth + 32 : 16,
             safe.top + (landscape ? 8 : 96),
             16,
-            safe.bottom + (landscape ? 40 : 230),
+            safe.bottom + (landscape ? 40 : 200),
           );
           return Theme(
             data: darkMapControls ? NavioTheme.dark() : NavioTheme.light(),
@@ -249,7 +261,7 @@ class _HomePageState extends State<HomePage> {
                   AnimatedPositioned(
                     duration: moveDuration,
                     curve: Curves.easeInOutCubic,
-                    top: controlsTop + 0 * 56,
+                    top: controlsTop,
                     right: 16,
                     child: MapControlButton(
                       backgroundKey: const ValueKey(
@@ -269,14 +281,14 @@ class _HomePageState extends State<HomePage> {
                   AnimatedPositioned(
                     duration: moveDuration,
                     curve: Curves.easeInOutCubic,
-                    top: controlsTop + 1 * 56,
+                    top: controlsTop + controlsStep,
                     right: 16,
                     child: RiderMapButton(dark: _mapStyle != 'standard'),
                   ),
                   AnimatedPositioned(
                     duration: moveDuration,
                     curve: Curves.easeInOutCubic,
-                    top: controlsTop + 2 * 56,
+                    top: controlsTop + 2 * controlsStep,
                     right: 16,
                     child: MapControlButton(
                       dark: darkMapControls,
@@ -292,7 +304,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                   Positioned(
                     left: 16,
-                    bottom: safe.bottom + 24,
+                    bottom: safe.bottom + 16,
                     width: panelWidth,
                     child: MapSelectionPop(
                       selectionRevision: _mapSelectionRevision,

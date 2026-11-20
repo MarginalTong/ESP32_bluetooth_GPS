@@ -10,6 +10,8 @@ import 'package:moto_nav_bridge/models/nav_state.dart';
 import 'package:moto_nav_bridge/l10n/app_text.dart';
 import 'package:moto_nav_bridge/ui/home_page.dart';
 import 'package:moto_nav_bridge/ui/widgets/glass_panel.dart';
+import 'package:moto_nav_bridge/ui/widgets/destination_panel.dart';
+import 'package:moto_nav_bridge/ui/widgets/map_control_button.dart';
 import 'package:moto_nav_bridge/ui/widgets/navigation_map.dart';
 import 'navigation_controller_test.dart'
     show FakeRoutes, FakePositions, FakeSideRoads, mainRoute, p0, p2;
@@ -246,6 +248,19 @@ void main() {
       final initialText = AppText.of(tester.element(find.byType(HomePage)));
       expect(find.text(initialText.destination), findsNothing);
       expect(tester.takeException(), isNull);
+      if (size.height > size.width) {
+        final settings = tester.getRect(
+          find.byKey(const ValueKey('map-settings-button-background')),
+        );
+        final voice = tester.getRect(find.byType(MapControlButton).last);
+        final panel = tester.getRect(find.byType(DestinationPanel));
+        expect(settings.top, greaterThanOrEqualTo(108));
+        expect(voice.top - settings.top, closeTo(128, 0.5));
+        // Narrow screens may wrap the search and connection hint once more.
+        expect(panel.height, lessThan(size.width < 350 ? 230 : 210));
+        expect(panel.bottom, closeTo(size.height - 16, 0.5));
+        expect(voice.bottom, lessThan(panel.top));
+      }
       await nav.startNavigation(p2);
       await tester.pump();
       final text = AppText.of(tester.element(find.byType(HomePage)));

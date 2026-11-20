@@ -36,7 +36,7 @@ class DestinationPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = AppText.of(context);
     return GlassPanel(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -76,12 +76,15 @@ class DestinationPanel extends StatelessWidget {
               enableFeedback: false,
               onTap: NavioFeedback.action(context, onChoose),
               borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: double.infinity,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minWidth: double.infinity,
+                  minHeight: 44,
+                ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 4,
-                    vertical: 12,
+                    vertical: 8,
                   ),
                   child: Row(
                     children: [
@@ -91,16 +94,18 @@ class DestinationPanel extends StatelessWidget {
                         child: destination == null
                             ? Text(
                                 text.searchPlaceAddressBusiness,
-                                style: Theme.of(context).textTheme.titleMedium,
+                                style: Theme.of(context).textTheme.bodyMedium,
                               )
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     destination!.name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: Theme.of(
                                       context,
-                                    ).textTheme.titleMedium,
+                                    ).textTheme.bodyMedium,
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
@@ -121,7 +126,7 @@ class DestinationPanel extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           if (destination != null)
             NavioPressEffect(
               enabled: !previewingRoute,

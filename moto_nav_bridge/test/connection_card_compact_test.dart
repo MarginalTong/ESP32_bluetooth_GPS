@@ -141,7 +141,13 @@ void main() {
     ble.dispose();
   });
 
-  testWidgets('map buttons move up beside the pill', (tester) async {
+  testWidgets('map buttons shift gently without crowding the header', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     SharedPreferences.setMockInitialValues({});
     final ble = ConnectingBle();
     final positions = FakePositions(current: p0);
@@ -169,7 +175,8 @@ void main() {
     await settle(tester);
     // The page moves its buttons on the frame after the card reports.
     await tester.pump(ConnectionCard.resizeDuration * 2);
-    expect(tester.getTopLeft(settings).dy, closeTo(before - 80, 0.5));
+    expect(tester.getTopLeft(settings).dy, closeTo(before - 24, 0.5));
+    expect(tester.getTopLeft(settings).dy, greaterThan(80));
     await tester.pumpWidget(const SizedBox());
     nav.dispose();
     ble.dispose();
