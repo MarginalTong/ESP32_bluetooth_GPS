@@ -104,3 +104,17 @@ moto_nav_bridge/lib/ui/widgets/saved_trip_card.dart
 moto_nav_bridge/test/offline_navigation_test.dart
 moto_nav_bridge/test/offline_session_store_test.dart
 moto_nav_bridge/test/saved_trip_card_test.dart
+moto_nav_bridge/lib/services/ble_service.dart
+moto_nav_bridge/lib/services/ble/ble_scan.dart
+moto_nav_bridge/lib/services/ble/ble_pairing.dart
+moto_nav_bridge/lib/services/ble/ble_writes.dart
+firmware/esp32_nav_display/esp32_nav_display.ino
+firmware/platformio/runtime/hardware.inc
+firmware/platformio/runtime/mailbox_state.inc
+firmware/platformio/runtime/runtime_support.inc
+firmware/platformio/runtime/ble_callbacks.inc
+firmware/platformio/runtime/render_primitives.inc
+firmware/platformio/runtime/render_geometry.inc
+firmware/platformio/runtime/render_instructions.inc
+firmware/platformio/runtime/display_lifecycle.inc
+firmware/platformio/runtime/runtime_events.inc

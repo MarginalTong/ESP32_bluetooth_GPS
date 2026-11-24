@@ -90,6 +90,12 @@ void main() {
       '../firmware/esp32_nav_display/esp32_nav_display.ino',
     ).readAsStringSync();
     expect(firmware, contains('"NAVIO-%s", deviceIdentity'));
-    expect(firmware, contains('[TFT] NAVIO UI:'));
+    expect(firmware, contains('runtime/display_lifecycle.inc'));
+    expect(
+      File(
+        '../firmware/platformio/runtime/display_lifecycle.inc',
+      ).readAsStringSync(),
+      contains('[TFT] NAVIO UI:'),
+    );
   });
 }
