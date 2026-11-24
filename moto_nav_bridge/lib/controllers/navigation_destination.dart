@@ -93,6 +93,7 @@ extension _NavigationDestination on NavigationController {
       _routeOptions = List.unmodifiable(aligned);
       _selectedRouteIndex = selected;
       _engine = nextEngine;
+      _routeStepOffset = 0;
       _waypointPlan.bindRoute();
       _waypointPlan.update(
         aligned[selected],
@@ -106,6 +107,7 @@ extension _NavigationDestination on NavigationController {
       _lastSideRoadRefreshAt = null;
       _sideRoadRefreshPosition = null;
       _log('voice_destination_changed');
+      _cacheRoute();
       _notify();
       _startRouteSideRoadPrefetch();
       // Routing success is separate from BLE availability. Send the new state,

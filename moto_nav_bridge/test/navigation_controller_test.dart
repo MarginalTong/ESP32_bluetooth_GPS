@@ -476,7 +476,7 @@ void main() {
     );
     positions.emit(confirmed);
     await pumpEventQueue();
-    expect(routes.fetchCount, 2); // preview + initial only
+    expect(routes.fetchCount, 1); // Start reuses the matching preview.
     expect(replacement.fetchCount, 1);
     expect(replacement.lastOrigin, same(confirmed)); // retain course metadata
     expect(
@@ -513,7 +513,7 @@ void main() {
       positions.emit(offRoute);
       positions.emit(offRoute);
       await pumpEventQueue();
-      expect(routes.fetchCount, 3);
+      expect(routes.fetchCount, 2); // preview + reroute; Start uses local data.
       controller.dispose();
       expect(routes.disposeCount, 1);
       controller = NavigationController(
@@ -833,6 +833,8 @@ void main() {
       );
       positions.emit(recovered);
       await pumpEventQueue();
+      expect(controller.current?.direction, DeviceDirection.left);
+      expect(deferred.requests.single.isCompleted, isFalse);
       deferred.requests.single.completeError(Exception('network unavailable'));
       await pumpEventQueue(times: 10);
 
@@ -841,10 +843,7 @@ void main() {
       expect(controller.selectedRoute?.steps, mainRoute);
       expect(controller.current?.direction, DeviceDirection.left);
       expect(ble.sent.last.direction, DeviceDirection.left);
-      expect(
-        controller.diagnostics,
-        contains('reroute_failed_recovered_on_cached_route'),
-      );
+      expect(controller.diagnostics, contains('recovered_on_previous_route'));
     },
   );
 

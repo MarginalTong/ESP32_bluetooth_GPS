@@ -21,8 +21,6 @@ extension _NavigationPositions on NavigationController {
         _phase != NavPhase.navigating ||
         _posSub == null ||
         _engine == null ||
-        _rerouting ||
-        _awaitingValidRoute ||
         (last != null &&
             DateTime.now().difference(last) <
                 NavigationController._heartbeatInterval)) {
@@ -43,18 +41,19 @@ extension _NavigationPositions on NavigationController {
           _phase != NavPhase.navigating ||
           !identical(_engine, engine) ||
           !identical(_posSub, subscription) ||
-          _rerouting ||
-          _awaitingValidRoute ||
           fix is! NavigationFix ||
           !_usableVoiceFix(fix) ||
           DateTime.now().difference(fix.timestamp).abs() >
               const Duration(seconds: 10) ||
           anchor == null ||
-          state == null ||
-          state.rerouting ||
-          state.direction == DeviceDirection.stop) {
+          state == null) {
         return;
       }
+      if (_rerouting || _awaitingValidRoute) {
+        await _onPosition(fix);
+        return;
+      }
+      if (state.rerouting || state.direction == DeviceDirection.stop) return;
       // Beyond jitter the bike has really moved: leave that to the stream,
       // which applies the full matcher. Sending nothing keeps the display
       // honest if the stream has stalled while moving.
@@ -148,11 +147,12 @@ extension _NavigationPositions on NavigationController {
       unawaited(_maybeRefreshSideRoads(pos));
     }
 
+    final previousStep = voiceStepIndex;
     final navState = engine.update(pos);
     if (_offRouteSamples == 0 &&
         !_awaitingValidRoute &&
         selectedRoute != null) {
-      _waypointPlan.update(selectedRoute!, engine.currentStepIndex, pos);
+      _waypointPlan.update(selectedRoute!, voiceStepIndex, pos);
     }
     _current = navState;
     if (_offRouteSamples == 0 && !_awaitingValidRoute) {
@@ -161,11 +161,14 @@ extension _NavigationPositions on NavigationController {
 
     if (engine.isFinished) {
       _set(NavPhase.arrived);
+      _forgetSavedTrip();
     } else if (_error == AppText.current.gpsSignalLost) {
       _set(NavPhase.navigating);
     } else {
       _notify();
     }
+
+    _checkpoint(force: voiceStepIndex != previousStep);
 
     await ble.send(navState);
 

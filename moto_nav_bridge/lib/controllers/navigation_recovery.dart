@@ -54,11 +54,6 @@ extension _NavigationRecovery on NavigationController {
     final destination = _destination;
     final text = AppText.current;
     if (engine == null || destination == null) return false;
-    if (_rerouting) {
-      _showRerouteNotice(text.rerouting);
-      return true;
-    }
-
     if (pos is NavigationFix &&
         (!pos.accuracy.isFinite || pos.accuracy < 0 || pos.accuracy > 50)) {
       _offRouteSamples = 0;
@@ -68,6 +63,12 @@ extension _NavigationRecovery on NavigationController {
     if (!engine.isOffRoute(pos)) {
       _offRouteSamples = 0;
       if (_awaitingValidRoute) {
+        // Recover locally even if the server is unreachable or still waiting.
+        // Its eventual response is now obsolete, including any errors.
+        if (_rerouting) {
+          _rerouteRequestId++;
+          _rerouting = false;
+        }
         // Recovery onto the old route is allowed only after a fresh position
         // matches it again, never merely because the HTTP request failed.
         _awaitingValidRoute = false;
@@ -78,6 +79,13 @@ extension _NavigationRecovery on NavigationController {
         _error = null;
       }
       return false;
+    }
+
+    if (_rerouting) {
+      _current = _temporaryRouteState();
+      _notify();
+      _sendTemporaryState();
+      return true;
     }
 
     if (pos is NavigationFix && _isStationary(pos)) {
@@ -120,15 +128,31 @@ extension _NavigationRecovery on NavigationController {
     final last = _lastRerouteAt;
     if (last != null &&
         now.difference(last) < NavigationController._minRerouteInterval) {
-      if (_rerouteFailure == null) {
-        _showRerouteNotice(text.rerouting);
-        _current = _temporaryRouteState();
-        await ble.send(_current!);
-      }
+      if (_rerouteFailure == null) _showRerouteNotice(text.rerouting);
+      _current = _temporaryRouteState();
+      _sendTemporaryState();
       return true;
     }
 
-    return _requestReroute(pos, engine, destination);
+    unawaited(
+      _requestReroute(pos, engine, destination).catchError((Object e) {
+        if (!_disposed) _log('reroute_delivery_failed type=${e.runtimeType}');
+        return true;
+      }),
+    );
+    return true;
+  }
+
+  void _sendTemporaryState() {
+    final state = _current;
+    if (state == null) return;
+    unawaited(
+      Future<bool>.sync(() => ble.send(state)).catchError((Object e) {
+        if (!_disposed) _log('temporary_write_failed type=${e.runtimeType}');
+        return false;
+      }),
+    );
+    _checkpoint();
   }
 
   Future<bool> _requestReroute(
@@ -152,12 +176,12 @@ extension _NavigationRecovery on NavigationController {
     _notify();
 
     try {
-      unawaited(ble.send(_current!));
+      _sendTemporaryState();
       final routes = await _fetchTripRoutes(
         _rerouteDirections,
         origin: pos,
         destination: destination,
-      );
+      ).timeout(const Duration(seconds: 12));
       if (!_isCurrentReroute(requestId, engine, destination)) {
         return true;
       }
@@ -190,6 +214,7 @@ extension _NavigationRecovery on NavigationController {
       final navState = _engine!.update(_latestPosition ?? pos);
       _current = navState;
       _lastReliableNavState = navState;
+      _checkpoint(force: true);
       _notify();
       await ble.send(navState);
       return true;
@@ -249,7 +274,6 @@ extension _NavigationRecovery on NavigationController {
     LatLng destination,
     DateTime requestStarted,
   ) async {
-    final text = AppText.current;
     if (!_isCurrentReroute(requestId, engine, destination)) return true;
     // Route geometry and maneuvers are already cached in the active engine.
     // A failed network request must not blank guidance when the newest GPS
@@ -278,7 +302,7 @@ extension _NavigationRecovery on NavigationController {
     }
     // Keep the last known route shape visible while a replacement is sought,
     // but do not revive a known-bad maneuver or distance.
-    _rerouteFailure = text.rerouteFailed(e);
+    _rerouteFailure = AppText.current.rerouteFailed(e);
     // Avoid retaining exception URLs or coordinates in diagnostic logs.
     _log(
       'reroute_failed type=${e.runtimeType} elapsedMs=${DateTime.now().difference(requestStarted).inMilliseconds}',
@@ -286,7 +310,10 @@ extension _NavigationRecovery on NavigationController {
     _scheduleRecovery();
     _clearRerouteNotice();
     _current = _temporaryRouteState();
-    _set(NavPhase.navigating, error: _rerouteFailure);
+    _set(
+      NavPhase.navigating,
+      error: '${AppText.current.waitingForRouteConnection}\n$_rerouteFailure',
+    );
     await ble.send(_current!);
     return true;
   }

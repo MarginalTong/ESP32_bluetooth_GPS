@@ -16,6 +16,7 @@ import 'services/supabase_rider_backend.dart';
 import 'services/local_account_data.dart';
 import 'services/supabase_account_backend.dart';
 import 'services/ble_service.dart';
+import 'services/navigation_session_store.dart';
 import 'ui/app_shell.dart';
 import 'l10n/app_text.dart';
 import 'ui/navio_theme.dart';
@@ -84,7 +85,11 @@ class NavioApp extends StatelessWidget {
   final SettingsSyncController? settingsSync;
 
   NavigationController _navigation(BleService ble) {
-    final nav = NavigationController(ble: ble, preferences: preferences);
+    final nav = NavigationController(
+      ble: ble,
+      preferences: preferences,
+      sessions: FileNavigationSessionStore(),
+    );
     account?.bindNavigation(nav);
     riders?.bindNavigation(nav);
     return nav;

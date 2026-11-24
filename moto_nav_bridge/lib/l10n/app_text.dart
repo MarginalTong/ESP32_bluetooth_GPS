@@ -542,4 +542,10 @@ class AppText {
       : (count == 0 ? '添加途经点' : '编辑途经点（$count）');
   String nextStopProgress(String name, int position, int total) =>
       '$nextStop: $name ($position/$total)';
+  String get offlineSaveFailed => isEnglish
+      ? 'Route is available in memory, but could not be saved for restart recovery.'
+      : '路线可继续使用，但未能保存，重启后可能无法恢复。';
+  String get waitingForRouteConnection => isEnglish
+      ? 'Off route. Waiting to replan; the previous route is retained. Stop safely if guidance is needed.'
+      : '已偏离路线，正在等待重新规划；原路线已保留。需要指引时请安全停车。';
 }

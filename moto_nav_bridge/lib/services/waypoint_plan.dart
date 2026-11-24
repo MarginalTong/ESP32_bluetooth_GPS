@@ -5,8 +5,14 @@ import '../models/route_candidate.dart';
 /// Trip-only state: never included in cloud preferences or a BLE packet.
 class WaypointPlan {
   static const maxStops = 5;
-  WaypointPlan(List<PlaceResult> stops) : stops = List.unmodifiable(stops) {
-    if (stops.length > maxStops ||
+  WaypointPlan(List<PlaceResult> stops, {this.completed = 0, int routeBase = 0})
+    : stops = List.unmodifiable(stops),
+      _routeBase = routeBase {
+    if (completed < 0 ||
+        completed > stops.length ||
+        routeBase < 0 ||
+        routeBase > completed ||
+        stops.length > maxStops ||
         stops.any(
           (s) =>
               !s.location.latitude.isFinite ||
@@ -19,8 +25,9 @@ class WaypointPlan {
   }
 
   final List<PlaceResult> stops;
-  int completed = 0;
-  int _routeBase = 0;
+  int completed;
+  int _routeBase;
+  int get routeBase => _routeBase;
   List<LatLng> get remaining =>
       List.unmodifiable(stops.skip(completed).map((s) => s.location));
 

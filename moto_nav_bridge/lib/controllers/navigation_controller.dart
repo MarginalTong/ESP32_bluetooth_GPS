@@ -22,6 +22,8 @@ import '../services/route_preference.dart';
 import '../services/valhalla_directions_service.dart';
 import '../services/waypoint_plan.dart';
 import '../services/settings_store.dart';
+import '../services/offline_trip.dart';
+import '../services/navigation_session_store.dart';
 
 part 'navigation_planning.dart';
 part 'navigation_positions.dart';
@@ -29,6 +31,7 @@ part 'navigation_recovery.dart';
 part 'navigation_context.dart';
 part 'navigation_destination.dart';
 part 'navigation_lifecycle.dart';
+part 'navigation_persistence.dart';
 
 enum NavPhase { idle, routing, navigating, paused, arrived, error }
 
@@ -44,9 +47,13 @@ class NavigationController extends ChangeNotifier {
     PositionProvider? location,
     SideRoadProvider? sideRoads,
     SharedPreferences? preferences,
+    NavigationSessionStore? sessions,
     // Preserve the public `preferences` constructor parameter.
     // ignore: prefer_initializing_formals
   }) : _preferences = preferences,
+       // Keep the injected persistence port distinct from platform storage.
+       // ignore: prefer_initializing_formals
+       _sessions = sessions,
        _location = location ?? LocationService(),
        _sideRoads = sideRoads ?? SideRoadService() {
     _directions =
@@ -168,7 +175,7 @@ class NavigationController extends ChangeNotifier {
   bool get previewingRoute => _previewingRoute;
 
   NavigationEngine? _engine;
-  int get voiceStepIndex => _engine?.currentStepIndex ?? 0;
+  int get voiceStepIndex => _routeStepOffset + (_engine?.currentStepIndex ?? 0);
 
   /// The newest stream fix, for voice timing (speed, accuracy); null when the
   /// position carries no fix details.
@@ -267,6 +274,18 @@ class NavigationController extends ChangeNotifier {
   /// its distance filter, so an older fix still marks where a still bike was.
 
   bool _changingDestination = false;
+
+  final NavigationSessionStore? _sessions;
+  OfflineTrip? _savedTrip;
+  String? _cachedRouteId;
+  int _routeStepOffset = 0;
+  DateTime? _lastCheckpointAt;
+  Future<void> _routeSave = Future.value();
+  bool _restoringTrip = false;
+  bool get hasSavedTrip => _savedTrip != null;
+  Future<bool> restoreSavedNavigation() => _restoreSavedNavigation();
+  Future<bool> resumeSavedNavigation() => _resumeSavedNavigation();
+  Future<void> flushSavedNavigation() async => _sessions?.flush();
 
   Future<void> selectRoute(int index) => _selectRoute(index);
 

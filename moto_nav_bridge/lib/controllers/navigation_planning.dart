@@ -50,6 +50,7 @@ extension _NavigationPlanning on NavigationController {
     _selectedRouteIndex = 0;
     _previewRouteExplicitlySelected = false;
     _engine = null;
+    _forgetSavedTrip();
     _notify();
   }
 
@@ -102,6 +103,7 @@ extension _NavigationPlanning on NavigationController {
 
     _previewRouteExplicitlySelected = false;
     _destination = destination;
+    _savedTrip = null;
     _waypointPlan = plan;
     _routeOptions = const [];
     _engine = null;
@@ -132,6 +134,7 @@ extension _NavigationPlanning on NavigationController {
       _latestPosition = origin;
       _setRouteOptions(routes, selectedIndex: preferredRouteIndex(routes));
       _warmPreviewSideRoads();
+      await _routeSave;
     } catch (e) {
       if (current()) _error = e.toString();
     } finally {
@@ -152,8 +155,8 @@ extension _NavigationPlanning on NavigationController {
             ? this.waypoints
             : const <PlaceResult>[]);
     final plan = WaypointPlan(stops);
-    // A route picked on the preview map is an explicit user choice. Keep it
-    // across the fresh route request made when the trip starts.
+    // A matching preview is usable offline. If movement requires a new request,
+    // retain the existing explicit route-selection policy for that response.
     final previewSelection =
         _previewRouteExplicitlySelected &&
             stops.length == this.waypoints.length &&
@@ -168,38 +171,72 @@ extension _NavigationPlanning on NavigationController {
             _routeOptions.isNotEmpty
         ? _selectedRouteIndex
         : null;
-    await stopNavigation();
+    final cachedRoutes =
+        _destination != null &&
+            _destination!.distanceTo(destination) < 5 &&
+            stops.length == this.waypoints.length &&
+            stops.asMap().entries.every(
+              (e) =>
+                  e.value.location.distanceTo(this.waypoints[e.key].location) <
+                  1,
+            )
+        ? _routeOptions
+        : const <RouteCandidate>[];
+    final cachedSelection = _selectedRouteIndex;
+    await _clearNavigationState(clearSaved: false);
+    final request = _previewRequestId;
     _waypointPlan = plan;
     _snapshotPreferences();
 
     if (!await _location.ensurePermission()) {
+      if (_disposed || request != _previewRequestId) return;
       _set(NavPhase.error, error: 'Location permission/service unavailable');
       return;
     }
+    if (_disposed || request != _previewRequestId) return;
 
     _set(NavPhase.routing);
     try {
       final origin = await _location.currentPosition();
+      if (_disposed || request != _previewRequestId) return;
+      if (origin is NavigationFix && !_freshResumeFix(origin)) {
+        throw StateError('No fresh GPS fix');
+      }
       _origin = origin;
       _latestPosition = origin;
       _waypointPlan.completeAtStart(origin);
       _destination = destination;
       _notify();
-      final routes = await _fetchTripRoutes(
-        _directions,
-        origin: origin,
-        destination: destination,
-      );
+      final cachedUsable =
+          plan.completed == 0 &&
+          cachedRoutes.isNotEmpty &&
+          !NavigationEngine(
+            cachedRoutes[cachedSelection].steps,
+          ).isOffRoute(origin) &&
+          !RouteAlignment.conflictsWithCourse(
+            cachedRoutes[cachedSelection],
+            origin,
+          );
+      final routes = cachedUsable
+          ? cachedRoutes
+          : await _fetchTripRoutes(
+              _directions,
+              origin: origin,
+              destination: destination,
+            );
+      if (_disposed || request != _previewRequestId) return;
       // Route planning must not wait for supplementary map context. Nearby
       // junctions are fetched in the background after navigation starts.
       _setRouteOptions(
         routes,
-        selectedIndex:
-            previewSelection != null && previewSelection < routes.length
+        selectedIndex: cachedUsable
+            ? cachedSelection
+            : previewSelection != null && previewSelection < routes.length
             ? previewSelection
             : preferredRouteIndex(routes),
       );
     } catch (e) {
+      if (_disposed || request != _previewRequestId) return;
       _set(NavPhase.error, error: e.toString());
       return;
     }
@@ -209,6 +246,9 @@ extension _NavigationPlanning on NavigationController {
     _listenForPositions();
     _startHeartbeat();
     _startRouteSideRoadPrefetch();
+    await _routeSave;
+    if (_disposed || request != _previewRequestId) return;
+    _checkpoint(force: true);
   }
 
   Future<void> _selectRoute(int index) async {
@@ -216,15 +256,15 @@ extension _NavigationPlanning on NavigationController {
     if (index < 0 || index >= _routeOptions.length) return;
     final preview = _phase == NavPhase.idle && _destination != null;
     if (!preview && _phase != NavPhase.navigating) return;
-    // Only a deliberate tap should override the fastest candidate when Start
-    // fetches fresh ETAs. An automatically selected preview index is not a
-    // user choice. A tap on the already selected route still counts as one.
+    // Keep explicit selection even if later movement requires a fresh request.
+    // A tap on the already selected route still counts as an explicit choice.
     if (preview) _previewRouteExplicitlySelected = true;
     if (index == _selectedRouteIndex) return;
 
     _invalidateReroute();
     _error = null;
     _selectedRouteIndex = index;
+    _routeStepOffset = 0;
     _engine = NavigationEngine(
       _routeOptions[index].steps,
       sideRoads: _routeOptions[index].sideRoads,
@@ -237,6 +277,7 @@ extension _NavigationPlanning on NavigationController {
     _sideRoadRefreshPosition = null;
 
     if (preview) {
+      _checkpoint(force: true);
       // Selecting a preview never starts guidance or writes to the device.
       _current = null;
       _notify();
@@ -249,6 +290,7 @@ extension _NavigationPlanning on NavigationController {
       final navState = _engine!.update(origin);
       _current = navState;
       _lastReliableNavState = navState;
+      _checkpoint(force: true);
       _notify();
       await ble.send(navState);
       _startRouteSideRoadPrefetch();
@@ -268,6 +310,7 @@ extension _NavigationPlanning on NavigationController {
     _routeOptions = List.unmodifiable(routes);
     _previewRouteExplicitlySelected = false;
     _selectedRouteIndex = selectedIndex.clamp(0, routes.length - 1);
+    _routeStepOffset = 0;
     final selected = _routeOptions[_selectedRouteIndex];
     _engine = NavigationEngine(selected.steps, sideRoads: selected.sideRoads);
     _waypointPlan.bindRoute();
@@ -282,5 +325,6 @@ extension _NavigationPlanning on NavigationController {
         initialPosition,
       );
     }
+    _cacheRoute();
   }
 }

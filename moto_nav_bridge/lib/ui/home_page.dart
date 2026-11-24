@@ -23,6 +23,7 @@ import 'widgets/map_control_button.dart';
 import 'widgets/navigation_controls.dart';
 import 'widgets/navigation_map.dart';
 import 'widgets/rider_map_button.dart';
+import 'widgets/saved_trip_card.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, this.onMapStyleChanged});
@@ -41,6 +42,7 @@ class _HomePageState extends State<HomePage> {
   final _voice = GuidanceVoiceController();
   // The connection card shrank to its top-left pill: map buttons move up.
   bool _cardCompact = false;
+  bool _checkedSavedTrip = false;
 
   @override
   void initState() {
@@ -105,6 +107,14 @@ class _HomePageState extends State<HomePage> {
       _settingsRevision = revision;
     }
     _voice.bind(context.read<NavigationController>());
+    if (!_checkedSavedTrip) {
+      _checkedSavedTrip = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.read<NavigationController>().restoreSavedNavigation();
+        }
+      });
+    }
   }
 
   @override
@@ -319,6 +329,8 @@ class _HomePageState extends State<HomePage> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              if (!navigating && nav.hasSavedTrip)
+                                const SavedTripCard(),
                               if (navigating && nav.waypoints.isNotEmpty) ...[
                                 WaypointProgressBanner(nav: nav),
                                 const SizedBox(height: 8),

@@ -94,3 +94,13 @@ moto_nav_bridge/lib/controllers/navigation_recovery.dart
 moto_nav_bridge/lib/controllers/navigation_context.dart
 moto_nav_bridge/lib/controllers/navigation_destination.dart
 moto_nav_bridge/lib/controllers/navigation_lifecycle.dart
+moto_nav_bridge/lib/controllers/navigation_persistence.dart
+moto_nav_bridge/lib/services/offline_trip.dart
+moto_nav_bridge/lib/services/navigation_session_store.dart
+moto_nav_bridge/lib/services/waypoint_plan.dart
+moto_nav_bridge/lib/main.dart
+moto_nav_bridge/lib/l10n/app_text.dart
+moto_nav_bridge/lib/ui/widgets/saved_trip_card.dart
+moto_nav_bridge/test/offline_navigation_test.dart
+moto_nav_bridge/test/offline_session_store_test.dart
+moto_nav_bridge/test/saved_trip_card_test.dart

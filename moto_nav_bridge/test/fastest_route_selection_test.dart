@@ -94,7 +94,7 @@ void main() {
   );
 
   test(
-    'Start re-evaluates the automatic preview choice using fresh ETAs',
+    'Start retains the fastest cached preview without another ETA request',
     () async {
       final newFast = slow.copyWith(expectedTravelTimeSeconds: 300);
       final nav = create([
@@ -104,16 +104,19 @@ void main() {
       await nav.previewDestination(p2);
       expect(nav.selectedRouteIndex, 1);
       await nav.startNavigation(p2);
-      expect(nav.selectedRouteIndex, 0);
-      expect(nav.selectedRoute?.expectedTravelTimeSeconds, 300);
+      expect(nav.selectedRouteIndex, 1);
+      expect(
+        nav.selectedRoute?.expectedTravelTimeSeconds,
+        fast.expectedTravelTimeSeconds,
+      );
       positions.emit(p0);
       await pumpEventQueue();
-      expect(ble.sent.last.direction, DeviceDirection.left);
+      expect(ble.sent.last.direction, DeviceDirection.right);
     },
   );
 
   test(
-    'automatic preview index is not reused when provider order changes',
+    'Start keeps the cached route without depending on provider order changes',
     () async {
       final nav = create([
         [slow, fast],
@@ -122,7 +125,7 @@ void main() {
       await nav.previewDestination(p2);
       expect(nav.selectedRouteIndex, 1);
       await nav.startNavigation(p2);
-      expect(nav.selectedRouteIndex, 0);
+      expect(nav.selectedRouteIndex, 1);
       expect(nav.selectedRoute?.name, 'Fast');
     },
   );

@@ -91,8 +91,8 @@ void main() {
     await nav.previewDestination(destination, waypoints: stops);
     expect(nav.waypoints, stops);
     await nav.startNavigation(destination);
+    // Matching previews now start offline; no duplicate itinerary request.
     expect(routes.requests, [
-      [first, second],
       [first, second],
     ]);
     expect(nav.phase, NavPhase.navigating);

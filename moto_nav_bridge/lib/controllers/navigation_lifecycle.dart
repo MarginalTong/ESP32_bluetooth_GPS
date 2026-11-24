@@ -11,6 +11,7 @@ extension _NavigationLifecycle on NavigationController {
     _current = NavState.stopped;
     await ble.send(NavState.stopped);
     _set(NavPhase.paused);
+    _checkpoint(force: true);
   }
 
   Future<void> _stopNavigation() async {
@@ -36,13 +37,16 @@ extension _NavigationLifecycle on NavigationController {
     }
   }
 
-  Future<void> _clearNavigationState() async {
+  Future<void> _clearNavigationState({bool clearSaved = true}) async {
     _gpsRestartTimer?.cancel();
     _gpsRestartTimer = null;
     _stopHeartbeat();
     _invalidateReroute();
     _previewRequestId++;
     _previewingRoute = false;
+    if (clearSaved) _forgetSavedTrip();
+    _savedTrip = null;
+    _routeStepOffset = 0;
     if (_sideRoads is RouteSideRoadProvider) {
       _sideRoads.cancelPrefetch();
     }
