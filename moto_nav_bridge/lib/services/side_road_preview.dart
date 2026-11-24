@@ -46,13 +46,14 @@ class SideRoadPreview {
         continue;
       }
       final anchor = preview.metric(connection.routePoint);
-      if (anchor.forward < -_behindMeters ||
-          anchor.forward > MapPreview.distanceMeters + _beyondPreviewMeters ||
+      final ahead = connection.alongMeters - preview.originAlongNearby;
+      if (ahead < -_behindMeters ||
+          ahead > MapPreview.distanceMeters + _beyondPreviewMeters ||
           anchor.lateral.abs() > _lateralMeters) {
         continue;
       }
       for (final end in [road.start, road.end]) {
-        final candidate = _arm(preview, connection, end, anchor.forward, arms);
+        final candidate = _arm(preview, connection, end, ahead, arms);
         if (candidate != null) candidates.add(candidate);
       }
     }
@@ -89,7 +90,7 @@ class SideRoadPreview {
     final cross = route.dx * branch.dy - route.dy * branch.dx;
     if (cross.abs() / denominator < minimumCrossingSin) return null;
 
-    final a = preview.screenPoint(connection.routePoint);
+    final a = preview.junctionPoint(connection.routePoint);
     // A schematic junction: every arm is drawn at right angles to the
     // route, on the side the real road leaves it. The real angle is not
     // shown; only roads that genuinely cross the route qualify (above).
@@ -124,6 +125,7 @@ class SideRoadPreview {
   /// closest to the route.
   static _Connection? _connection(RoadSegment road, List<LatLng> route) {
     _Connection? best;
+    var along = 0.0;
     for (var i = 0; i < route.length - 1; i++) {
       final routeStart = route[i];
       final routeEnd = route[i + 1];
@@ -140,6 +142,7 @@ class SideRoadPreview {
           routeStart: routeStart,
           routeEnd: routeEnd,
           distanceMeters: 0,
+          alongMeters: along + routeStart.distanceTo(crossing),
         );
       }
       for (final roadPoint in [road.start, road.end]) {
@@ -155,9 +158,11 @@ class SideRoadPreview {
             routeStart: routeStart,
             routeEnd: routeEnd,
             distanceMeters: projected.distanceMeters,
+            alongMeters: along + routeStart.distanceTo(projected.projected),
           );
         }
       }
+      along += routeStart.distanceTo(routeEnd);
     }
     return best;
   }
@@ -178,6 +183,7 @@ class _Connection {
     required this.routeStart,
     required this.routeEnd,
     required this.distanceMeters,
+    required this.alongMeters,
   });
 
   final LatLng routePoint;
@@ -185,4 +191,5 @@ class _Connection {
   final LatLng routeStart;
   final LatLng routeEnd;
   final double distanceMeters;
+  final double alongMeters;
 }

@@ -13,6 +13,7 @@ class MapPreview {
     required this.origin,
     required this.heading,
     required this.lngScale,
+    required this.originAlongNearby,
   });
 
   // Shared route/side-road scale: show 200 m ahead without changing the BLE
@@ -44,12 +45,23 @@ class MapPreview {
   final double heading;
   final double lngScale;
 
+  /// Metres along [nearby] to the matched rider, including retained context.
+  final double originAlongNearby;
+
   /// The frame for [position] on the [remaining] route, or null when there
   /// is no route ahead to draw.
-  static MapPreview? build(LatLng position, List<LatLng> remaining) {
+  static MapPreview? build(
+    LatLng position,
+    List<LatLng> remaining, {
+    ClosestSegment? matched,
+    List<LatLng> behind = const [],
+  }) {
     if (remaining.length < 2) return null;
-    final closest = RouteGeometry.closestSegment(position, remaining);
+    final closest =
+        matched ?? RouteGeometry.closestSegment(position, remaining);
     if (closest == null) return null;
+    final approach = _approach(position, remaining, closest, behind);
+    if (approach != null) return approach;
 
     final route = <LatLng>[closest.projected];
     var travelled = 0.0;
@@ -71,26 +83,84 @@ class MapPreview {
     }
     if (route.length < 2) return null;
 
-    // Side roads are only drawn within this window, so match them against
-    // these segments rather than the whole remaining trip: on a long route
-    // that was thousands of segment tests per road on every GPS fix.
-    var firstSegment = closest.segmentIndex;
-    var behind = remaining[firstSegment].distanceTo(closest.projected);
-    while (firstSegment > 0 && behind < _windowBehindMeters) {
-      firstSegment--;
-      behind += remaining[firstSegment].distanceTo(remaining[firstSegment + 1]);
-    }
-
+    final context = _context(remaining, closest, lastSegment, behind);
     return MapPreview._(
       route: route,
-      nearby: remaining.sublist(firstSegment, lastSegment + 2),
+      nearby: context.points,
       origin: route[0],
+      originAlongNearby: context.originAlong,
       heading: RouteGeometry.bearingRadians(route[0], route[1]),
       // Clamped (radians) so the scale stays finite near the poles.
       lngScale:
           RouteGeometry.latScale *
           math.cos(RouteGeometry.toRad(route[0].latitude).clamp(-1.4, 1.4)),
     );
+  }
+
+  /// Bound side-road matching to nearby original vertices, not the whole
+  /// trip or the clipped forward polyline whose start moves with the rider.
+  static ({List<LatLng> points, double originAlong}) _context(
+    List<LatLng> remaining,
+    ClosestSegment closest,
+    int lastSegment,
+    List<LatLng> behind,
+  ) {
+    var firstSegment = closest.segmentIndex;
+    var behindMeters = remaining[firstSegment].distanceTo(closest.projected);
+    while (firstSegment > 0 && behindMeters < _windowBehindMeters) {
+      firstSegment--;
+      behindMeters += remaining[firstSegment].distanceTo(
+        remaining[firstSegment + 1],
+      );
+    }
+
+    final tail = firstSegment == 0 ? _tail(behind) : const <LatLng>[];
+    var originAlong = remaining[closest.segmentIndex].distanceTo(
+      closest.projected,
+    );
+    for (var i = firstSegment; i < closest.segmentIndex; i++) {
+      originAlong += remaining[i].distanceTo(remaining[i + 1]);
+    }
+    for (var i = 1; i < tail.length; i++) {
+      originAlong += tail[i - 1].distanceTo(tail[i]);
+    }
+    return (
+      points: [...tail, ...remaining.sublist(firstSegment, lastSegment + 2)],
+      originAlong: originAlong,
+    );
+  }
+
+  /// Without a reliable course the maneuver selector may advance inside its
+  /// arrival radius. Do not snap the map ahead while still on the approach.
+  static MapPreview? _approach(
+    LatLng position,
+    List<LatLng> remaining,
+    ClosestSegment match,
+    List<LatLng> behind,
+  ) {
+    if (behind.length < 2 ||
+        match.segmentIndex != 0 ||
+        match.projected.distanceTo(remaining.first) > 0.5) {
+      return null;
+    }
+    final tail = _tail(behind);
+    final previous = RouteGeometry.closestSegment(position, tail);
+    if (previous == null ||
+        previous.distanceMeters + 0.1 >= match.distanceMeters) {
+      return null;
+    }
+    return build(position, [...tail, ...remaining], matched: previous);
+  }
+
+  static List<LatLng> _tail(List<LatLng> points) {
+    if (points.length < 2) return const [];
+    var first = points.length - 1;
+    var length = 0.0;
+    while (first > 0 && length < _windowBehindMeters) {
+      length += points[first].distanceTo(points[first - 1]);
+      first--;
+    }
+    return points.sublist(first);
   }
 
   /// Metres ahead of and to the right of the rider.
@@ -113,6 +183,17 @@ class MapPreview {
   ({int x, int y}) screenPoint(LatLng point) {
     final m = metric(point);
     return screenPointAt(forward: m.forward, lateral: m.lateral);
+  }
+
+  /// Junctions remain in the same world frame after passing the rider.
+  /// Unlike the forward route, their anchors must NOT clamp to the rider's
+  /// baseline: that made passed forks ride along at y=34 for another 20 m.
+  ({int x, int y}) junctionPoint(LatLng point) {
+    final m = metric(point);
+    return (
+      x: ((_centerX + m.lateral * _scale) * resolution).round(),
+      y: ((_bottom - m.forward * _scale) * resolution).round(),
+    );
   }
 
   ({int x, int y}) screenPointAt({

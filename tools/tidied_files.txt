@@ -121,3 +121,7 @@ moto_nav_bridge/lib/config/ble_constants.dart
 moto_nav_bridge/lib/ui/widgets/instruction_card.dart
 moto_nav_bridge/test/navigation_continuity_test.dart
 moto_nav_bridge/test/navigation_fault_ui_test.dart
+moto_nav_bridge/lib/services/route_preview_progress.dart
+moto_nav_bridge/test/junction_progress_test.dart
+firmware/tests/junction_motion_test.cpp
+firmware/tests/run_map_motion_test.sh

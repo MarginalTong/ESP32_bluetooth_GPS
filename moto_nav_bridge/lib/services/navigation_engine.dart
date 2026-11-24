@@ -8,6 +8,7 @@ import '../models/route_step.dart';
 import 'map_preview.dart';
 import 'route_alignment.dart';
 import 'route_geometry.dart';
+import 'route_preview_progress.dart';
 import 'side_road_preview.dart';
 
 /// Turns a route + a live position into the [NavState] to show on the device.
@@ -39,6 +40,8 @@ class NavigationEngine {
   bool reverseTravel = false;
   int _remainingRouteCacheIndex = -1;
   List<LatLng> _remainingRouteCache = const [];
+  final _previewProgress = RoutePreviewProgress();
+  ClosestSegment? _previewMatch;
 
   /// How close (meters) the rider must get to a maneuver point before we
   /// advance to the next step.
@@ -92,7 +95,14 @@ class NavigationEngine {
     final limit = _speedLimitKph();
 
     // Route and junction previews use the same projection frame.
-    final preview = MapPreview.build(position, _remainingRoutePoints());
+    final preview = MapPreview.build(
+      position,
+      _remainingRoutePoints(),
+      matched: _previewMatch,
+      // Keep the actual previous junction after a maneuver transition.
+      // Reconnecting it to the truncated route's endpoint drags it forward.
+      behind: RoutePreviewProgress.behind(_steps, _index),
+    );
     return NavState(
       direction: _direction(position, straight),
       distanceMeters: dist < 0 ? 0 : dist,
@@ -349,9 +359,20 @@ class NavigationEngine {
     }
     _progressOffsetMeters = best?.distanceMeters ?? double.infinity;
     if (best == null) return 0;
-    _progressSegment = bestIndex;
-    return best.projected.distanceTo(points[bestIndex + 1]) +
-        _stepSuffixMeters[bestIndex + 1];
+    final progress = _previewProgress.update(
+      position,
+      points,
+      _index,
+      ClosestSegment(
+        segmentIndex: bestIndex,
+        projected: best.projected,
+        distanceMeters: best.distanceMeters,
+      ),
+    );
+    _progressSegment = progress.segmentIndex;
+    _previewMatch = progress;
+    return progress.projected.distanceTo(points[_progressSegment + 1]) +
+        _stepSuffixMeters[_progressSegment + 1];
   }
 
   List<LatLng> _geometryForStep(RouteStep step) =>
@@ -363,7 +384,9 @@ class NavigationEngine {
     final output = <LatLng>[];
     for (var i = _index; i < _steps.length; i++) {
       for (final point in _geometryForStep(_steps[i])) {
-        if (output.isEmpty || output.last.distanceTo(point) > 0.5) {
+        if (i == _index ||
+            output.isEmpty ||
+            output.last.distanceTo(point) > 0.5) {
           output.add(point);
         }
       }
