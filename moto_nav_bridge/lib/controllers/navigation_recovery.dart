@@ -29,7 +29,7 @@ extension _NavigationRecovery on NavigationController {
     if (!await _maybeReroute(pos) &&
         !_disposed &&
         _phase == NavPhase.navigating) {
-      _current = _engine?.update(pos);
+      _current = _engine == null ? null : _stamp(_engine!.update(pos), pos);
       _notify();
       if (_current != null) {
         _lastReliableNavState = _current;
@@ -211,9 +211,13 @@ extension _NavigationRecovery on NavigationController {
       _set(NavPhase.navigating);
       _startRouteSideRoadPrefetch();
 
-      final navState = _engine!.update(_latestPosition ?? pos);
+      final navState = _stamp(
+        _engine!.update(_latestPosition ?? pos),
+        _latestPosition ?? pos,
+      );
       _current = navState;
       _lastReliableNavState = navState;
+      _networkUnavailable = false;
       _checkpoint(force: true);
       _notify();
       await ble.send(navState);
@@ -293,7 +297,7 @@ extension _NavigationRecovery on NavigationController {
       _clearRerouteNotice();
       _offRouteSamples = 0;
       _log('reroute_failed_recovered_on_cached_route');
-      final navState = engine.update(latest);
+      final navState = _stamp(engine.update(latest), latest);
       _current = navState;
       _lastReliableNavState = navState;
       _set(NavPhase.navigating);
@@ -303,6 +307,9 @@ extension _NavigationRecovery on NavigationController {
     // Keep the last known route shape visible while a replacement is sought,
     // but do not revive a known-bad maneuver or distance.
     _rerouteFailure = AppText.current.rerouteFailed(e);
+    _networkUnavailable =
+        e is TimeoutException ||
+        e is DirectionsException && e.networkUnavailable;
     // Avoid retaining exception URLs or coordinates in diagnostic logs.
     _log(
       'reroute_failed type=${e.runtimeType} elapsedMs=${DateTime.now().difference(requestStarted).inMilliseconds}',

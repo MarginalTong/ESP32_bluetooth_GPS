@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'controllers/navigation_controller.dart';
+import 'controllers/navigation_continuity_controller.dart';
 import 'config/app_brand.dart';
 import 'config/account_config.dart';
 import 'controllers/account_controller.dart';
@@ -116,6 +117,19 @@ class NavioApp extends StatelessWidget {
           create: (ctx) => _navigation(ctx.read<BleService>()),
           update: (ctx, ble, previous) => previous ?? _navigation(ble),
         ),
+        ChangeNotifierProxyProvider2<
+          BleService,
+          NavigationController,
+          NavigationContinuityController
+        >(
+          lazy: false,
+          create: (ctx) => _continuity(
+            ctx.read<BleService>(),
+            ctx.read<NavigationController>(),
+          ),
+          update: (ctx, ble, nav, previous) =>
+              previous ?? _continuity(ble, nav),
+        ),
       ],
       child: AppLanguageScope(
         child: MaterialApp(
@@ -128,4 +142,16 @@ class NavioApp extends StatelessWidget {
       ),
     );
   }
+
+  NavigationContinuityController _continuity(
+    BleService ble,
+    NavigationController nav,
+  ) => NavigationContinuityController(
+    navigation: nav,
+    link: ble,
+    connected: () => ble.state == BleConnectionState.connected,
+    reconnecting: () =>
+        ble.state == BleConnectionState.connecting ||
+        ble.state == BleConnectionState.scanning,
+  );
 }

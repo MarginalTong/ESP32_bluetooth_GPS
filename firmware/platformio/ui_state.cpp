@@ -6,6 +6,13 @@ UiScreen resolveScreen(const UiInputs& inputs) {
   if (!inputs.displayAvailable || !inputs.displayOn) return UiScreen::Off;
   if (inputs.pairing) return UiScreen::Pairing;
 
+  if (inputs.hasNavigation && !inputs.tripEnded && !inputs.rerouting &&
+      inputs.navigation.direction == Direction::Arrived)
+    return inputs.arrivalElapsedMs < ArrivalFeedback::durationMs ? UiScreen::Arrived
+           : inputs.connected && inputs.clockSynced ? UiScreen::Clock : UiScreen::Brand;
+  if (inputs.hasNavigation && !inputs.tripEnded &&
+      (!inputs.connected || inputs.packetTimedOut)) return UiScreen::StaleGuidance;
+
   if (!inputs.connected) {
     if (inputs.tripEnded) return UiScreen::Brand;
     if (inputs.hadConnection) return UiScreen::ConnectionLost;

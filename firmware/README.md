@@ -169,9 +169,10 @@ Idle gaps between navigation packets are not interpreted as animation FPS.
 Serial logs record page transitions once (for example,
 `[UI] navigating -> stale_guidance`), not on every animation frame.
 
-Page priority preserves the existing behavior: an unavailable/off panel wins,
-then BOOT pairing; disconnected/idle states are resolved before route states;
-rerouting wins over STOP/ARRIVED; STOP shows no guidance; ARRIVED is never marked stale,
+Page priority: an unavailable/off panel wins, then deliberate BOOT pairing.
+A retained trip is considered before disconnected/idle states: link loss or
+expiry retains the route with a small stale badge, never the brand page.
+ARRIVED completes locally even without a link and is never marked stale;
 draws an 800 ms check animation and returns to the clock after four seconds;
 otherwise stale guidance and live navigation are distinct pages. A connected,
 idle display (including after an explicit trip end) shows the clock page.
@@ -209,10 +210,10 @@ readiness label; digital-fallback footer spacing lives in
 `ui_screens.cpp::drawIdleFooter` (user-requested standby layout tuning).
 There is no separate connected
 "ready to go" page; until the phone has sent the time, a connected display
-shows only the large centered NAVIO. Disconnecting restores the large centered
-NAVIO wordmark without a subtitle, even after a clock sync or an unexpected
-link loss. The disconnect state remains distinct internally so stale navigation
-is never shown as live. Navigation
+shows only the large centered NAVIO. Disconnecting an idle device restores
+the large NAVIO wordmark; disconnecting during navigation retains context.
+The disconnect state remains distinct so retained navigation is never shown
+as live. Navigation
 pages do not receive a brand overlay. This is a state-driven layout change,
 not a per-frame logo animation.
 Cached/stale pages never show a live rider marker or countdown.
@@ -432,10 +433,15 @@ Production behavior:
 - Invalid JSON or invalid directions are rejected.
 - If live navigation packets stop for more than 8 seconds, the display keeps
   the last arrow as context but drops the rider marker and distance and shows
-  `NO UPDATE / CHECK PHONE`. While stopped, the app re-sends about every 2 s,
+  a compact `LAST KNOWN` badge (`BLE / STALE` on link loss). While stopped,
+  the app re-sends about every 2 s,
   backed by a fresh GPS fix, so this only appears when the phone or its GPS
-  has really gone quiet. Only an explicit `STOP` packet or a BLE disconnect
-  clears the navigation state. `ARRIVED` never shows as stale.
+  has really gone quiet. STOP/GPS-unavailable updates retain the previous
+  real maneuver/map as context, without rider marker, speed limit or numeric
+  countdown. Only signed `end:true` clears that retained trip; ARRIVED can
+  complete locally. A clock sync or link reconnection alone never makes an
+  old snapshot live again. Retention is RAM-only: MCU reboot/power loss is
+  not the same as a BLE interruption.
 - OLED power saving is enabled:
   - standby renders only a minimal BLE status, not the navigation arrow area;
   - while the phone is connected, keep the display awake;
@@ -443,3 +449,30 @@ Production behavior:
   - when no phone is connected, after 60 seconds idle: turn the OLED panel off;
   - BLE keeps advertising/connecting while the OLED is off;
   - the display wakes immediately on BLE connect or a valid navigation packet.
+
+### Signed freshness extension (backward compatible)
+
+New phones include `utc` (Unix UTC seconds) alongside the existing local-wall
+`clock` in the signed clock packet. The BLE callback calibrates UTC separately
+from the clock dial; calibration is published through the locked mailbox for
+main-loop expiry checks. New measured navigation packets optionally carry `e`,
+their UTC deadline (GPS timestamp + 10 seconds), inside the authenticated JSON.
+The App checks expiry before writing and never extends it merely because a
+write was retried. Stationary heartbeats can renew it only after a fresh fix.
+Context-only STOP/rerouting and END packets do not claim live GPS freshness.
+
+`PacketWindow` rejects duplicate/decreasing `n`, expired `e`, implausibly future
+deadlines, and deadline-bearing packets before signed UTC calibration. A fresh
+connection nonce still rejects captured packets from earlier BLE connections.
+Both signature and sequence/expiry checks precede mailbox navigation updates;
+rejected packets cannot reset the guidance timeout. Existing packets without
+`utc`/`e` remain supported with receiver-age timeout only; strict source-age
+protection requires updating both App and firmware. The 400-byte signed limit
+and all UUIDs remain unchanged; optional side roads are trimmed to fit.
+
+On reconnection the App discards its old write queue, reuses the existing trip,
+obtains a fresh GPS fix, and sends a complete current preview/maneuver/distance
+snapshot under the new nonce/counter. It does not open a new map page. If no
+reliable fix exists it sends cached context only. The existing phone-side route
+revision remains a local persistence ID, not the transport nonce; no separate
+wire trip-ID is needed for these self-contained, ordered, expiring snapshots.

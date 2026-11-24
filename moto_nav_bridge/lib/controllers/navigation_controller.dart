@@ -24,6 +24,7 @@ import '../services/waypoint_plan.dart';
 import '../services/settings_store.dart';
 import '../services/offline_trip.dart';
 import '../services/navigation_session_store.dart';
+import '../config/ble_constants.dart';
 
 part 'navigation_planning.dart';
 part 'navigation_positions.dart';
@@ -32,6 +33,7 @@ part 'navigation_context.dart';
 part 'navigation_destination.dart';
 part 'navigation_lifecycle.dart';
 part 'navigation_persistence.dart';
+part 'navigation_display_sync.dart';
 
 enum NavPhase { idle, routing, navigating, paused, arrived, error }
 
@@ -282,8 +284,17 @@ class NavigationController extends ChangeNotifier {
   DateTime? _lastCheckpointAt;
   Future<void> _routeSave = Future.value();
   bool _restoringTrip = false;
+  bool _gpsUnavailable = false,
+      _networkUnavailable = false,
+      _navigationEnded = false;
+  bool get gpsUnavailable => _gpsUnavailable;
+  bool get networkUnavailable => _networkUnavailable;
+  bool get navigationEnded => _navigationEnded;
+  Future<void> synchronizeDisplay() => _synchronizeDisplay();
+  Future<bool>? _restoration;
   bool get hasSavedTrip => _savedTrip != null;
-  Future<bool> restoreSavedNavigation() => _restoreSavedNavigation();
+  Future<bool> restoreSavedNavigation() =>
+      _restoration ??= _restoreSavedNavigation();
   Future<bool> resumeSavedNavigation() => _resumeSavedNavigation();
   Future<void> flushSavedNavigation() async => _sessions?.flush();
 

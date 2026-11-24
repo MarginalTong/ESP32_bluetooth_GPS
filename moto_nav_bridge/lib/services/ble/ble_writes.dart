@@ -1,20 +1,32 @@
 part of '../ble_service.dart';
 
 extension _BleWrites on BleService {
+  Future<bool> _beginWriteDrain() {
+    late final Future<bool> operation;
+    operation = _drainPendingWrites().whenComplete(() {
+      if (identical(_writeOp, operation)) _writeOp = null;
+    });
+    return operation;
+  }
+
   Future<bool> _drainPendingWrites() async {
     while (_state == BleConnectionState.connected &&
         _characteristic != null &&
         _pendingState != null) {
       final state = _pendingState!;
       _pendingState = null;
-      _pendingStateAt = null;
       final now = DateTime.now();
       if (!_throttle.shouldSend(state, now)) continue;
       final signer = _signer;
+      final characteristic = _characteristic;
       if (signer == null) {
         _pendingState ??= state;
-        _pendingStateAt ??= now;
         return false;
+      }
+
+      final deadline = state.expiresAtUtcSeconds;
+      if (deadline != null && deadline < now.millisecondsSinceEpoch ~/ 1000) {
+        continue;
       }
 
       final wire = signer.sign(state.toWire());
@@ -33,12 +45,16 @@ extension _BleWrites on BleService {
           'long=${mtu > 0 && bytes.length > mtu - 3}';
       final elapsed = Stopwatch()..start();
       try {
-        await _characteristic!.write(
+        await characteristic!.write(
           bytes,
           withoutResponse: BleConstants.writeWithoutResponse,
           allowLongWrite: BleConstants.allowLongWrite,
           timeout: BleLinkHealth.writeTimeoutSeconds,
         );
+        if (!identical(_signer, signer) ||
+            !identical(_characteristic, characteristic)) {
+          return false;
+        }
         _linkHealth.reset();
         _log('write ok $timing ms=${elapsed.elapsedMilliseconds}');
         _throttle.markSent(state, now);
@@ -48,13 +64,18 @@ extension _BleWrites on BleService {
         _writeFailureFade?.cancel();
         notifyListeners();
       } catch (e) {
+        // An acknowledgement/error from the old connection cannot poison the
+        // new session, requeue its state, or reset its healthy transport.
+        if (!identical(_signer, signer) ||
+            !identical(_characteristic, characteristic)) {
+          return false;
+        }
         _log(
           'write failed $timing ms=${elapsed.elapsedMilliseconds} '
           'type=${e.runtimeType}',
         );
         // Preserve the newest unsent instruction for the reconnect flush.
         _pendingState ??= state;
-        _pendingStateAt ??= now;
         _lastError = '${BleService.writeFailurePrefix} $e';
         _lastErrorAt = DateTime.now();
         // Let listeners show the failure as old once it stops being recent.
@@ -83,18 +104,5 @@ extension _BleWrites on BleService {
       error: 'BLE link stopped responding',
     );
     _scheduleReconnect();
-  }
-
-  Future<void> _flushPendingState() async {
-    final pending = _pendingState;
-    final age = _pendingStateAt == null
-        ? null
-        : DateTime.now().difference(_pendingStateAt!);
-    if (pending != null && age != null && age < const Duration(seconds: 10)) {
-      await send(pending);
-    } else {
-      _pendingState = null;
-      _pendingStateAt = null;
-    }
   }
 }

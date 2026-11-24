@@ -132,6 +132,9 @@ bool issueAuthKey() {
 }
 
 bool isLiveFresh() {
+  if (navigationContinuity.awaitingFresh) return false;
+  if (liveExpiryUtc != 0 && displayUtcClockReady &&
+      int64_t(time(nullptr)) - displayClockOffset > liveExpiryUtc) return false;
   return lastLivePacketMs > 0 && millis() - lastLivePacketMs <= LIVE_PACKET_TIMEOUT_MS;
 }
 
@@ -160,7 +163,7 @@ UiInputs captureUiInputs() {
   inputs.routePointCount = mapMotion.routes;
   inputs.navigation = nav;
   const uint32_t now = millis();
-  arrivalFeedback.update(inputs.connected && inputs.hasNavigation &&
+  arrivalFeedback.update(inputs.hasNavigation &&
       !inputs.tripEnded && !inputs.rerouting && nav.direction == Direction::Arrived, now);
   inputs.arrivalElapsedMs = arrivalFeedback.elapsed(now);
   return inputs;

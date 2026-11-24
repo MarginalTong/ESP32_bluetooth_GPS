@@ -1055,7 +1055,14 @@ void main() {
         positions.current = still(DateTime.now());
         async.elapse(const Duration(seconds: 2));
         expect(ble.sent.length, before + 1);
-        expect(ble.sent.last, last);
+        expect(
+          ble.sent.last,
+          last.copyWith(expiresAtUtcSeconds: ble.sent.last.expiresAtUtcSeconds),
+        );
+        expect(
+          ble.sent.last.expiresAtUtcSeconds,
+          greaterThanOrEqualTo(last.expiresAtUtcSeconds!),
+        );
       });
     });
 
@@ -1304,7 +1311,9 @@ void main() {
       );
       positions.fail();
       await pumpEventQueue();
-      expect(ble.sent.last, NavState.stopped);
+      expect(ble.sent.last.direction, DeviceDirection.stop);
+      expect(ble.sent.last.rerouting, isTrue);
+      expect(ble.sent.last.routePreviewPoints, isNotEmpty);
       expect(controller.error, isNotNull);
 
       await Future<void>.delayed(const Duration(milliseconds: 2200));

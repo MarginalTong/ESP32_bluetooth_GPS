@@ -2,6 +2,7 @@
 #include "ui_screens.h"
 #include "ui_draw.h"
 #include "arrival_feedback.h"
+#include "navigation_continuity.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -62,14 +63,14 @@ static void transitions() {
   inputs.rerouting = true;
   expectPage(inputs, UiScreen::CachedRoute, "reroute retains geometry as context");
   inputs.packetTimedOut = true;
-  expectPage(inputs, UiScreen::WaitingPhone, "reroute timeout keeps its own waiting page");
+  expectPage(inputs, UiScreen::StaleGuidance, "reroute timeout retains stale context");
   inputs.routePointCount = 1;
-  expectPage(inputs, UiScreen::Updating, "one point cannot form a cached route");
+  expectPage(inputs, UiScreen::StaleGuidance, "stale snapshots never become live while waiting");
   inputs.routePointCount = 2;
-  expectPage(inputs, UiScreen::WaitingPhone, "two points are enough for cached geometry");
+  expectPage(inputs, UiScreen::StaleGuidance, "two points retain stale geometry");
   inputs.rerouting = false;
   inputs.navigation.direction = Direction::Stop;
-  expectPage(inputs, UiScreen::NoGuidance, "explicit STOP takes priority over stale guidance");
+  expectPage(inputs, UiScreen::StaleGuidance, "STOP during a stale session cannot clear context");
   inputs.navigation.direction = Direction::Arrived;
   expectPage(inputs, UiScreen::Arrived, "arrival does not expire when the app stops sending");
   inputs.arrivalElapsedMs = 800;
@@ -103,7 +104,7 @@ static void transitions() {
   inputs = guiding();
   inputs.connected = false;
   inputs.rerouting = inputs.packetTimedOut = true;
-  expectPage(inputs, UiScreen::ConnectionLost, "unexpected disconnect overrides old route flags");
+  expectPage(inputs, UiScreen::StaleGuidance, "unexpected disconnect retains old route as stale");
   inputs.connected = true;
   inputs.hasNavigation = false;
   expectPage(inputs, UiScreen::Brand, "reconnect does not resurrect old guidance");
@@ -141,7 +142,7 @@ static void combinations() {
         check((page == UiScreen::Off) == (!inputs.displayAvailable || !inputs.displayOn),
               "panel availability wins every flag combination");
         if (page == UiScreen::Navigating || page == UiScreen::Arrived) {
-          check(inputs.connected && inputs.hasNavigation && !inputs.rerouting &&
+          check((inputs.connected || page == UiScreen::Arrived) && inputs.hasNavigation && !inputs.rerouting &&
                 !inputs.pairing && inputs.navigation.direction != Direction::Stop,
                 "live pages require a connected navigation session");
           check(!inputs.packetTimedOut || page == UiScreen::Arrived,
@@ -153,9 +154,10 @@ static void combinations() {
         }
         if (!inputs.connected) {
           check(page == UiScreen::Off || page == UiScreen::Pairing ||
+                page == UiScreen::StaleGuidance || page == UiScreen::Arrived ||
                 page == UiScreen::Brand ||
                 page == UiScreen::ConnectionLost,
-                "disconnected facts can never expose old guidance");
+                "disconnect keeps only marked-stale context or completed arrival");
         }
         if (page == UiScreen::Clock)
           check(inputs.connected && inputs.clockSynced,
@@ -296,14 +298,14 @@ static void pages() {
       check(brandDraws.empty(), "branding never obscures route or maneuver geometry");
   }
   drawPage(UiScreen::CachedRoute);
-  check(drew("CACHED ROUTE") && drew("UPDATING...") && !drew("direction"),
-        "reroute context does not show a turn cue");
+  check(drew("LAST KNOWN") && !drew("distance"),
+        "reroute context is marked last-known, with no live distance");
   drawPage(UiScreen::WaitingPhone);
-  check(drew("WAITING PHONE") && drew("route"), "waiting keeps cached geometry");
+  check(drew("LAST KNOWN") && drew("route"), "waiting keeps cached geometry");
   drawPage(UiScreen::Updating);
   check(drew("UPDATING...") && !drew("route"), "no invented geometry while updating");
   drawPage(UiScreen::StaleGuidance);
-  check(drew("CHECK PHONE") && drew("direction") && !drew("distance"),
+  check(drew("LAST KNOWN") && drew("direction") && !drew("distance"),
         "stale guidance retains context but never a countdown");
   drawPage(UiScreen::Navigating);
   check(drawnNavigation.direction == Direction::Right && drawnNavigation.distanceMeters == 117,
@@ -385,6 +387,43 @@ static void idleFooterPlacement() {
 }
 
 int main() {
+  NavigationContinuity retained;
+  retained.accept({Direction::Right, 117, 60}, false, false);
+  for (uint32_t gap : {1000u, 10000u, 120000u}) {
+    retained.linkLost();
+    for (uint32_t elapsed = 0; elapsed <= gap; elapsed += 500) {
+      UiInputs sample = guiding();
+      sample.connected = false;
+      sample.packetTimedOut = elapsed >= 8000;
+      sample.navigation = retained.lastValid;
+      check(resolveUiState(sample).screen == UiScreen::StaleGuidance,
+            "elapsed outage time cannot switch a retained trip to brand/clock");
+    }
+    check(retained.active && retained.awaitingFresh && retained.lastValid.distanceMeters == 117,
+          "1s/10s/2min loss preserves navigation but never claims live data");
+    UiInputs reconnected = guiding();
+    reconnected.clockSynced = true;
+    reconnected.packetTimedOut = retained.awaitingFresh;
+    check(resolveUiState(reconnected).screen == UiScreen::StaleGuidance,
+          "clock sync and link reconnection alone cannot revive the old frame");
+    retained.accept({Direction::Stop, 0, 0}, false, true);
+    check(retained.active && retained.lastValid.direction == Direction::Right,
+          "GPS/network interruption retains the last real maneuver");
+    retained.accept({Direction::Right, 117, 60}, false, false);
+    check(!retained.awaitingFresh, "new authenticated guidance restores live state");
+  }
+  retained.accept({Direction::Stop, 0, 0}, true, false);
+  check(!retained.active, "only explicit END discards the retained trip");
+  PacketWindow window;
+  check(window.accept(1, false, 0, 100, false), "legacy clock packet accepted");
+  check(!window.accept(1, false, 0, 100, true), "duplicate rejected");
+  check(!window.accept(0, false, 0, 100, true), "out-of-order rejected");
+  check(!window.accept(2, true, 99, 100, true), "expired guidance rejected");
+  check(!window.accept(2, true, 105, 100, false), "expiry requires authenticated UTC clock");
+  check(!window.accept(2, true, 121, 100, true), "implausible future deadline rejected");
+  check(window.accept(3, true, 110, 100, true), "newest valid packet accepted");
+  window.reset();
+  check(window.accept(1, true, 110, 100, true), "new authenticated nonce starts a new counter window");
   transitions();
   combinations();
   pages();

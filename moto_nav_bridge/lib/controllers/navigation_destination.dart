@@ -86,7 +86,7 @@ extension _NavigationDestination on NavigationController {
         aligned[selected].steps,
         sideRoads: aligned[selected].sideRoads,
       );
-      final nextState = nextEngine.update(latest);
+      final nextState = _stamp(nextEngine.update(latest), latest);
       _invalidateReroute();
       _origin = latest;
       _destination = destination;

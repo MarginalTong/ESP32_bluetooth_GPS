@@ -124,7 +124,14 @@ extension _BlePairing on BleService {
       final localSeconds =
           now.millisecondsSinceEpoch ~/ 1000 + now.timeZoneOffset.inSeconds;
       await _characteristic!.write(
-        utf8.encode(_signer!.sign(jsonEncode({'clock': localSeconds}))),
+        utf8.encode(
+          _signer!.sign(
+            jsonEncode({
+              'clock': localSeconds,
+              'utc': now.millisecondsSinceEpoch ~/ 1000,
+            }),
+          ),
+        ),
         withoutResponse: BleConstants.writeWithoutResponse,
         allowLongWrite: BleConstants.allowLongWrite,
       );
@@ -133,8 +140,12 @@ extension _BlePairing on BleService {
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
       ready = true;
+      // Reconnection is not permission to replay a pre-loss instruction.
+      // NavigationContinuityController requests GPS-backed resynchronisation.
+      _pendingState = null;
+      _writeOp = null;
+      _throttle.reset();
       _setState(BleConnectionState.connected);
-      unawaited(_flushPendingState());
       return true;
     } catch (e) {
       await _releaseCurrentDevice(disconnectDevice: true);

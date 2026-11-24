@@ -23,16 +23,17 @@ class InstructionCard extends StatelessWidget {
     return GlassPanel(
       padding: const EdgeInsets.all(16),
       child: active && state != null
-          ? _ActiveInstruction(state: state)
+          ? _ActiveInstruction(state: state, gpsUnavailable: nav.gpsUnavailable)
           : const _WaitingInstruction(),
     );
   }
 }
 
 class _ActiveInstruction extends StatelessWidget {
-  const _ActiveInstruction({required this.state});
+  const _ActiveInstruction({required this.state, required this.gpsUnavailable});
 
   final NavState state;
+  final bool gpsUnavailable;
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +46,9 @@ class _ActiveInstruction extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          state.rerouting
+          gpsUnavailable
+              ? text.gpsSignalLost
+              : state.rerouting
               ? text.rerouting
               : _instruction(text, state.direction),
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -57,7 +60,11 @@ class _ActiveInstruction extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Icon(
-              state.rerouting ? Icons.sync : _icon(state.direction),
+              gpsUnavailable
+                  ? Icons.gps_off_rounded
+                  : state.rerouting
+                  ? Icons.sync
+                  : _icon(state.direction),
               size: 44,
               color: Theme.of(context).colorScheme.primary,
             ),
@@ -77,7 +84,9 @@ class _ActiveInstruction extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          state.rerouting
+          gpsUnavailable
+              ? text.gpsSignalLost
+              : state.rerouting
               ? text.rerouting
               : state.direction == DeviceDirection.arrived
               ? text.destinationReached

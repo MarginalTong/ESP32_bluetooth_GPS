@@ -132,7 +132,6 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   Future<bool>? _writeOp;
   Timer? _reconnectTimer;
   NavState? _pendingState;
-  DateTime? _pendingStateAt;
   bool _maintainConnection = false;
   int _reconnectAttempt = 0;
   static const _reconnectPolicy = BleReconnectPolicy();
@@ -189,10 +188,8 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
 
   void _setState(BleConnectionState s, {String? error}) {
     if (s == BleConnectionState.disconnected) {
-      // The display clears its turn on link loss. Do not replay a pre-loss
-      // instruction as soon as CoreBluetooth reconnects.
+      // The display retains context; only GPS-backed resync may make it live.
       _pendingState = null;
-      _pendingStateAt = null;
     }
     _state = s;
     _lastError = error;
@@ -309,7 +306,6 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
   @override
   Future<bool> send(NavState state) async {
     _pendingState = state;
-    _pendingStateAt = DateTime.now();
     if (_state != BleConnectionState.connected || _characteristic == null) {
       return false;
     }
@@ -321,7 +317,7 @@ class BleService extends ChangeNotifier implements NavigationBlePort {
     // retried by the next update or the reconnect flush, never in a hot loop.
     bool succeeded;
     do {
-      _writeOp ??= _drainPendingWrites().whenComplete(() => _writeOp = null);
+      _writeOp ??= _beginWriteDrain();
       succeeded = await _writeOp!;
     } while (succeeded &&
         _state == BleConnectionState.connected &&

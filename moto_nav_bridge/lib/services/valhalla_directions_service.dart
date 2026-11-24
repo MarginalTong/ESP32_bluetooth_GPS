@@ -157,13 +157,19 @@ class ValhallaDirectionsService implements WaypointRouteProvider {
       if (_disposed) throw DirectionsException('Valhalla service is disposed');
       return body;
     } on TimeoutException {
-      throw DirectionsException('Valhalla route planning timed out');
+      throw DirectionsException(
+        'Valhalla route planning timed out',
+        networkUnavailable: true,
+      );
     } on DirectionsException {
       rethrow;
     } catch (_) {
       // Client exceptions can contain auth-bearing URLs or coordinates. Never
       // surface the raw URL, request body, response body or network exception.
-      throw DirectionsException('Valhalla network request failed');
+      throw DirectionsException(
+        'Valhalla network request failed',
+        networkUnavailable: true,
+      );
     } finally {
       if (!abort.isCompleted) abort.complete();
       _pending.remove(abort);

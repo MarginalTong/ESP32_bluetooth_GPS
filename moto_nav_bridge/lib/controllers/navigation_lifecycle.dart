@@ -45,6 +45,9 @@ extension _NavigationLifecycle on NavigationController {
     _previewRequestId++;
     _previewingRoute = false;
     if (clearSaved) _forgetSavedTrip();
+    if (clearSaved) _navigationEnded = true;
+    _gpsUnavailable = false;
+    _networkUnavailable = false;
     _savedTrip = null;
     _routeStepOffset = 0;
     if (_sideRoads is RouteSideRoadProvider) {

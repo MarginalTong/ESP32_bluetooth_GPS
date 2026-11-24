@@ -37,7 +37,8 @@ class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* server) override {
     uint8_t nonce[AUTH_NONCE_BYTES];
     esp_fill_random(nonce, sizeof(nonce));
-    sessionCounter = 0;
+    packetWindow.reset();
+    signedUtcClockReady = false;
     portENTER_CRITICAL(&stateMux);
     memcpy(sessionNonce, nonce, sizeof(sessionNonce));
     pairingActive = false;
@@ -61,7 +62,7 @@ class ServerCallbacks : public BLEServerCallbacks {
     pairingButtonReleased = false;
     pairingRefused = false;
     mailbox.connected = false;
-    // loop() clears the maneuver and geometry when this counter changes.
+    // loop() marks retained guidance stale; a link loss is not END.
     mailbox.disconnects++;
     // A packet queued before the drop is obsolete and must not be shown.
     mailbox.navReady = false;
@@ -170,13 +171,16 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     }
 
     // A signed packet from earlier in this session must not be replayed.
-    if (!doc["n"].is<uint32_t>() || doc["n"].as<uint32_t>() <= sessionCounter) {
+    if (!doc["n"].is<uint32_t>() ||
+        (doc.containsKey("e") && !doc["e"].is<uint32_t>()) ||
+        !packetWindow.accept(doc["n"].as<uint32_t>(), doc.containsKey("e"),
+          doc["e"] | uint32_t(0), int64_t(time(nullptr)) - signedClockOffset,
+          signedUtcClockReady)) {
       rejectedPacketCount++;
       publishError("replayed packet");
       memset(matchedCurrent, 0, sizeof(matchedCurrent));
       return;
     }
-    sessionCounter = doc["n"].as<uint32_t>();
 
     // A fully accepted write with the current key on an ordinary connection
     // proves the phone stored it, retiring the previous key. Skip it if a
@@ -199,8 +203,14 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
       }
       timeval now = {static_cast<time_t>(seconds), 0};
       settimeofday(&now, nullptr);
+      if (doc["utc"].is<uint32_t>()) {
+        signedClockOffset = int64_t(seconds) - doc["utc"].as<uint32_t>();
+        signedUtcClockReady = true;
+      }
       portENTER_CRITICAL(&stateMux);
       mailbox.clockSynced = true;
+      mailbox.utcOffset = signedClockOffset;
+      mailbox.utcReady = signedUtcClockReady;
       mailbox.wake = true;
       portEXIT_CRITICAL(&stateMux);
       displayDirty = true;
@@ -255,6 +265,7 @@ class NavWriteCallbacks : public BLECharacteristicCallbacks {
     mailbox.routes = routePreviewPointCount;
     mailbox.roads = sideRoadSegmentCount;
     mailbox.navReady = true;
+    mailbox.expiryUtc = doc["e"] | uint32_t(0);
     mailbox.error[0] = '\0';
     mailbox.errorReady = true;
     mailbox.wake = true;

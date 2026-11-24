@@ -155,6 +155,7 @@ extension _NavigationPlanning on NavigationController {
             ? this.waypoints
             : const <PlaceResult>[]);
     final plan = WaypointPlan(stops);
+    _navigationEnded = false;
     // A matching preview is usable offline. If movement requires a new request,
     // retain the existing explicit route-selection policy for that response.
     final previewSelection =
@@ -242,6 +243,8 @@ extension _NavigationPlanning on NavigationController {
     }
 
     _set(NavPhase.navigating);
+    _navigationEnded = false;
+    _networkUnavailable = false;
     _startedNavigationAt = DateTime.now();
     _listenForPositions();
     _startHeartbeat();
@@ -287,7 +290,7 @@ extension _NavigationPlanning on NavigationController {
 
     final origin = _latestPosition ?? _origin;
     if (origin != null) {
-      final navState = _engine!.update(origin);
+      final navState = _stamp(_engine!.update(origin), origin);
       _current = navState;
       _lastReliableNavState = navState;
       _checkpoint(force: true);

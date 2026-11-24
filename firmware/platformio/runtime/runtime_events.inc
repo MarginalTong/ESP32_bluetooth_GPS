@@ -95,38 +95,44 @@ void applyBleMailbox() {
   }
 
   if (snapshot.disconnects != seenDisconnects) {
-    // Counted, so a drop and reconnect between two iterations still clears
-    // the last maneuver and map geometry.
+    // Counted, so a drop/reconnect between iterations also marks the old
+    // snapshot stale until a new authenticated navigation packet arrives.
     seenDisconnects = snapshot.disconnects;
-    hasReceivedNavPacket = false;
-    lastLivePacketMs = 0;
-    livePacketTimedOut = false;
-    nav = {Direction::Stop, 0, 0};
-    rerouting = false;
+    navigationContinuity.linkLost();
+    livePacketTimedOut = navigationContinuity.awaitingFresh;
+    mapMotion.active = false;
     displayDirty = true;
   }
   if (snapshot.connected) hadBleConnection = true;
   bleConnected = snapshot.connected;
   clockSynced = snapshot.clockSynced;
+  displayClockOffset = snapshot.utcOffset;
+  displayUtcClockReady = snapshot.utcReady;
   if (snapshot.errorReady) setLastError(snapshot.error);
   if (snapshot.navReady) {
-    nav = snapshot.nav;
-    rerouting = snapshot.rerouting;
+    navigationContinuity.accept(snapshot.nav, snapshot.tripEnded, snapshot.rerouting,
+                                 snapshot.routes >= 2);
+    nav = navigationContinuity.lastValid;
+    rerouting = snapshot.rerouting || navigationContinuity.awaitingFresh;
     tripEnded = snapshot.tripEnded;
-    lastLivePacketMs = tripEnded ? 0 : millis();
-    livePacketTimedOut = false;
-    hasReceivedNavPacket = !tripEnded;
+    if (tripEnded || !navigationContinuity.awaitingFresh) {
+      lastLivePacketMs = tripEnded ? 0 : millis();
+      liveExpiryUtc = snapshot.expiryUtc;
+    }
+    livePacketTimedOut = navigationContinuity.awaitingFresh;
+    hasReceivedNavPacket = navigationContinuity.active;
     displayDirty = true;
   }
   if (snapshot.wake) wakeDisplay();
 
-  if (!bleConnected || !hasReceivedNavPacket ||
-      (nav.direction == Direction::Stop && !rerouting)) {
+  if (!hasReceivedNavPacket || tripEnded) {
     mapMotion.valid = false;
     mapMotion.active = false;
   }
-  if (snapshot.navReady && !snapshot.tripEnded) {
+  if (!bleConnected || livePacketTimedOut) mapMotion.active = false;
+  if (snapshot.navReady && !snapshot.tripEnded && snapshot.routes >= 2) {
     mapMotion.accept(snapshot.map, snapshot.routes, snapshot.roads, millis());
+    if (livePacketTimedOut) mapMotion.active = false;
   }
 }
 

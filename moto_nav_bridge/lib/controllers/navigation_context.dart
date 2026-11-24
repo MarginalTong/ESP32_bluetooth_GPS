@@ -32,7 +32,7 @@ extension _NavigationContext on NavigationController {
           return;
         }
         if (_applyCachedSideRoads(position)) {
-          final refreshed = engine.update(position);
+          final refreshed = _stamp(engine.update(position), position);
           _current = refreshed;
           _notify();
           unawaited(ble.send(refreshed));
@@ -114,7 +114,7 @@ extension _NavigationContext on NavigationController {
             !_awaitingValidRoute &&
             _current?.rerouting != true &&
             _phase == NavPhase.navigating) {
-          final refreshed = engine.update(latest);
+          final refreshed = _stamp(engine.update(latest), latest);
           _current = refreshed;
           _notify();
           await ble.send(refreshed);

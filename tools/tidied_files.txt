@@ -6,14 +6,8 @@
 # The project-wide pass on 2026-11-04 (UI text, colors, formatting) did not
 # review tests, function size or structure, so no file is listed for it.
 #
-# Partly tidied, not listed until finished: esp32_nav_display.ino. Its
-# native-resolution drawing moved to platformio/gray_layer.h and the side-road
-# geometry to platformio/side_road_ray.h (2026-11-05), the map animation to
-# platformio/map_motion.h (2026-11-13), text reuse to
-# platformio/text_cache.h (2026-11-16), the speed limit sign to
-# platformio/speed_limit_sign.h and the instruction layout to
-# platformio/instruction_layout.h (2026-11-17); the rest of the file
-# still needs its whole-file tidy-up the next time it is changed.
+# The sketch runtime was split into platformio/runtime fragments on 2026-11-24.
+# Its entrypoints/auth block and ordered fragments are now listed below.
 firmware/platformio/ui_state.cpp
 firmware/platformio/ui_screens.cpp
 firmware/tests/ui_state_test.cpp
@@ -118,3 +112,12 @@ firmware/platformio/runtime/render_geometry.inc
 firmware/platformio/runtime/render_instructions.inc
 firmware/platformio/runtime/display_lifecycle.inc
 firmware/platformio/runtime/runtime_events.inc
+firmware/platformio/navigation_continuity.h
+moto_nav_bridge/lib/controllers/navigation_continuity_controller.dart
+moto_nav_bridge/lib/controllers/navigation_display_sync.dart
+moto_nav_bridge/lib/models/nav_state.dart
+moto_nav_bridge/lib/services/directions_exception.dart
+moto_nav_bridge/lib/config/ble_constants.dart
+moto_nav_bridge/lib/ui/widgets/instruction_card.dart
+moto_nav_bridge/test/navigation_continuity_test.dart
+moto_nav_bridge/test/navigation_fault_ui_test.dart

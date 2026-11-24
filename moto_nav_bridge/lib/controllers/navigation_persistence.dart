@@ -130,6 +130,7 @@ extension _NavigationPersistence on NavigationController {
       if (!_freshResumeFix(fix)) throw StateError('No fresh GPS fix');
       _installSavedTrip(trip, fix);
       _set(NavPhase.navigating);
+      _navigationEnded = false;
       _checkpoint(force: true);
       _startedNavigationAt = DateTime.now();
       _listenForPositions();

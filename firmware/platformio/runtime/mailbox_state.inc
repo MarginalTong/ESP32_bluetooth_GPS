@@ -13,6 +13,9 @@ static_assert(MAP_VALUE_COUNT == MapMotion::kValues &&
 // into this mailbox under stateMux; loop() takes a snapshot each iteration and
 // owns every navigation, timeout, error and backlight variable.
 struct BleMailbox {
+  uint32_t expiryUtc = 0;
+  int64_t utcOffset = 0;
+  bool utcReady = false;
   bool connected = false;
   uint32_t disconnects = 0;
   bool clockSynced = false;
@@ -43,7 +46,16 @@ bool pairingConnection = false;
 uint8_t sessionNonce[AUTH_NONCE_BYTES] = {};
 // Highest accepted counter "n" this connection. BLE task only: connect and
 // write callbacks run on the same Bluetooth host task.
-uint32_t sessionCounter = 0;
+#include "../navigation_continuity.h"
+PacketWindow packetWindow;
+NavigationContinuity navigationContinuity;
+// BLE-task-owned signed clock calibration; UTC expiry is independent of the
+// phone-local wall clock used by the instrument dial.
+int64_t signedClockOffset = 0;
+bool signedUtcClockReady = false;
+int64_t displayClockOffset = 0;
+bool displayUtcClockReady = false;
+uint32_t liveExpiryUtc = 0;
 BleMailbox mailbox;
 MapMotion mapMotion;
 #if NAV_ROUND_DISPLAY

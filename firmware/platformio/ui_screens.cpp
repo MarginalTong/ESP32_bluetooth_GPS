@@ -93,13 +93,11 @@ void drawUpdating(const UiState& state, const UiRenderContext& context) {
   }
 
   drawMiniRouteMap(false, state.navigation.direction);
-  const bool waiting = state.screen == UiScreen::WaitingPhone;
+  drawDirection(state.navigation.direction);
 #if NAV_ROUND_DISPLAY
-  drawRoundCenteredText(waiting ? "WAITING PHONE" : "CACHED ROUTE", 1, 177);
-  drawRoundCenteredText("UPDATING...", 1, 200);
+  drawRoundCenteredText("LAST KNOWN", 1, 210);
 #else
-  drawUiText(waiting ? "WAITING PHONE" : "CACHED ROUTE", 1, waiting ? 71 : 76, 104);
-  drawUiText("UPDATING...", 1, 83, 118);
+  drawUiText("LAST KNOWN", 1, 140, 116);
 #endif
 }
 
@@ -119,14 +117,10 @@ void drawStaleGuidance(const UiState& state, const UiRenderContext& context) {
   drawMiniRouteMap(false, state.navigation.direction);
   drawDirection(state.navigation.direction);
 #if NAV_ROUND_DISPLAY
-  constexpr float labelCenter = 154.5f;
-  drawUiText("NO UPDATE", 2, labelCenter - uiTextWidth("NO UPDATE", 2) / 2,
-             context.distanceTop);
-  drawUiText("CHECK PHONE", 1, labelCenter - uiTextWidth("CHECK PHONE", 1) / 2,
-             context.distanceTop + 19);
+  (void)context;
+  drawRoundCenteredText(state.connected ? "LAST KNOWN" : "BLE / STALE", 1, 210);
 #else
-  drawUiText("NO UPD", 2, context.distanceX, 100);
-  drawUiText("CHECK PHONE", 1, context.distanceX, 122);
+  drawUiText(state.connected ? "LAST KNOWN" : "LINK LOST", 1, context.distanceX, 116);
 #endif
 }
 }  // namespace

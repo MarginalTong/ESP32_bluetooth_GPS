@@ -16,6 +16,7 @@ class NavState {
     this.speedLimitKph,
     this.rerouting = false,
     this.tripEnded = false,
+    this.expiresAtUtcSeconds,
   });
 
   /// A safe idle/paused state (matches the firmware's STOP icon).
@@ -65,10 +66,13 @@ class NavState {
 
   /// Signed end-of-trip marker; unlike STOP, it returns the display to NAVIO.
   final bool tripEnded;
+  // Source-fix deadline, not the time a stalled BLE write was retried.
+  final int? expiresAtUtcSeconds;
 
   Map<String, dynamic> toJson() => {
     'dir': direction.wire,
     'dist': distanceMeters,
+    if (expiresAtUtcSeconds != null) 'e': expiresAtUtcSeconds,
     if (speedLimitKph != null) 'L': speedLimitKph,
     if (tripEnded) 'end': true,
     if (rerouting) 'rerouting': true,
@@ -86,6 +90,7 @@ class NavState {
       '{"dir":"${direction.wire}","dist":$distanceMeters',
     );
     if (speedLimitKph != null) buffer.write(',"L":$speedLimitKph');
+    if (expiresAtUtcSeconds != null) buffer.write(',"e":$expiresAtUtcSeconds');
     if (tripEnded) buffer.write(',"end":true');
     if (points.isNotEmpty) {
       buffer.write(',"P":[${points.join(',')}]');
@@ -116,6 +121,7 @@ class NavState {
     int? speedLimitKph,
     bool? rerouting,
     bool? tripEnded,
+    int? expiresAtUtcSeconds,
   }) => NavState(
     rerouting: rerouting ?? this.rerouting,
     tripEnded: tripEnded ?? this.tripEnded,
@@ -124,6 +130,7 @@ class NavState {
     routePreviewPoints: routePreviewPoints ?? this.routePreviewPoints,
     sideRoadPreviewPoints: sideRoadPreviewPoints ?? this.sideRoadPreviewPoints,
     speedLimitKph: speedLimitKph ?? this.speedLimitKph,
+    expiresAtUtcSeconds: expiresAtUtcSeconds ?? this.expiresAtUtcSeconds,
   );
 
   @override
@@ -131,6 +138,7 @@ class NavState {
       other is NavState &&
       other.rerouting == rerouting &&
       other.tripEnded == tripEnded &&
+      other.expiresAtUtcSeconds == expiresAtUtcSeconds &&
       other.direction == direction &&
       other.distanceMeters == distanceMeters &&
       other.speedLimitKph == speedLimitKph &&
@@ -142,6 +150,7 @@ class NavState {
     direction,
     rerouting,
     tripEnded,
+    expiresAtUtcSeconds,
     distanceMeters,
     speedLimitKph,
     Object.hashAll(routePreviewPoints),

@@ -36,6 +36,9 @@ class BleConstants {
   /// still delivers it. Only valid with write-with-response.
   static const bool allowLongWrite = true;
 
+  /// Measured guidance expires from its GPS timestamp, not its delivery time.
+  static const guidanceValiditySeconds = 10;
+
   /// The firmware rejects navigation writes longer than this, signature
   /// included (NavWriteCallbacks in the sketch).
   static const int maxSignedPacketBytes = 400;

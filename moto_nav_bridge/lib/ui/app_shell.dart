@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_text.dart';
 import '../services/ble_service.dart';
 import '../controllers/account_controller.dart';
+import '../controllers/navigation_continuity_controller.dart';
 import '../controllers/settings_sync_controller.dart';
 import '../controllers/rider_map_controller.dart';
 import 'home_page.dart';
@@ -49,6 +50,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
+    if (_foreground) context.read<NavigationContinuityController?>()?.resumed();
     context.read<SettingsSyncController?>()?.setForeground(_foreground);
     context.read<RiderMapController?>()?.setVisibility(
       foreground: _foreground,

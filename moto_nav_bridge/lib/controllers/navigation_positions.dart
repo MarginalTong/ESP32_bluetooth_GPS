@@ -47,9 +47,16 @@ extension _NavigationPositions on NavigationController {
               const Duration(seconds: 10) ||
           anchor == null ||
           state == null) {
+        if (!_disposed &&
+            _phase == NavPhase.navigating &&
+            identical(_engine, engine) &&
+            _latestPosition is NavigationFix &&
+            !_freshResumeFix(_latestPosition!)) {
+          _holdForGps();
+        }
         return;
       }
-      if (_rerouting || _awaitingValidRoute) {
+      if (_gpsUnavailable || _rerouting || _awaitingValidRoute) {
         await _onPosition(fix);
         return;
       }
@@ -62,9 +69,15 @@ extension _NavigationPositions on NavigationController {
         fix.accuracy * 2,
       );
       if (fix.distanceTo(anchor) > drift) return;
-      await ble.send(state);
+      await ble.send(_stamp(state, fix));
     } catch (_) {
-      // No fresh fix: send nothing, so the display reports stale guidance.
+      if (!_disposed &&
+          _phase == NavPhase.navigating &&
+          identical(_engine, engine) &&
+          _latestPosition is NavigationFix &&
+          !_freshResumeFix(_latestPosition!)) {
+        _holdForGps();
+      }
     } finally {
       _heartbeatBusy = false;
     }
@@ -120,15 +133,26 @@ extension _NavigationPositions on NavigationController {
         return;
       }
       _lastAcceptedFixAt = pos.timestamp;
+      if (!pos.accuracy.isFinite || pos.accuracy < 0 || pos.accuracy > 50) {
+        _holdForGps();
+        return;
+      }
       _recentFixes.add(pos);
       if (_recentFixes.length > NavigationController._recentFixLimit) {
         _recentFixes.removeAt(0);
       }
     }
+    final recoveringGps = _gpsUnavailable;
     _latestPosition = pos;
+    _gpsUnavailable = false;
+    if (_error == AppText.current.gpsSignalLost) _error = null;
 
     final engine = _engine;
     if (engine == null) return;
+    if (recoveringGps && engine.isOffRoute(pos)) {
+      _awaitingValidRoute = true;
+      _offRouteSamples = NavigationController._offRouteSamplesBeforeReroute;
+    }
 
     if (await _maybeReroute(pos)) return;
     // A newer location callback may have started/replaced the route while
@@ -148,7 +172,7 @@ extension _NavigationPositions on NavigationController {
     }
 
     final previousStep = voiceStepIndex;
-    final navState = engine.update(pos);
+    final navState = _stamp(engine.update(pos), pos);
     if (_offRouteSamples == 0 &&
         !_awaitingValidRoute &&
         selectedRoute != null) {
@@ -160,6 +184,7 @@ extension _NavigationPositions on NavigationController {
     }
 
     if (engine.isFinished) {
+      _navigationEnded = true;
       _set(NavPhase.arrived);
       _forgetSavedTrip();
     } else if (_error == AppText.current.gpsSignalLost) {
@@ -187,9 +212,7 @@ extension _NavigationPositions on NavigationController {
     _invalidateReroute();
     // Lost the GPS fix — tell the device to show STOP so the rider isn't given
     // a stale/misleading instruction.
-    _current = NavState.stopped;
-    _set(NavPhase.navigating, error: AppText.current.gpsSignalLost);
-    ble.send(NavState.stopped);
+    _holdForGps();
     _scheduleGpsRestart();
   }
 
