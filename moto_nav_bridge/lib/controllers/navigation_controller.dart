@@ -23,6 +23,13 @@ import '../services/valhalla_directions_service.dart';
 import '../services/waypoint_plan.dart';
 import '../services/settings_store.dart';
 
+part 'navigation_planning.dart';
+part 'navigation_positions.dart';
+part 'navigation_recovery.dart';
+part 'navigation_context.dart';
+part 'navigation_destination.dart';
+part 'navigation_lifecycle.dart';
+
 enum NavPhase { idle, routing, navigating, paused, arrived, error }
 
 /// Orchestrates the full data flow:
@@ -70,30 +77,12 @@ class NavigationController extends ChangeNotifier {
     required bool tolls,
     required bool ferries,
     bool tunnels = false,
-  }) async {
-    if (!canEditPreferences) throw StateError('Navigation is active');
-    final store = _preferences ?? await SharedPreferences.getInstance();
-    await SettingsStore.edit(store, () async {
-      if (!canEditPreferences) throw StateError('Navigation is active');
-      final saved = await store.setString(
-        _preferencesKey,
-        jsonEncode({
-          'highways': highways,
-          'tolls': tolls,
-          'ferries': ferries,
-          'tunnels': tunnels,
-        }),
-      );
-      if (!saved) throw StateError('Preferences could not be saved');
-      if (_disposed) return;
-      updatePreferences(
-        highways: highways,
-        tolls: tolls,
-        ferries: ferries,
-        tunnels: tunnels,
-      );
-    });
-  }
+  }) => _savePreferences(
+    highways: highways,
+    tolls: tolls,
+    ferries: ferries,
+    tunnels: tunnels,
+  );
 
   final NavigationBlePort ble;
   late final RouteProvider _directions;
@@ -109,31 +98,12 @@ class NavigationController extends ChangeNotifier {
     required bool tolls,
     required bool ferries,
     bool tunnels = false,
-  }) {
-    if (!canEditPreferences) return;
-    avoidHighways = highways;
-    avoidTolls = tolls;
-    avoidFerries = ferries;
-    avoidTunnels = tunnels;
-    // A preview made with old preferences must not remain selectable.
-    if (_sideRoads is RouteSideRoadProvider) {
-      _sideRoads.cancelPrefetch();
-    }
-    _routeOptions = const [];
-    _selectedRouteIndex = 0;
-    _previewRouteExplicitlySelected = false;
-    _engine = null;
-    notifyListeners();
-  }
-
-  void _snapshotPreferences() {
-    _tripPreferences = {
-      if (avoidHighways) 'use_highways': 0.0,
-      if (avoidTolls) 'use_tolls': 0.0,
-      if (avoidFerries) 'use_ferry': 0.0,
-      if (avoidTunnels) 'exclude_tunnels': true,
-    };
-  }
+  }) => _updatePreferences(
+    highways: highways,
+    tolls: tolls,
+    ferries: ferries,
+    tunnels: tunnels,
+  );
 
   bool _usableVoiceFix(LatLng? value) =>
       value is NavigationFix &&
@@ -184,25 +154,6 @@ class NavigationController extends ChangeNotifier {
   List<PlaceResult> get waypoints => _waypointPlan.stops;
   int get completedWaypoints => _waypointPlan.completed;
 
-  Future<List<RouteCandidate>> _fetchTripRoutes(
-    RouteProvider provider, {
-    required LatLng origin,
-    required LatLng destination,
-  }) {
-    final remaining = _waypointPlan.remaining;
-    if (remaining.isEmpty) {
-      return provider.fetchRoutes(origin: origin, destination: destination);
-    }
-    if (provider is! WaypointRouteProvider) {
-      throw DirectionsException('Route provider does not support waypoints');
-    }
-    return provider.fetchWaypointRoutes(
-      origin: origin,
-      destination: destination,
-      waypoints: remaining,
-    );
-  }
-
   List<RouteCandidate> _routeOptions = const [];
   List<RouteCandidate> get routeOptions => _routeOptions;
 
@@ -245,144 +196,17 @@ class NavigationController extends ChangeNotifier {
   static const Duration _heartbeatFixTimeout = Duration(seconds: 4);
   static const double _heartbeatMinDriftMeters = 30;
 
-  void _startHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(
-      _heartbeatInterval,
-      (_) => unawaited(_heartbeat()),
-    );
-  }
-
-  void _stopHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-  }
-
-  Future<void> _heartbeat() async {
-    final last = _lastAcceptedFixAt;
-    if (_heartbeatBusy ||
-        _disposed ||
-        _phase != NavPhase.navigating ||
-        _posSub == null ||
-        _engine == null ||
-        _rerouting ||
-        _awaitingValidRoute ||
-        (last != null &&
-            DateTime.now().difference(last) < _heartbeatInterval)) {
-      return;
-    }
-    // Identify this trip so a result arriving after stop/start or a route
-    // change is discarded instead of being applied to the new trip.
-    final engine = _engine;
-    final subscription = _posSub;
-    _heartbeatBusy = true;
-    try {
-      final fix = await _location.currentPosition().timeout(
-        _heartbeatFixTimeout,
-      );
-      final anchor = _latestPosition;
-      final state = _current;
-      if (_disposed ||
-          _phase != NavPhase.navigating ||
-          !identical(_engine, engine) ||
-          !identical(_posSub, subscription) ||
-          _rerouting ||
-          _awaitingValidRoute ||
-          fix is! NavigationFix ||
-          !_usableVoiceFix(fix) ||
-          DateTime.now().difference(fix.timestamp).abs() >
-              const Duration(seconds: 10) ||
-          anchor == null ||
-          state == null ||
-          state.rerouting ||
-          state.direction == DeviceDirection.stop) {
-        return;
-      }
-      // Beyond jitter the bike has really moved: leave that to the stream,
-      // which applies the full matcher. Sending nothing keeps the display
-      // honest if the stream has stalled while moving.
-      final drift = math.max(_heartbeatMinDriftMeters, fix.accuracy * 2);
-      if (fix.distanceTo(anchor) > drift) return;
-      await ble.send(state);
-    } catch (_) {
-      // No fresh fix: send nothing, so the display reports stale guidance.
-    } finally {
-      _heartbeatBusy = false;
-    }
-  }
-
   bool _rerouting = false;
   bool _awaitingValidRoute = false;
   Timer? _recoveryTimer;
   final List<String> _diagnostics = [];
   String get diagnostics => _diagnostics.join('\n');
   void clearDiagnostics() => _diagnostics.clear();
-  void recordMapDiagnostic(String event) {
-    if (event == 'tap_received' ||
-        event == 'region_changed' ||
-        const {'fit_skipped_active_gesture', 'fit_requested'}.contains(event) ||
-        RegExp(r'^update_ms=\d{1,9}$').hasMatch(event) ||
-        // The map reset gesture recognizers UIKit left stuck.
-        RegExp(
-          r'^recognizers_reset reason=(sequence_end|missed_touch) '
-          r'count=\d{1,3} states=[0-9/,]{1,300}$',
-        ).hasMatch(event) ||
-        event == 'view_recreate' ||
-        RegExp(r'^gate_reattach count=\d{1,3}$').hasMatch(event) ||
-        // Which touch-gate recognizer holds a touch the map never received.
-        RegExp(
-          r'^touch_gate observer=\d/\d{1,2} '
-          r'ancestors=[0-9A-Za-z_:/,|]{1,600}$',
-        ).hasMatch(event)) {
-      _log('map $event');
-    }
-  }
-
-  void _log(String event) {
-    _diagnostics.add('${DateTime.now().toUtc().toIso8601String()} $event');
-    if (_diagnostics.length > 200) _diagnostics.removeAt(0);
-  }
+  void recordMapDiagnostic(String event) => _recordMapDiagnostic(event);
 
   String _fixDetails(LatLng pos) => pos is NavigationFix
       ? 'accuracy=${pos.accuracy} speed=${pos.speed} heading=${pos.heading} ageMs=${DateTime.now().difference(pos.timestamp).inMilliseconds}'
       : 'quality=unknown';
-
-  void _scheduleRecovery() {
-    _recoveryTimer?.cancel();
-    _recoveryTimer = Timer(_minRerouteInterval, () async {
-      if (_disposed || !_awaitingValidRoute || _phase != NavPhase.navigating) {
-        return;
-      }
-      final pos = _latestPosition;
-      // A timer must never turn an old fix into a new navigation decision.
-      if (pos is NavigationFix &&
-          DateTime.now().difference(pos.timestamp).abs() <
-              const Duration(seconds: 10) &&
-          pos.accuracy.isFinite &&
-          pos.accuracy >= 0 &&
-          pos.accuracy <= 50) {
-        _offRouteSamples = _offRouteSamplesBeforeReroute;
-        _log('automatic_retry ${_fixDetails(pos)}');
-        await _onPositionRecovery(pos);
-      } else {
-        _log('retry_waiting_for_fresh_fix');
-      }
-      if (!_disposed && _awaitingValidRoute && !_rerouting) _scheduleRecovery();
-    });
-  }
-
-  Future<void> _onPositionRecovery(LatLng pos) async {
-    if (!await _maybeReroute(pos) &&
-        !_disposed &&
-        _phase == NavPhase.navigating) {
-      _current = _engine?.update(pos);
-      notifyListeners();
-      if (_current != null) {
-        _lastReliableNavState = _current;
-        await ble.send(_current!);
-      }
-    }
-  }
 
   bool _disposed = false;
   int _rerouteRequestId = 0;
@@ -414,16 +238,6 @@ class NavigationController extends ChangeNotifier {
   static const double _sideRoadRefreshDistanceMeters = 80;
 
   // Retain geometry only: an old turn or distance is unsafe after deviation.
-  NavState _temporaryRouteState() {
-    final snapshot = _lastReliableNavState;
-    return NavState(
-      direction: DeviceDirection.stop,
-      distanceMeters: 0,
-      rerouting: true,
-      routePreviewPoints: snapshot?.routePreviewPoints ?? const [],
-      sideRoadPreviewPoints: snapshot?.sideRoadPreviewPoints ?? const [],
-    );
-  }
 
   void _set(NavPhase p, {String? error}) {
     if (_disposed) return;
@@ -437,63 +251,7 @@ class NavigationController extends ChangeNotifier {
   Future<void> previewDestination(
     LatLng destination, {
     List<PlaceResult> waypoints = const [],
-  }) async {
-    if (_phase != NavPhase.idle && _phase != NavPhase.error) return;
-    final plan = WaypointPlan(waypoints);
-
-    if (_sideRoads is RouteSideRoadProvider) {
-      _sideRoads.cancelPrefetch();
-    }
-
-    // A newer preview, Start or stop supersedes this request. Its late result
-    // must never replace the active engine or another destination's routes.
-    final requestId = ++_previewRequestId;
-    bool current() =>
-        !_disposed &&
-        requestId == _previewRequestId &&
-        (_phase == NavPhase.idle || _phase == NavPhase.error);
-
-    _previewRouteExplicitlySelected = false;
-    _destination = destination;
-    _waypointPlan = plan;
-    _routeOptions = const [];
-    _engine = null;
-    _current = null;
-    _previewingRoute = true;
-    _snapshotPreferences();
-    _error = null;
-    notifyListeners();
-
-    if (!await _location.ensurePermission()) {
-      if (!current()) return;
-      _previewingRoute = false;
-      _set(NavPhase.error, error: 'Location permission/service unavailable');
-      return;
-    }
-
-    try {
-      if (!current()) return;
-      final origin = await _location.currentPosition();
-      if (!current()) return;
-      final routes = await _fetchTripRoutes(
-        _directions,
-        origin: origin,
-        destination: destination,
-      );
-      if (!current()) return;
-      _origin = origin;
-      _latestPosition = origin;
-      _setRouteOptions(routes, selectedIndex: preferredRouteIndex(routes));
-      _warmPreviewSideRoads();
-    } catch (e) {
-      if (current()) _error = e.toString();
-    } finally {
-      if (current()) {
-        _previewingRoute = false;
-        notifyListeners();
-      }
-    }
-  }
+  }) => _previewDestination(destination, waypoints: waypoints);
 
   int _previewRequestId = 0;
 
@@ -502,474 +260,15 @@ class NavigationController extends ChangeNotifier {
   Future<void> startNavigation(
     LatLng destination, {
     List<PlaceResult>? waypoints,
-  }) async {
-    final stops =
-        waypoints ??
-        (((_destination?.distanceTo(destination) ?? double.infinity) < 5)
-            ? this.waypoints
-            : const <PlaceResult>[]);
-    final plan = WaypointPlan(stops);
-    // A route picked on the preview map is an explicit user choice. Keep it
-    // across the fresh route request made when the trip starts.
-    final previewSelection =
-        _previewRouteExplicitlySelected &&
-            stops.length == this.waypoints.length &&
-            stops.asMap().entries.every(
-              (e) =>
-                  e.value.location.distanceTo(this.waypoints[e.key].location) <
-                  1,
-            ) &&
-            _phase == NavPhase.idle &&
-            _destination != null &&
-            _destination!.distanceTo(destination) < 5 &&
-            _routeOptions.isNotEmpty
-        ? _selectedRouteIndex
-        : null;
-    await stopNavigation();
-    _waypointPlan = plan;
-    _snapshotPreferences();
-
-    if (!await _location.ensurePermission()) {
-      _set(NavPhase.error, error: 'Location permission/service unavailable');
-      return;
-    }
-
-    _set(NavPhase.routing);
-    try {
-      final origin = await _location.currentPosition();
-      _origin = origin;
-      _latestPosition = origin;
-      _waypointPlan.completeAtStart(origin);
-      _destination = destination;
-      notifyListeners();
-      final routes = await _fetchTripRoutes(
-        _directions,
-        origin: origin,
-        destination: destination,
-      );
-      // Route planning must not wait for supplementary map context. Nearby
-      // junctions are fetched in the background after navigation starts.
-      _setRouteOptions(
-        routes,
-        selectedIndex:
-            previewSelection != null && previewSelection < routes.length
-            ? previewSelection
-            : preferredRouteIndex(routes),
-      );
-    } catch (e) {
-      _set(NavPhase.error, error: e.toString());
-      return;
-    }
-
-    _set(NavPhase.navigating);
-    _startedNavigationAt = DateTime.now();
-    _listenForPositions();
-    _startHeartbeat();
-    _startRouteSideRoadPrefetch();
-  }
-
-  void _listenForPositions() {
-    if (_disposed || _phase != NavPhase.navigating || _posSub != null) return;
-    try {
-      _posSub = _location.positionStream().listen(
-        _onPosition,
-        onError: _onPositionError,
-        onDone: () => _onPositionError(StateError('GPS stream ended')),
-      );
-      _log('gps_stream_started');
-    } catch (error) {
-      _onPositionError(error);
-    }
-  }
-
-  void _scheduleGpsRestart() {
-    _gpsRestartTimer?.cancel();
-    _gpsRestartTimer = Timer(const Duration(seconds: 2), () async {
-      _gpsRestartTimer = null;
-      if (_disposed || _phase != NavPhase.navigating) return;
-      _listenForPositions();
-      if (_posSub == null) return;
-      // A fresh one-shot fix can restore guidance even when the bike is still
-      // and the restarted stream's distance filter has not emitted yet.
-      try {
-        final fix = await _location.currentPosition().timeout(
-          const Duration(seconds: 8),
-        );
-        if (!_disposed &&
-            _phase == NavPhase.navigating &&
-            fix is NavigationFix &&
-            _usableVoiceFix(fix)) {
-          _log('gps_stream_recovered ${_fixDetails(fix)}');
-          await _onPosition(fix);
-        }
-      } catch (_) {
-        _log('gps_recovery_waiting_for_stream');
-      }
-    });
-  }
-
-  Future<void> _onPosition(LatLng pos) async {
-    if (_disposed || _phase != NavPhase.navigating) return;
-    if (pos is NavigationFix) {
-      if (DateTime.now().difference(pos.timestamp).abs() >
-              const Duration(seconds: 10) ||
-          (_lastAcceptedFixAt != null &&
-              !pos.timestamp.isAfter(_lastAcceptedFixAt!))) {
-        return;
-      }
-      _lastAcceptedFixAt = pos.timestamp;
-      _recentFixes.add(pos);
-      if (_recentFixes.length > _recentFixLimit) _recentFixes.removeAt(0);
-    }
-    _latestPosition = pos;
-
-    final engine = _engine;
-    if (engine == null) return;
-
-    if (await _maybeReroute(pos)) return;
-    // A newer location callback may have started/replaced the route while
-    // this callback was awaiting confirmation. Never send its old instruction.
-    if (_disposed ||
-        _phase != NavPhase.navigating ||
-        _rerouting ||
-        _engine != engine) {
-      return;
-    }
-
-    if (_sideRoads is RouteSideRoadProvider) {
-      _sideRoads.advancePrefetch(pos);
-      _applyCachedSideRoads(pos);
-    } else {
-      unawaited(_maybeRefreshSideRoads(pos));
-    }
-
-    final navState = engine.update(pos);
-    if (_offRouteSamples == 0 &&
-        !_awaitingValidRoute &&
-        selectedRoute != null) {
-      _waypointPlan.update(selectedRoute!, engine.currentStepIndex, pos);
-    }
-    _current = navState;
-    if (_offRouteSamples == 0 && !_awaitingValidRoute) {
-      _lastReliableNavState = navState;
-    }
-
-    if (engine.isFinished) {
-      _set(NavPhase.arrived);
-    } else if (_error == AppText.current.gpsSignalLost) {
-      _set(NavPhase.navigating);
-    } else {
-      notifyListeners();
-    }
-
-    await ble.send(navState);
-
-    if (engine.isFinished) {
-      await _posSub?.cancel();
-      _posSub = null;
-    }
-  }
-
-  Future<bool> _maybeReroute(LatLng pos) async {
-    final engine = _engine;
-    final destination = _destination;
-    final text = AppText.current;
-    if (engine == null || destination == null) return false;
-    if (_rerouting) {
-      _showRerouteNotice(text.rerouting);
-      return true;
-    }
-
-    if (pos is NavigationFix &&
-        (!pos.accuracy.isFinite || pos.accuracy < 0 || pos.accuracy > 50)) {
-      _offRouteSamples = 0;
-      return _awaitingValidRoute;
-    }
-
-    if (!engine.isOffRoute(pos)) {
-      _offRouteSamples = 0;
-      if (_awaitingValidRoute) {
-        // Recovery onto the old route is allowed only after a fresh position
-        // matches it again, never merely because the HTTP request failed.
-        _awaitingValidRoute = false;
-        _recoveryTimer?.cancel();
-        _log('recovered_on_previous_route');
-        _rerouteFailure = null;
-        _clearRerouteNotice();
-        _error = null;
-      }
-      return false;
-    }
-
-    if (pos is NavigationFix && _isStationary(pos)) {
-      if (_offRouteSamples > 0 || !_awaitingValidRoute) {
-        _log('off_route_ignored_while_stationary ${_fixDetails(pos)}');
-      }
-      _offRouteSamples = 0;
-      return _awaitingValidRoute;
-    }
-
-    // The first stream fix can differ from the fix used to request the route.
-    // Near the origin at low speed, give GPS and road snapping time to settle.
-    final started = _startedNavigationAt;
-    final start = _origin;
-    if (!_awaitingValidRoute &&
-        started != null &&
-        start != null &&
-        DateTime.now().difference(started) < _startMatchGrace &&
-        pos is NavigationFix &&
-        pos.speed.isFinite &&
-        pos.speed >= 0 &&
-        pos.speed < 3 &&
-        pos.distanceTo(start) <= (pos.accuracy * 3).clamp(40.0, 100.0)) {
-      _offRouteSamples = 0;
-      return false;
-    }
-
-    _offRouteSamples++;
-    if (_offRouteSamples < _offRouteSamplesBeforeReroute) {
-      if (_awaitingValidRoute) return true;
-      // Treat the first couple of off-route samples as confirmation only.
-      // GPS drift and simplified route geometry can briefly look off-route; if
-      // we block normal updates here, the ESP32 freezes on an old instruction
-      // exactly when the rider may be approaching a real turn.
-      return false;
-    }
-
-    final now = DateTime.now();
-    final last = _lastRerouteAt;
-    if (last != null && now.difference(last) < _minRerouteInterval) {
-      if (_rerouteFailure == null) {
-        _showRerouteNotice(text.rerouting);
-        _current = _temporaryRouteState();
-        await ble.send(_current!);
-      }
-      return true;
-    }
-
-    _rerouting = true;
-    _recoveryTimer?.cancel();
-    final requestStarted = DateTime.now();
-    _log('reroute_start ${_fixDetails(pos)}');
-    _awaitingValidRoute = true;
-    _rerouteFailure = null;
-    final requestId = ++_rerouteRequestId;
-    _lastRerouteAt = now;
-    _offRouteSamples = 0;
-    _showRerouteNotice(text.offRouteRerouting);
-    _current = _temporaryRouteState();
-    notifyListeners();
-
-    try {
-      unawaited(ble.send(_current!));
-      final routes = await _fetchTripRoutes(
-        _rerouteDirections,
-        origin: pos,
-        destination: destination,
-      );
-      if (!_isCurrentReroute(requestId, engine, destination)) {
-        return true;
-      }
-      final latest = _latestPosition ?? pos;
-      if (latest is NavigationFix &&
-          (!latest.accuracy.isFinite ||
-              latest.accuracy < 0 ||
-              latest.accuracy > 50 ||
-              DateTime.now().difference(latest.timestamp).abs() >
-                  const Duration(seconds: 10))) {
-        throw DirectionsException('No fresh accurate position for reroute');
-      }
-      final alignedRoutes = routes
-          .map((r) => RouteAlignment.trim(r, pos, latest))
-          .toList();
-      _log(
-        'reroute_response elapsedMs=${DateTime.now().difference(requestStarted).inMilliseconds} candidates=${routes.length} movedM=${pos.distanceTo(latest).round()} ${_fixDetails(latest)}',
-      );
-      var anyDistanceRejected = false;
-      var anyDirectionRejected = false;
-      final selected = preferredRouteIndex(
-        alignedRoutes,
-        avoidEarlyUTurns: true,
-        eligible: (route) {
-          // Heading on the API request is a preference, not a guarantee. Reject
-          // stale/distant or reverse-going starts rather than silently falling
-          // back to a route which points back at the missed junction.
-          final reverse = RouteAlignment.conflictsWithCourse(route, latest);
-          final matcher = NavigationEngine(route.steps);
-          matcher.isOffRoute(latest);
-          final distanceRejected =
-              (matcher.lastRouteDistanceMeters ?? double.infinity) >
-              (matcher.lastOffRouteThresholdMeters ?? 0);
-          final directionRejected = reverse || matcher.reverseTravel;
-          anyDistanceRejected |= distanceRejected;
-          anyDirectionRejected |= directionRejected;
-          _log(
-            'candidate startReverse=$reverse matchedReverse=${matcher.reverseTravel} distanceM=${matcher.lastRouteDistanceMeters?.toStringAsFixed(1)} thresholdM=${matcher.lastOffRouteThresholdMeters?.toStringAsFixed(1)} courseDeltaDeg=${matcher.lastCourseDeltaDegrees?.toStringAsFixed(1) ?? "ignored"} courseReliable=${latest is NavigationFix && latest.reliableCourse} distanceRejected=$distanceRejected directionRejected=$directionRejected rejected=${distanceRejected || directionRejected}',
-          );
-          return !distanceRejected && !directionRejected;
-        },
-      );
-      if (selected < 0) {
-        final reason = anyDistanceRejected && !anyDirectionRejected
-            ? 'No reroute is close enough to the current position'
-            : anyDirectionRejected && !anyDistanceRejected
-            ? 'No reroute matches the current travel direction'
-            : 'No reroute matches the current position and travel direction';
-        throw DirectionsException(reason);
-      }
-      _origin = latest;
-      _setRouteOptions(alignedRoutes, selectedIndex: selected);
-      _awaitingValidRoute = false;
-      _log('reroute_success selected=$selected');
-      _clearRerouteNotice();
-      _lastSideRoadRefreshAt = null;
-      _sideRoadRefreshPosition = null;
-      _set(NavPhase.navigating);
-      _startRouteSideRoadPrefetch();
-
-      final navState = _engine!.update(_latestPosition ?? pos);
-      _current = navState;
-      _lastReliableNavState = navState;
-      notifyListeners();
-      await ble.send(navState);
-      return true;
-    } catch (e) {
-      if (!_isCurrentReroute(requestId, engine, destination)) return true;
-      // Route geometry and maneuvers are already cached in the active engine.
-      // A failed network request must not blank guidance when the newest GPS
-      // fix has meanwhile matched that same route again. Never revive the old
-      // maneuver while the rider is still off-route or the fix is stale.
-      final latest = _latestPosition;
-      if (latest is NavigationFix &&
-          latest.accuracy.isFinite &&
-          latest.accuracy >= 0 &&
-          latest.accuracy <= 50 &&
-          DateTime.now().difference(latest.timestamp).abs() <
-              const Duration(seconds: 10) &&
-          !engine.isOffRoute(latest)) {
-        _awaitingValidRoute = false;
-        _recoveryTimer?.cancel();
-        _rerouteFailure = null;
-        _clearRerouteNotice();
-        _offRouteSamples = 0;
-        _log('reroute_failed_recovered_on_cached_route');
-        final navState = engine.update(latest);
-        _current = navState;
-        _lastReliableNavState = navState;
-        _set(NavPhase.navigating);
-        await ble.send(navState);
-        return true;
-      }
-      // Keep the last known route shape visible while a replacement is sought,
-      // but do not revive a known-bad maneuver or distance.
-      _rerouteFailure = text.rerouteFailed(e);
-      // Avoid retaining exception URLs or coordinates in diagnostic logs.
-      _log(
-        'reroute_failed type=${e.runtimeType} elapsedMs=${DateTime.now().difference(requestStarted).inMilliseconds}',
-      );
-      _scheduleRecovery();
-      _clearRerouteNotice();
-      _current = _temporaryRouteState();
-      _set(NavPhase.navigating, error: _rerouteFailure);
-      await ble.send(_current!);
-      return true;
-    } finally {
-      if (_rerouteRequestId == requestId) _rerouting = false;
-    }
-  }
+  }) => _startNavigation(destination, waypoints: waypoints);
 
   /// Whether every fix of the last [_stationaryEvidence] lies within the two
   /// fixes' combined accuracy of [pos]. The stream only reports moves over
   /// its distance filter, so an older fix still marks where a still bike was.
-  bool _isStationary(NavigationFix pos) {
-    if (pos.speed.isFinite && pos.speed >= _movingSpeedMetersPerSecond) {
-      return false;
-    }
-    for (final fix in _recentFixes.reversed) {
-      if (!fix.timestamp.isBefore(pos.timestamp)) continue;
-      final radius = math.max(pos.accuracy + fix.accuracy, 20.0);
-      if (pos.distanceTo(fix) > radius) return false;
-      if (pos.timestamp.difference(fix.timestamp) >= _stationaryEvidence) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  bool _isCurrentReroute(
-    int requestId,
-    NavigationEngine engine,
-    LatLng destination,
-  ) =>
-      !_disposed &&
-      _rerouteRequestId == requestId &&
-      _engine == engine &&
-      _phase == NavPhase.navigating &&
-      _destination == destination;
-
-  void _clearRerouteNotice() {
-    _rerouteNoticeTimer?.cancel();
-    _rerouteNoticeTimer = null;
-    _rerouteNoticeUntil = null;
-  }
-
-  void _invalidateReroute() {
-    _recoveryTimer?.cancel();
-    _rerouteRequestId++;
-    _rerouting = false;
-    _awaitingValidRoute = false;
-    _rerouteFailure = null;
-    _clearRerouteNotice();
-  }
-
-  Future<void> selectRoute(int index) async {
-    if (_disposed || _phase == NavPhase.paused) return;
-    if (index < 0 || index >= _routeOptions.length) return;
-    final preview = _phase == NavPhase.idle && _destination != null;
-    if (!preview && _phase != NavPhase.navigating) return;
-    // Only a deliberate tap should override the fastest candidate when Start
-    // fetches fresh ETAs. An automatically selected preview index is not a
-    // user choice. A tap on the already selected route still counts as one.
-    if (preview) _previewRouteExplicitlySelected = true;
-    if (index == _selectedRouteIndex) return;
-
-    _invalidateReroute();
-    _error = null;
-    _selectedRouteIndex = index;
-    _engine = NavigationEngine(
-      _routeOptions[index].steps,
-      sideRoads: _routeOptions[index].sideRoads,
-    );
-    _lastReliableNavState = _engine!.update(
-      _routeOptions[index].polyline.first,
-    );
-    _offRouteSamples = 0;
-    _lastSideRoadRefreshAt = null;
-    _sideRoadRefreshPosition = null;
-
-    if (preview) {
-      // Selecting a preview never starts guidance or writes to the device.
-      _current = null;
-      notifyListeners();
-      _warmPreviewSideRoads();
-      return;
-    }
-
-    final origin = _latestPosition ?? _origin;
-    if (origin != null) {
-      final navState = _engine!.update(origin);
-      _current = navState;
-      _lastReliableNavState = navState;
-      notifyListeners();
-      await ble.send(navState);
-      _startRouteSideRoadPrefetch();
-      return;
-    }
-
-    notifyListeners();
-  }
 
   bool _changingDestination = false;
+
+  Future<void> selectRoute(int index) => _selectRoute(index);
 
   /// Transactional switch. Old guidance keeps running while the new route is
   /// fetched. Stop/pause/reroute/cancel invalidates this pending result.
@@ -977,385 +276,26 @@ class NavigationController extends ChangeNotifier {
     LatLng destination, {
     required LatLng expectedDestination,
     required bool Function() stillConfirmed,
-  }) async {
-    final previousEngine = _engine;
-    bool valid() =>
-        !_disposed &&
-        stillConfirmed() &&
-        _phase == NavPhase.navigating &&
-        _current != null &&
-        _current!.direction != DeviceDirection.stop &&
-        !_rerouting &&
-        !_awaitingValidRoute &&
-        identical(_engine, previousEngine) &&
-        identical(_destination, expectedDestination);
-    bool fresh(LatLng? fix) =>
-        fix is NavigationFix &&
-        fix.accuracy.isFinite &&
-        fix.accuracy >= 0 &&
-        fix.accuracy <= 50 &&
-        DateTime.now().difference(fix.timestamp).abs() <
-            const Duration(seconds: 10);
-    Future<LatLng?> currentFreshFix() async {
-      if (fresh(_latestPosition)) return _latestPosition;
-      try {
-        final measured = await _location.currentPosition().timeout(
-          const Duration(seconds: 8),
-        );
-        if (!valid() || !fresh(measured)) return null;
-        final latest = _latestPosition;
-        if (latest is NavigationFix &&
-            latest.timestamp.isAfter((measured as NavigationFix).timestamp)) {
-          return fresh(latest) ? latest : null;
-        }
-        _latestPosition = measured;
-        return measured;
-      } catch (_) {
-        return null;
-      }
-    }
-
-    if (_changingDestination ||
-        previousEngine == null ||
-        !valid() ||
-        !destination.latitude.isFinite ||
-        !destination.longitude.isFinite ||
-        destination.latitude.abs() > 90 ||
-        destination.longitude.abs() > 180) {
-      return false;
-    }
-    _changingDestination = true;
-    try {
-      final start = await currentFreshFix();
-      if (start == null) return false;
-      final routes = await _fetchTripRoutes(
-        _directions,
-        origin: start,
-        destination: destination,
-      ).timeout(const Duration(seconds: 25));
-      if (!valid()) return false;
-      final latest = await currentFreshFix();
-      if (latest == null) return false;
-      final aligned = routes
-          .where((route) => route.steps.isNotEmpty)
-          .map((route) => RouteAlignment.trim(route, start, latest))
-          .toList();
-      final selected = preferredRouteIndex(
-        aligned,
-        avoidEarlyUTurns: true,
-        eligible: (route) {
-          if (route.steps.isEmpty ||
-              route.steps.last.end.distanceTo(destination) > 200) {
-            return false;
-          }
-          return !RouteAlignment.conflictsWithCourse(route, latest) &&
-              !NavigationEngine(route.steps).isOffRoute(latest);
-        },
-      );
-      if (selected < 0 || !valid()) return false;
-      // Build everything before touching the active trip.
-      final nextEngine = NavigationEngine(
-        aligned[selected].steps,
-        sideRoads: aligned[selected].sideRoads,
-      );
-      final nextState = nextEngine.update(latest);
-      _invalidateReroute();
-      _origin = latest;
-      _destination = destination;
-      _routeOptions = List.unmodifiable(aligned);
-      _selectedRouteIndex = selected;
-      _engine = nextEngine;
-      _waypointPlan.bindRoute();
-      _waypointPlan.update(
-        aligned[selected],
-        nextEngine.currentStepIndex,
-        latest,
-      );
-      _current = nextState;
-      _error = null;
-      _offRouteSamples = 0;
-      _lastRerouteAt = null;
-      _lastSideRoadRefreshAt = null;
-      _sideRoadRefreshPosition = null;
-      _log('voice_destination_changed');
-      notifyListeners();
-      _startRouteSideRoadPrefetch();
-      // Routing success is separate from BLE availability. Send the new state,
-      // but do not claim the route failed after it has already been committed.
-      unawaited(
-        Future<bool>.sync(() => ble.send(nextState)).catchError((_) => false),
-      );
-      return true;
-    } catch (_) {
-      if (!_disposed) _log('voice_destination_change_failed');
-      return false;
-    } finally {
-      _changingDestination = false;
-    }
-  }
-
-  void _setRouteOptions(
-    List<RouteCandidate> routes, {
-    required int selectedIndex,
-  }) {
-    if (routes.isEmpty) {
-      throw DirectionsException('No usable routes returned');
-    }
-    _routeOptions = List.unmodifiable(routes);
-    _previewRouteExplicitlySelected = false;
-    _selectedRouteIndex = selectedIndex.clamp(0, routes.length - 1);
-    final selected = _routeOptions[_selectedRouteIndex];
-    _engine = NavigationEngine(selected.steps, sideRoads: selected.sideRoads);
-    _waypointPlan.bindRoute();
-    final initialPosition = _waypointPlan.stops.isEmpty
-        ? selected.polyline.first
-        : (_latestPosition ?? selected.polyline.first);
-    _lastReliableNavState = _engine!.update(initialPosition);
-    if (_phase == NavPhase.routing || _phase == NavPhase.navigating) {
-      _waypointPlan.update(
-        selected,
-        _engine!.currentStepIndex,
-        initialPosition,
-      );
-    }
-  }
-
-  void _startRouteSideRoadPrefetch() {
-    final provider = _sideRoads;
-    final engine = _engine;
-    final route = selectedRoute;
-    if (provider is! RouteSideRoadProvider ||
-        engine == null ||
-        route == null ||
-        _phase != NavPhase.navigating) {
-      return;
-    }
-    _lastSideRoadCacheVersion = -1;
-    _lastAppliedSideRoads = const [];
-    provider.prefetchRoute(
-      route.polyline,
-      _latestPosition ?? route.polyline.first,
-      (loadedNear) {
-        final position = _latestPosition;
-        if (_disposed ||
-            _phase != NavPhase.navigating ||
-            _engine != engine ||
-            _rerouting ||
-            _awaitingValidRoute ||
-            position is! NavigationFix ||
-            !position.accuracy.isFinite ||
-            position.accuracy > 50 ||
-            DateTime.now().difference(position.timestamp).abs() >=
-                const Duration(seconds: 10) ||
-            position.distanceTo(loadedNear) > 600) {
-          return;
-        }
-        if (_applyCachedSideRoads(position)) {
-          final refreshed = engine.update(position);
-          _current = refreshed;
-          notifyListeners();
-          unawaited(ble.send(refreshed));
-        }
-      },
-    );
-    if (_latestPosition != null) _applyCachedSideRoads(_latestPosition!);
-  }
-
-  void _warmPreviewSideRoads() {
-    final provider = _sideRoads;
-    final route = selectedRoute;
-    if (provider is! RouteSideRoadProvider ||
-        route == null ||
-        route.polyline.length < 2 ||
-        _phase != NavPhase.idle) {
-      return;
-    }
-    // Preview uses the same route tiles but never sends guidance to BLE.
-    // The tile futures survive cancelPrefetch, so starting navigation can
-    // reuse completed or in-flight downloads without waiting for them.
-    provider.prefetchRoute(
-      route.polyline,
-      _latestPosition ?? route.polyline.first,
-      (_) {},
-    );
-  }
-
-  bool _applyCachedSideRoads(LatLng position) {
-    final provider = _sideRoads;
-    final engine = _engine;
-    if (provider is! RouteSideRoadProvider || engine == null) return false;
-    final moved =
-        _sideRoadRefreshPosition == null ||
-        _sideRoadRefreshPosition!.distanceTo(position) >= 80;
-    if (!moved && provider.cacheVersion == _lastSideRoadCacheVersion) {
-      return false;
-    }
-    _lastSideRoadCacheVersion = provider.cacheVersion;
-    _sideRoadRefreshPosition = position;
-    final roads = provider.cachedSideRoadsNear(position);
-    if (listEquals(roads, _lastAppliedSideRoads)) return false;
-    _lastAppliedSideRoads = roads;
-    engine.replaceSideRoads(roads);
-    return true;
-  }
-
-  Future<void> _maybeRefreshSideRoads(LatLng position) async {
-    if (_disposed || _refreshingSideRoads) return;
-    final now = DateTime.now();
-    final lastAt = _lastSideRoadRefreshAt;
-    final lastPosition = _sideRoadRefreshPosition;
-    final isRecent =
-        lastAt != null && now.difference(lastAt) < _sideRoadRefreshInterval;
-    final hasNotMovedFar =
-        lastPosition != null &&
-        lastPosition.distanceTo(position) < _sideRoadRefreshDistanceMeters;
-    if (isRecent && hasNotMovedFar) return;
-
-    _refreshingSideRoads = true;
-    _lastSideRoadRefreshAt = now;
-    _sideRoadRefreshPosition = position;
-    try {
-      final roads = await _sideRoads.fetchSideRoadsNear(position);
-      if (_disposed) return;
-      // Keep the previous road context during a temporary network/API failure.
-      if (roads.isNotEmpty) {
-        final engine = _engine;
-        engine?.replaceSideRoads(roads);
-        if (kDebugMode) {
-          debugPrint('[SIDE_ROADS] navigation engine loaded ${roads.length}');
-        }
-        final latest = _latestPosition;
-        if (engine != null &&
-            latest != null &&
-            !_rerouting &&
-            !_awaitingValidRoute &&
-            _current?.rerouting != true &&
-            _phase == NavPhase.navigating) {
-          final refreshed = engine.update(latest);
-          _current = refreshed;
-          notifyListeners();
-          await ble.send(refreshed);
-        }
-      }
-    } catch (error) {
-      // Side roads are supplementary; navigation must continue uninterrupted.
-      if (kDebugMode) debugPrint('[SIDE_ROADS] refresh failed: $error');
-    } finally {
-      _refreshingSideRoads = false;
-    }
-  }
-
-  void _showRerouteNotice(String message) {
-    final now = DateTime.now();
-    final until = _rerouteNoticeUntil;
-    if (until != null && now.isBefore(until)) return;
-
-    _rerouteNoticeUntil = now.add(_rerouteNoticeDuration);
-    _set(NavPhase.navigating, error: message);
-
-    _rerouteNoticeTimer?.cancel();
-    _rerouteNoticeTimer = Timer(_rerouteNoticeDuration, () {
-      _rerouteNoticeUntil = null;
-      if (_phase == NavPhase.navigating && _error == message) {
-        _set(NavPhase.navigating);
-      }
-    });
-  }
-
-  void _onPositionError(Object e) {
-    if (_disposed || _phase != NavPhase.navigating) return;
-    _log('gps_stream_error type=${e.runtimeType}');
-    final failedSubscription = _posSub;
-    _posSub = null;
-    unawaited(failedSubscription?.cancel() ?? Future<void>.value());
-    _invalidateReroute();
-    // Lost the GPS fix — tell the device to show STOP so the rider isn't given
-    // a stale/misleading instruction.
-    _current = NavState.stopped;
-    _set(NavPhase.navigating, error: AppText.current.gpsSignalLost);
-    ble.send(NavState.stopped);
-    _scheduleGpsRestart();
-  }
+  }) => _changeDestination(
+    destination,
+    expectedDestination: expectedDestination,
+    stillConfirmed: stillConfirmed,
+  );
 
   /// Temporarily pause navigation: park the device on STOP and stop consuming
   /// positions, but keep the route/destination so the rider can start again
   /// without re-searching.
-  Future<void> pause() async {
-    _gpsRestartTimer?.cancel();
-    _gpsRestartTimer = null;
-    _stopHeartbeat();
-    _invalidateReroute();
-    await _posSub?.cancel();
-    _posSub = null;
-    _current = NavState.stopped;
-    await ble.send(NavState.stopped);
-    _set(NavPhase.paused);
-  }
+  Future<void> pause() => _pause();
 
-  Future<void> stopNavigation() async {
-    await _clearNavigationState();
-  }
+  Future<void> stopNavigation() => _stopNavigation();
 
   /// Fully end the current trip. This is intentionally stronger than [pause]:
   /// it clears route/navigation state and can release the BLE link so the next
   /// session starts from a clean scan/connect cycle.
-  Future<void> endNavigation({bool disconnectDevice = true}) async {
-    // Clear the phone's trip first. A stalled BLE write must never leave the
-    // End navigation button apparently unresponsive.
-    await _clearNavigationState();
-    bool stopDelivered = false;
-    try {
-      stopDelivered = await ble
-          .send(NavState.ended)
-          .timeout(const Duration(seconds: 2));
-    } catch (error) {
-      _log('stop_write_failed type=${error.runtimeType}');
-    }
-    // If STOP could not reach the display, drop the link so it cannot keep
-    // showing an obsolete live turn as though the phone were still guiding.
-    if (disconnectDevice || !stopDelivered) {
-      await ble.disconnect();
-    }
-  }
+  Future<void> endNavigation({bool disconnectDevice = true}) =>
+      _endNavigation(disconnectDevice: disconnectDevice);
 
-  Future<void> _clearNavigationState() async {
-    _gpsRestartTimer?.cancel();
-    _gpsRestartTimer = null;
-    _stopHeartbeat();
-    _invalidateReroute();
-    _previewRequestId++;
-    _previewingRoute = false;
-    if (_sideRoads is RouteSideRoadProvider) {
-      _sideRoads.cancelPrefetch();
-    }
-    await _posSub?.cancel();
-    _posSub = null;
-    _engine = null;
-    _current = null;
-    _lastReliableNavState = null;
-    _origin = null;
-    _latestPosition = null;
-    _recentFixes.clear();
-    _destination = null;
-    _waypointPlan = WaypointPlan(const []);
-    _routeOptions = const [];
-    _selectedRouteIndex = 0;
-    _previewRouteExplicitlySelected = false;
-    _rerouting = false;
-    _offRouteSamples = 0;
-    _lastRerouteAt = null;
-    _startedNavigationAt = null;
-    _lastAcceptedFixAt = null;
-    _rerouteNoticeUntil = null;
-    _rerouteNoticeTimer?.cancel();
-    _rerouteNoticeTimer = null;
-    _refreshingSideRoads = false;
-    _sideRoadRefreshPosition = null;
-    _lastSideRoadRefreshAt = null;
-    _lastSideRoadCacheVersion = -1;
-    _lastAppliedSideRoads = const [];
-    _set(NavPhase.idle);
-  }
+  void _notify() => notifyListeners();
 
   @override
   void dispose() {

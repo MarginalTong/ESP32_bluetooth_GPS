@@ -87,3 +87,10 @@ moto_nav_bridge/lib/ui/widgets/connection_card_content.dart
 moto_nav_bridge/lib/ui/widgets/map_selection_pop.dart
 moto_nav_bridge/test/map_selection_pop_test.dart
 moto_nav_bridge/test/home_map_selection_pop_test.dart
+moto_nav_bridge/lib/controllers/navigation_controller.dart
+moto_nav_bridge/lib/controllers/navigation_planning.dart
+moto_nav_bridge/lib/controllers/navigation_positions.dart
+moto_nav_bridge/lib/controllers/navigation_recovery.dart
+moto_nav_bridge/lib/controllers/navigation_context.dart
+moto_nav_bridge/lib/controllers/navigation_destination.dart
+moto_nav_bridge/lib/controllers/navigation_lifecycle.dart
