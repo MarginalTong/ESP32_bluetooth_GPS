@@ -79,14 +79,6 @@ struct GrayLayer {
     if (pixels != nullptr) memset(pixels, 0, size_t(width) * height);
   }
 
-  // Sets whole rows [top, bottom) to one level: a flat background to draw on.
-  void fillRows(int16_t top, int16_t bottom, uint8_t level) {
-    if (pixels == nullptr) return;
-    if (top < 0) top = 0;
-    if (bottom > height) bottom = height;
-    if (top < bottom) memset(pixels + size_t(top) * width, level, size_t(bottom - top) * width);
-  }
-
   // Pixel rows/columns a shape spanning [lo, hi] may touch, clipped. Clamped
   // before the integer conversion: a NaN or far off-screen coordinate gives
   // an empty range instead of an index outside the buffer.

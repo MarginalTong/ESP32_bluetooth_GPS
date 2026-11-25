@@ -4,19 +4,16 @@
 // (recorded in firmware/README.md), shared by the firmware and the host test
 // (instruction_layout_test). Canvas pixels of the 240-px layout.
 //
-// Below the map is a slightly lighter panel: the turn arrow on the left, the
-// distance in the middle with its smaller unit on the right, and the speed limit sign
-// on the right, sitting across the panel's upper edge.
+// Below the map, on black: the turn arrow on the left, the distance in the
+// middle with its smaller unit on the right, and the speed limit sign on the right,
+// sitting across the line where the map ends.
 #include <stdint.h>
 
 namespace InstructionLayout {
-// First row of the panel; the map is clipped above it.
+// First row of the instruction area; the map is clipped above it.
 constexpr float panelTop = 162.0f;
-// Gray level of the panel, of 255: enough to separate it from the black map
-// without lowering the contrast of the white arrow and digits.
-constexpr uint8_t panelLevel = 28;
 
-// Arrow artwork centre: its 33 px height just fits under the panel's edge,
+// Arrow artwork centre: its 33 px height just fits under the map's edge,
 // level with the distance digits.
 constexpr float arrowCenterX = 62.0f;
 constexpr float arrowCenterY = 183.5f;

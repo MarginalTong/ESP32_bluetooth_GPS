@@ -12,7 +12,7 @@
 // The look and place of the sign, in one place (recorded in
 // firmware/README.md). Positions are canvas pixels of the 240-px layout.
 namespace SpeedSignStyle {
-// On the right, across the upper edge of the instruction panel (see
+// On the right, across the line where the map ends (see
 // instruction_layout.h): beside the distance, clear of the route's centre
 // column, and inside the round aperture. About 9 mm on the 39 mm panel:
 // readable at a glance without crowding the map.

@@ -243,9 +243,6 @@ void drawMiniRouteMap(bool showRider, Direction direction) {
                    COLOR_BG);
 #if NAV_ROUND_DISPLAY
   nativeLayer.clipBottom = nativeLayer.height;
-  // Nothing is drawn below the map yet: lay the instruction panel there.
-  nativeLayer.fillRows(int16_t(MAP_CLIP_BOTTOM * NATIVE_SCALE), nativeLayer.height,
-                       InstructionLayout::panelLevel);
 #endif
 }
 
@@ -264,5 +261,3 @@ uint16_t drawFallbackDistanceText(const char* value, const GFXfont* font,
   return width;
 }
 #endif
-
-

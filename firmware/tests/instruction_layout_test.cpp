@@ -44,7 +44,7 @@ static void checkText(const char* text, const char* unit) {
   check(clearOfSign(place.numberLeft, right, place.numberTop, bottom, 2.0f),
         "text keeps clear of the speed limit sign");
   check(place.numberTop >= panelTop + 3.0f && bottom <= distanceTop + 7.0f * distanceSize,
-        "text stays on its line inside the panel");
+        "text stays on its line below the map");
   check(insideCircle(right, bottom) && insideCircle(place.numberLeft, bottom),
         "text is inside the round aperture");
   if (unit == nullptr) return;
@@ -77,7 +77,7 @@ int main() {
 
   // The arrow: 33 px of artwork plus its stroke, under the panel's edge and
   // inside the aperture at its lowest, leftmost point (the turn stems).
-  check(arrowCenterY - 18.5f - 2.5f >= panelTop - 0.5f, "the arrow starts under the panel edge");
+  check(arrowCenterY - 18.5f - 2.5f >= panelTop - 0.5f, "the arrow starts under the map's edge");
   check(insideCircle(arrowCenterX - 18.0f - 2.5f, arrowCenterY + 16.5f + 2.5f),
         "the arrow stem is inside the round aperture");
   // Its head's outer corner is 35 px left of and 4.5 px above the centre.
@@ -88,7 +88,7 @@ int main() {
   // route's centre column and rider marker (18 px either side of centre).
   const float reach = SpeedSignStyle::diameter / 2 + SpeedSignStyle::halo;
   check(SpeedSignStyle::centerY - reach < panelTop && SpeedSignStyle::centerY + reach > panelTop,
-        "the sign sits across the panel's upper edge");
+        "the sign sits across the line where the map ends");
   check(SpeedSignStyle::centerX - reach > kCenter + 18.0f + 6.0f, "the sign is clear of the rider marker");
   puts("instruction layout: distance texts, unit, arrow and sign fit the round panel without touching");
 }
